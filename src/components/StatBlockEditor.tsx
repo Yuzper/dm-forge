@@ -3,6 +3,7 @@ import { useCallback } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import type { StatBlock, StatBlockEntry } from '../types'
 import { calcHpAverage } from '../types'
+import SectionDivider from './SectionDivider'
 
 interface Props {
   value: StatBlock
@@ -19,19 +20,6 @@ const ABILITY_LABELS: Record<string, string> = {
 function abMod(score: number): string {
   const m = Math.floor((score - 10) / 2)
   return m >= 0 ? `+${m}` : `${m}`
-}
-
-function SectionLabel({ label }: { label: string }) {
-  return (
-    <div style={{
-      fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
-      textTransform: 'uppercase', letterSpacing: '0.08em',
-      marginBottom: 8, marginTop: 16,
-      borderBottom: '1px solid var(--border-light)', paddingBottom: 4,
-    }}>
-      {label}
-    </div>
-  )
 }
 
 function EntryList({
@@ -102,7 +90,7 @@ export default function StatBlockEditor({ value, onChange }: Props) {
     <div style={{ padding: '16px 24px', fontFamily: 'var(--font-ui)', fontSize: 13 }}>
 
       {/* ── AC ── */}
-      <SectionLabel label="Armour Class" />
+      <SectionDivider label="Armour Class" />
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>AC</span>
@@ -127,7 +115,7 @@ export default function StatBlockEditor({ value, onChange }: Props) {
       </div>
 
       {/* ── HP ── */}
-      <SectionLabel label="Hit Points" />
+      <SectionDivider label="Hit Points" />
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Avg HP</span>
@@ -178,7 +166,7 @@ export default function StatBlockEditor({ value, onChange }: Props) {
       </div>
 
       {/* ── Speed ── */}
-      <SectionLabel label="Speed" />
+      <SectionDivider label="Speed" />
       <input
         className="input"
         style={{ height: 34, fontSize: 13 }}
@@ -188,7 +176,7 @@ export default function StatBlockEditor({ value, onChange }: Props) {
       />
 
       {/* ── Ability Scores ── */}
-      <SectionLabel label="Ability Scores" />
+      <SectionDivider label="Ability Scores" />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
         {ABILITY_KEYS.map(key => {
           const score = value[key] as number
@@ -213,7 +201,7 @@ export default function StatBlockEditor({ value, onChange }: Props) {
       </div>
 
       {/* ── CR ── */}
-      <SectionLabel label="Challenge Rating" />
+      <SectionDivider label="Challenge Rating" />
       <input
         className="input"
         style={{ height: 34, fontSize: 13, width: 100 }}
@@ -223,7 +211,7 @@ export default function StatBlockEditor({ value, onChange }: Props) {
       />
 
       {/* ── Other Fields ── */}
-      <SectionLabel label="Details" />
+      <SectionDivider label="Details" />
       {([
         ['savingThrows', 'Saving Throws', 'Con +4, Wis +2…'],
         ['skills',       'Skills',        'Perception +4, Stealth +3…'],
@@ -251,7 +239,7 @@ export default function StatBlockEditor({ value, onChange }: Props) {
         ['legendaryActions','Legendary Actions','Describe the legendary action…'],
       ] as [keyof StatBlock, string, string][]).map(([key, label, placeholder]) => (
         <div key={key}>
-          <SectionLabel label={label} />
+          <SectionDivider label={label} />
           <EntryList
             entries={value[key] as StatBlockEntry[]}
             onChange={entries => set(key, entries as any)}

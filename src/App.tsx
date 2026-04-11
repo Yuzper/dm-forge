@@ -8,15 +8,17 @@ import SessionPage from './pages/SessionPage'
 import WikiPage from './pages/WikiPage'
 import StatBlockPage from './pages/StatBlockPage'
 
+const params = new URLSearchParams(window.location.search)
+const statblockMode = params.get('mode') === 'statblock'
+const statblockArticleId = statblockMode ? parseInt(params.get('articleId') || '0') : 0
+
 export default function App() {
   const { view, loadCampaigns } = useStore()
 
-  useEffect(() => { loadCampaigns() }, [])
-  
-  const params = new URLSearchParams(window.location.search)
-  if (params.get('mode') === 'statblock') {
-    const articleId = parseInt(params.get('articleId') || '0')
-    if (articleId) return <StatBlockPage articleId={articleId} />
+  useEffect(() => { if (!statblockMode) loadCampaigns() }, [])
+
+  if (statblockMode && statblockArticleId) {
+    return <StatBlockPage articleId={statblockArticleId} />
   }
 
   return (

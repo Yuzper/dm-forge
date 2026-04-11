@@ -10,6 +10,8 @@ import type { POIType, LootItem } from '../types'
 import { parseLootTable, generateLoot } from '../types'
 import CombatPanel from './CombatPanel'
 import SectionDivider from './SectionDivider'
+import { useConfirmDelete } from '../hooks/useConfirmDelete'
+
 
 export default function POIPanel({ readMode }: { readMode?: boolean }) {
   const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI } = useStore()
@@ -19,8 +21,9 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
   const [lootTableJson, setLootTableJson] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
   const [lootResult, setLootResult] = useState<LootItem[] | null>(null)
+  
 
   useEffect(() => {
     if (selectedPOI) {
@@ -46,16 +49,6 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
     const timer = setTimeout(save, 1500)
     return () => clearTimeout(timer)
   }, [dirty, label, poiType, content, lootTableJson])
-
-  const handleDelete = async () => {
-    if (!selectedPOI) return
-    if (!confirmDelete) {
-      setConfirmDelete(true)
-      setTimeout(() => setConfirmDelete(false), 3000)
-      return
-    }
-    await deletePOI(selectedPOI.id)
-  }
 
   const handleClose = async () => {
     if (dirty && selectedPOI) {
@@ -124,7 +117,7 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
           {!readMode && (
             <button
               className="btn btn-sm btn-danger"
-              onClick={handleDelete}
+              onClick={() => triggerDelete(async () => { if (selectedPOI) await deletePOI(selectedPOI.id) })}
               style={{ padding: '3px 8px', fontSize: 11, border: confirmDelete ? '1px solid var(--crimson)' : undefined }}
             >
               {confirmDelete ? 'Confirm delete' : 'Delete'}

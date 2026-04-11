@@ -2,6 +2,7 @@
 import { useCallback } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import type { LootItem, LootTable } from '../types'
+import SectionDivider from './SectionDivider'
 
 interface Props {
   value: LootTable
@@ -17,31 +18,6 @@ function newItem(chance: number): LootItem {
     quantity: '1',
     chance,
   }
-}
-
-function SectionHeader({ label, count }: { label: string; count: number }) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      marginBottom: 8,
-    }}>
-      <span style={{
-        fontSize: 11, fontWeight: 700, color: 'var(--text-muted)',
-        textTransform: 'uppercase', letterSpacing: '0.08em',
-      }}>
-        {label}
-      </span>
-      {count > 0 && (
-        <span style={{
-          fontSize: 10, color: 'var(--text-muted)',
-          background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
-          borderRadius: 99, padding: '0px 6px',
-        }}>
-          {count}
-        </span>
-      )}
-    </div>
-  )
 }
 
 function ItemRow({
@@ -161,7 +137,7 @@ export default function LootTableEditor({ value, onChange, defaultName }: Props)
       </div>
 
       {/* Guaranteed section */}
-      <SectionHeader label="Guaranteed" count={guaranteed.length} />
+      <SectionDivider label={`Guaranteed${guaranteed.length > 0 ? ` (${guaranteed.length})` : ''}`} margin="0 0 8px" />
       <div style={{ marginBottom: 14 }}>
         {guaranteed.map(item => (
           <ItemRow
@@ -185,7 +161,7 @@ export default function LootTableEditor({ value, onChange, defaultName }: Props)
       <div style={{ height: 1, background: 'var(--border-light)', margin: '12px 0' }} />
 
       {/* Random section */}
-      <SectionHeader label="Random" count={random.length} />
+      <SectionDivider label={`Random${random.length > 0 ? ` (${random.length})` : ''}`} margin="0 0 8px" />
       {random.length > 0 && (
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
           Each item rolls independently against its drop chance.

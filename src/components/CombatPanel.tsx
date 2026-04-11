@@ -6,6 +6,7 @@ import RichEditor from './RichEditor'
 import CombatantRow from './CombatantRow'
 import type { CombatEncounter, CombatCreature, ArticleSummary, LootItem } from '../types'
 import { parseStatBlock, calcHpAverage, rollHp, parseLootTable, generateLoot } from '../types'
+import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
 
 type Tab = 'general' | 'combatants'
@@ -13,13 +14,14 @@ type Tab = 'general' | 'combatants'
 export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI } = useStore()
   const { currentCampaign } = useStore()
+  
 
   // ── General text state ─────────────────────────────────────────────────────
   const [label, setLabel] = useState('')
   const [content, setContent] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
 
   // ── Combat state ───────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<Tab>('general')
@@ -114,16 +116,6 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   const handleClose = async () => {
     await save()
     selectPOI(null)
-  }
-
-  const handleDelete = async () => {
-    if (!selectedPOI) return
-    if (!confirmDelete) {
-      setConfirmDelete(true)
-      setTimeout(() => setConfirmDelete(false), 3000)
-      return
-    }
-    await deletePOI(selectedPOI.id)
   }
 
   // ── Combatant update (local only) ──────────────────────────────────────────
@@ -234,7 +226,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
           {!readMode && (
             <button
               className="btn btn-ghost btn-icon btn-sm btn-danger"
-              onClick={handleDelete}
+              onClick={() => triggerDelete(() => deletePOI(selectedPOI.id))}
               title={confirmDelete ? 'Click again to confirm' : 'Delete POI'}
               style={{ border: confirmDelete ? '1px solid var(--crimson-dim)' : undefined }}
             >

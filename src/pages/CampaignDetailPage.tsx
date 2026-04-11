@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
 import { Plus, Calendar, Map, BookOpen, MoreHorizontal, Trash2, Pencil, ChevronRight } from 'lucide-react'
 import type { Session } from '../types'
+import { useConfirmDelete } from '../hooks/useConfirmDelete'
+
 
 function CreateSessionModal({ onClose }: { onClose: () => void }) {
   const { sessions, createSession } = useStore()
@@ -114,34 +116,25 @@ function EditSessionModal({ session, onClose }: { session: Session; onClose: () 
 function SessionMenu({ session, onEdit }: { session: Session; onEdit: () => void }) {
   const { selectSession, deleteSession } = useStore()
   const [open, setOpen] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setOpen(false)
-        setConfirmDelete(false)
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!confirmDelete) { setConfirmDelete(true); return }
-    deleteSession(session.id)
-    setOpen(false)
-  }
-
   return (
     <div ref={menuRef} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
       <button
         className="btn btn-ghost btn-icon btn-sm"
-        onClick={e => { e.stopPropagation(); setOpen(o => !o); setConfirmDelete(false) }}
+        onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
         title="Options"
         style={{ color: 'var(--text-muted)' }}
       >
@@ -166,7 +159,10 @@ function SessionMenu({ session, onEdit }: { session: Session; onEdit: () => void
             <Pencil size={13} /> Edit
           </button>
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-          <button onClick={handleDelete} style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}>
+          <button
+            onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteSession(session.id); setOpen(false) }) }}
+            style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}
+          >
             <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
           </button>
         </div>

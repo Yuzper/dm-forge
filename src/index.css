@@ -229,23 +229,42 @@ select.input {
   height: 0;
 }
 
-/* Wiki links inside editor */
+/* Session links inside editor */
 .session-link {
   color: #5b9fe8;
-  border-bottom: 1px dashed rgba(91,159,232,0.5);
+  border-bottom: 1px solid rgba(91,159,232,0.5);
   cursor: pointer;
-  transition: color var(--transition);
-  font-style: italic;
+  transition: color 120ms ease, border-color 120ms ease;
 }
 .session-link:hover {
   color: #7db8f0;
-  border-bottom-style: solid;
+  border-bottom-color: transparent;
 }
 
+.session-link-broken {
+  color: var(--crimson, #c23b3b);
+  border-bottom: 1px dashed var(--crimson-dim, #8b2533);
+  cursor: pointer;
+}
+
+/* Wiki links */
+.wiki-link {
+  color: var(--gold);
+  border-bottom: 1px solid var(--gold-dim);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.wiki-link:hover {
+  color: var(--gold-dim);
+  border-bottom-color: transparent;
+}
+
+/* Broken wiki links — article not found */
 .wiki-link-broken {
-  color: #e05555 !important;
-  border-bottom-color: #e05555 !important;
-  opacity: 0.85;
+  color: var(--crimson, #c23b3b);
+  border-bottom: 1px dashed var(--crimson-dim, #8b2533);
+  cursor: pointer;
 }
 
 /* ─── POI Type Colors ─────────────────────────────────────────────────────── */

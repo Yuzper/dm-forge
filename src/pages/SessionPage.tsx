@@ -5,6 +5,7 @@ import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft } from 'lucide
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
 import type { GameMap } from '../types'
+import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
 function EditMapModal({ map, onClose }: { map: GameMap; onClose: () => void }) {
   const { updateMap } = useStore()
@@ -57,7 +58,7 @@ const menuItemStyle: React.CSSProperties = {
 function MapTabMenu({ map, onEdit }: { map: GameMap; onEdit: () => void }) {
   const { deleteMap, selectMap } = useStore()
   const [open, setOpen] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
   const menuRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -67,7 +68,6 @@ function MapTabMenu({ map, onEdit }: { map: GameMap; onEdit: () => void }) {
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setOpen(false)
-        setConfirmDelete(false)
       }
     }
     document.addEventListener('mousedown', handler)
@@ -80,14 +80,6 @@ function MapTabMenu({ map, onEdit }: { map: GameMap; onEdit: () => void }) {
     const rect = btnRef.current!.getBoundingClientRect()
     setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
     setOpen(true)
-    setConfirmDelete(false)
-  }
-
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!confirmDelete) { setConfirmDelete(true); return }
-    deleteMap(map.id)
-    setOpen(false)
   }
 
   return (
@@ -129,7 +121,10 @@ function MapTabMenu({ map, onEdit }: { map: GameMap; onEdit: () => void }) {
             <Pencil size={13} /> Rename
           </button>
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-          <button onClick={handleDelete} style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}>
+          <button
+            onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteMap(map.id); setOpen(false) }) }}
+            style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}
+          >
             <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
           </button>
         </div>
