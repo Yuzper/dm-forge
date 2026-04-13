@@ -1,16 +1,15 @@
 // path: src/components/CombatantRow.tsx
 import { useState } from 'react'
 import { Swords, Skull, PackageOpen } from 'lucide-react'
-import type { CombatCreature, LootItem } from '../types'
+import type { CombatCreature, LootItem, CombatResource } from '../types'
 import { parseStatBlock, parseLootTable, generateLoot } from '../types'
 import LootResultModal from './LootResultModal'
 
 interface Props {
   creature: CombatCreature
-  onUpdate: (id: number, updates: Partial<Pick<CombatCreature, 'current_hp' | 'is_dead' | 'initiative' | 'ac_override'>>) => void
+  onUpdate: (id: number, updates: Partial<Pick<CombatCreature, 'current_hp' | 'is_dead' | 'initiative' | 'ac_override' | 'resources'>>) => void
   onOpenStatBlock: (articleId: number) => void
-  onLootGenerated: (creatureId: number, result: LootItem[], articleId: number) => void
-  
+  onLootGenerated: (creatureId: number, result: LootItem[], articleId: number) => Promise<LootItem[]>
 }
 
 export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLootGenerated }: Props) {
@@ -19,6 +18,40 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
   const [editingAc, setEditingAc] = useState(false)
   const [acInput, setAcInput] = useState('')
   const [showLoot, setShowLoot] = useState(false)
+
+  // ── Resource state ──────────────────────────────────────────────────────────
+  const [resources, setResources] = useState<CombatResource[]>(() => {
+    try { return JSON.parse(creature.resources || '[]') } catch { return [] }
+  })
+  const [addingResource, setAddingResource] = useState(false)
+  const [newResourceName, setNewResourceName] = useState('')
+  const [newResourceMax, setNewResourceMax] = useState('3')
+
+  const updateResources = (next: CombatResource[]) => {
+    setResources(next)
+    onUpdate(creature.id, { resources: JSON.stringify(next) })
+  }
+
+  const updateResourceValue = (id: string, delta: number) => {
+    updateResources(resources.map(r =>
+      r.id === id ? { ...r, current: Math.max(0, Math.min(r.max, r.current + delta)) } : r
+    ))
+  }
+
+  const removeResource = (id: string) => updateResources(resources.filter(r => r.id !== id))
+
+  const confirmAddResource = () => {
+    const name = newResourceName.trim()
+    const max = Math.max(1, parseInt(newResourceMax) || 1)
+    if (!name) return
+    updateResources([...resources, {
+      id: Math.random().toString(36).slice(2),
+      name, current: max, max,
+    }])
+    setNewResourceName('')
+    setNewResourceMax('3')
+    setAddingResource(false)
+  }
 
   const sb = parseStatBlock(creature.statblock)
   const displayAc = creature.ac_override !== null ? creature.ac_override : sb.ac
@@ -36,14 +69,14 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
   const hasLootTable = lootTable.items.length > 0
   const lootGenerated = lootItems !== null
 
-  const handleLootClick = () => {
+  const handleLootClick = async () => {
     if (lootGenerated) {
       setShowLoot(true)
       return
     }
     const result = generateLoot(lootTable.items)
-    setLootItems(result)
-    onLootGenerated(creature.id, result, creature.article_id)
+    const merged = await onLootGenerated(creature.id, result, creature.article_id)
+    setLootItems(merged)
     setShowLoot(true)
   }
 
@@ -218,7 +251,111 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
           </div>
         </div>
 
-        {/* Row 3: damage/heal input */}
+        {/* Row 3: Resources */}
+        {resources.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+            {resources.map(r => (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{
+                  fontSize: 11, color: 'var(--text-muted)', flex: 1, minWidth: 0,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {r.name}
+                </span>
+                <button
+                  onClick={() => updateResourceValue(r.id, -1)}
+                  disabled={r.current <= 0}
+                  style={{
+                    width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+                    borderRadius: 'var(--radius-sm)', cursor: r.current <= 0 ? 'not-allowed' : 'pointer',
+                    color: r.current <= 0 ? 'var(--text-muted)' : 'var(--text-secondary)',
+                    fontSize: 14, fontWeight: 700, flexShrink: 0,
+                  }}
+                >−</button>
+                <span style={{
+                  fontSize: 12, fontWeight: 600, minWidth: 36, textAlign: 'center', flexShrink: 0,
+                  color: r.current === 0 ? 'var(--text-muted)' : 'var(--text-primary)',
+                }}>
+                  {r.current}<span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>/{r.max}</span>
+                </span>
+                <button
+                  onClick={() => updateResourceValue(r.id, 1)}
+                  disabled={r.current >= r.max}
+                  style={{
+                    width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+                    borderRadius: 'var(--radius-sm)', cursor: r.current >= r.max ? 'not-allowed' : 'pointer',
+                    color: r.current >= r.max ? 'var(--text-muted)' : 'var(--text-secondary)',
+                    fontSize: 14, fontWeight: 700, flexShrink: 0,
+                  }}
+                >+</button>
+                <button
+                  onClick={() => removeResource(r.id)}
+                  style={{
+                    width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--text-muted)', fontSize: 12, flexShrink: 0,
+                    borderRadius: 'var(--radius-sm)',
+                  }}
+                  title="Remove resource"
+                >×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add resource */}
+        {!isDead && (
+          addingResource ? (
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 6 }}>
+              <input
+                className="input"
+                placeholder="Resource name…"
+                value={newResourceName}
+                onChange={e => setNewResourceName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') confirmAddResource(); if (e.key === 'Escape') setAddingResource(false) }}
+                autoFocus
+                style={{ flex: 1, height: 26, fontSize: 11 }}
+              />
+              <input
+                className="input"
+                type="number"
+                min={1}
+                placeholder="Max"
+                value={newResourceMax}
+                onChange={e => setNewResourceMax(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') confirmAddResource() }}
+                style={{ width: 48, height: 26, fontSize: 11, textAlign: 'center' }}
+              />
+              <button
+                onClick={confirmAddResource}
+                className="btn btn-sm"
+                style={{ height: 26, padding: '0 8px', fontSize: 11 }}
+              >Add</button>
+              <button
+                onClick={() => { setAddingResource(false); setNewResourceName(''); setNewResourceMax('3') }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, padding: '0 2px' }}
+              >×</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setAddingResource(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--text-muted)', fontSize: 11, padding: '2px 0',
+                marginBottom: 4, transition: 'color 120ms ease',
+              }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+            >
+              + Resource
+            </button>
+          )
+        )}
+
+        {/* Row 4: damage/heal input */}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <button
             onClick={() => setInputMode(m => m === 'damage' ? 'heal' : 'damage')}

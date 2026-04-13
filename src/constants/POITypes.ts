@@ -1,5 +1,5 @@
 // path: src/constants/POITypes.ts
-import { MapPin, User, Zap, Package, Skull, ScrollText, StickyNote, Puzzle, Swords } from 'lucide-react'
+import { MapPin, User, Zap, Package, Skull, ScrollText, Puzzle, Swords } from 'lucide-react'
 import type { POIType } from '../types'
 
 export const POI_TYPE_LIST: { value: POIType; label: string; icon: any; color: string }[] = [
@@ -9,13 +9,12 @@ export const POI_TYPE_LIST: { value: POIType; label: string; icon: any; color: s
   { value: 'item',      label: 'Item',      icon: Package,     color: '#9b7de8' },
   { value: 'trap',      label: 'Trap',      icon: Skull,       color: '#e88c3a' },
   { value: 'quest',     label: 'Quest',     icon: ScrollText,  color: '#5b9fe8' },
-  { value: 'note',      label: 'Note',      icon: StickyNote,  color: '#8a8a8a' },
   { value: 'puzzle',    label: 'Puzzle',    icon: Puzzle,      color: '#3dbf7f' },
   { value: 'combat',    label: 'Combat',    icon: Swords,      color: '#cb4242' },
 ]
 
 export const TYPE_ORDER: POIType[] = [
-  'location', 'character', 'quest', 'event', 'item', 'trap', 'puzzle', 'combat', 'note',
+  'location', 'character', 'quest', 'event', 'item', 'trap', 'puzzle', 'combat',
 ]
 
 export function getPoiColor(type: POIType): string {

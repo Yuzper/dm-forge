@@ -9,7 +9,9 @@ import Highlight from '@tiptap/extension-highlight'
 import TextStyle from '@tiptap/extension-text-style'
 import { WikiLink } from './WikiLinkExtension'
 import { SessionLink } from './SessionLinkExtension'
+import { SpellLink } from './SpellLinkExtension'
 import { useStore } from '../store/store'
+import spellsData from '../data/spells_2014.json'
 import {
   Bold, Italic, UnderlineIcon, Strikethrough,
   Heading1, Heading2, Heading3,
@@ -223,6 +225,181 @@ function WikiLinkToolbarPopover({ onSelect, onClose }: {
   )
 }
 
+// ── Spell types ────────────────────────────────────────────────────────────────
+
+type Spell = {
+  name: string
+  level: number
+  school: string
+  casting_time: string
+  range: string
+  components: string
+  duration: string
+  desc: string
+  higher_levels?: string
+}
+
+const spells: Spell[] = spellsData as Spell[]
+
+function levelLabel(level: number): string {
+  if (level === 0) return 'Cantrip'
+  if (level === 1) return '1st-level'
+  if (level === 2) return '2nd-level'
+  if (level === 3) return '3rd-level'
+  return `${level}th-level`
+}
+
+// ── Spell Search Popover ───────────────────────────────────────────────────────
+
+function SpellLinkPopover({ query, coords, onSelect, onClose }: {
+  query: string
+  coords: { left: number; top: number; bottom: number }
+  onSelect: (spellName: string) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [selectedIndex, setSelectedIndex] = useState(0)
+
+  const filtered = spells.filter(s =>
+    s.name.toLowerCase().includes(query.toLowerCase())
+  ).slice(0, 8)
+
+  useEffect(() => { setSelectedIndex(0) }, [query])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filtered.length - 1)) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
+      else if (e.key === 'Tab') { e.preventDefault(); setSelectedIndex(i => (i + 1) % filtered.length) }
+      else if (e.key === 'Enter' && filtered[selectedIndex]) {
+        e.preventDefault(); e.stopPropagation()
+        onSelect(filtered[selectedIndex].name)
+      } else if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [filtered, selectedIndex, onSelect, onClose])
+
+  if (filtered.length === 0 && query === '') return null
+
+  return (
+    <div ref={ref} style={{
+      position: 'fixed', left: coords.left, top: coords.bottom + 6,
+      width: 300, background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)',
+      boxShadow: 'var(--shadow-md)', zIndex: 1000, overflow: 'hidden',
+    }}>
+      {filtered.length === 0 ? (
+        <div style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-muted)' }}>
+          No spells match "{query}"
+        </div>
+      ) : (
+        <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+          {filtered.map((s, i) => (
+            <button
+              key={s.name}
+              onMouseDown={e => { e.preventDefault(); onSelect(s.name) }}
+              onMouseEnter={() => setSelectedIndex(i)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 14px',
+                background: i === selectedIndex ? 'var(--bg-hover)' : 'none',
+                border: 'none',
+                color: i === selectedIndex ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontSize: 13, fontFamily: 'var(--font-ui)', cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {s.name}
+              </span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
+                {s.level === 0 ? 'Cantrip' : `Lv ${s.level}`} · {s.school}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Spell Hover Card ───────────────────────────────────────────────────────────
+
+function SpellHoverCard({ spell, x, y }: { spell: Spell; x: number; y: number }) {
+  // Position card above cursor, or below if near top
+  const cardHeight = 280
+  const top = y - cardHeight - 12 < 0 ? y + 16 : y - cardHeight - 12
+
+  return (
+    <div style={{
+      position: 'fixed', left: Math.min(x, window.innerWidth - 340), top,
+      width: 320, zIndex: 2000, pointerEvents: 'none',
+      background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-gold)',
+      borderRadius: 'var(--radius-md)',
+      boxShadow: 'var(--shadow-lg)',
+      overflow: 'hidden',
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '10px 14px',
+        background: 'var(--bg-surface)',
+        borderBottom: '1px solid var(--border-gold)',
+      }}>
+        <div style={{
+          fontFamily: 'var(--font-display)', fontSize: 15,
+          color: 'var(--gold)', letterSpacing: '0.04em', marginBottom: 2,
+        }}>
+          {spell.name}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+          {levelLabel(spell.level)} {spell.school}
+        </div>
+      </div>
+
+      {/* Stats grid */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1fr 1fr',
+        gap: 0, borderBottom: '1px solid var(--border)',
+      }}>
+        {[
+          ['Casting Time', spell.casting_time],
+          ['Range', spell.range],
+          ['Duration', spell.duration],
+          ['Components', spell.components],
+        ].map(([label, value]) => (
+          <div key={label} style={{ padding: '6px 12px', borderBottom: '1px solid var(--border-light)', borderRight: '1px solid var(--border-light)' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>
+              {label}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Description */}
+      <div style={{ padding: '10px 14px', maxHeight: 120, overflowY: 'auto' }}>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          {spell.desc}
+        </div>
+        {spell.higher_levels && (
+          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.4 }}>
+            <strong>At Higher Levels. </strong>{spell.higher_levels}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Session Link Popover ───────────────────────────────────────────────────────
 
 function SessionLinkPopover({ query, coords, onSelect, onClose }: {
@@ -236,7 +413,7 @@ function SessionLinkPopover({ query, coords, onSelect, onClose }: {
   const [selectedIndex, setSelectedIndex] = useState(0)
 
   const filtered = sessions.filter(s =>
-    `Session ${s.session_number}: ${s.name}`.toLowerCase().includes(query.toLowerCase())
+    `Session ${s.session_number}${s.session_sub ?? ''}: ${s.name}`.toLowerCase().includes(query.toLowerCase())
   )
 
   useEffect(() => { setSelectedIndex(0) }, [query])
@@ -257,7 +434,7 @@ function SessionLinkPopover({ query, coords, onSelect, onClose }: {
       else if (e.key === 'Enter' && filtered[selectedIndex]) {
         e.preventDefault(); e.stopPropagation()
         const s = filtered[selectedIndex]
-        onSelect(s.id, `Session ${s.session_number}: ${s.name}`)
+        onSelect(s.id, `Session ${s.session_number}${s.session_sub ?? ''}: ${s.name}`)
       } else if (e.key === 'Escape') onClose()
     }
     document.addEventListener('keydown', handler, true)
@@ -282,7 +459,7 @@ function SessionLinkPopover({ query, coords, onSelect, onClose }: {
           {filtered.map((s, i) => (
             <button
               key={s.id}
-              onMouseDown={e => { e.preventDefault(); onSelect(s.id, `Session ${s.session_number}: ${s.name}`) }}
+              onMouseDown={e => { e.preventDefault(); onSelect(s.id, `Session ${s.session_number}${s.session_sub ?? ''}: ${s.name}`) }}
               onMouseEnter={() => setSelectedIndex(i)}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', gap: 8,
@@ -294,7 +471,7 @@ function SessionLinkPopover({ query, coords, onSelect, onClose }: {
               }}
             >
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                Session {s.session_number}: {s.name}
+                Session {s.session_number}{s.session_sub ?? ''}: {s.name}
               </span>
               {s.date && (
                 <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{s.date}</span>
@@ -323,6 +500,13 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     coords: { left: number; top: number; bottom: number }
   } | null>(null)
 
+  const [spellSearch, setSpellSearch] = useState<{
+    query: string; from: number; to: number
+    coords: { left: number; top: number; bottom: number }
+  } | null>(null)
+
+  const [hoveredSpell, setHoveredSpell] = useState<{ spell: Spell; x: number; y: number } | null>(null)
+
   const [showToolbarPopover, setShowToolbarPopover] = useState(false)
 
   const parsedContent = (() => {
@@ -345,6 +529,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       Placeholder.configure({ placeholder: placeholder || 'Begin writing…' }),
       WikiLink,
       SessionLink,
+      SpellLink,
     ],
     content: parsedContent,
     editable: !readOnly,
@@ -407,15 +592,45 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     }
     const onSessionClose = () => setSessionSearch(null)
 
+    const onSpellSearch = (e: Event) => {
+      const { query, from, to, coords } = (e as CustomEvent).detail
+      setSpellSearch({ query, from, to, coords })
+      setWikiSearch(null)
+      setSessionSearch(null)
+    }
+    const onSpellClose = () => setSpellSearch(null)
+
+    // Spell hover — mouseover on spell-link spans
+    const onMouseOver = (e: MouseEvent) => {
+      const target = (e.target as HTMLElement).closest('[data-spell-link]') as HTMLElement | null
+      if (!target) { setHoveredSpell(null); return }
+      const spellName = target.getAttribute('data-spell-link')
+      if (!spellName) return
+      const spell = spells.find(s => s.name === spellName)
+      if (spell) setHoveredSpell({ spell, x: e.clientX, y: e.clientY })
+    }
+    const onMouseOut = (e: MouseEvent) => {
+      const target = (e.target as HTMLElement).closest('[data-spell-link]')
+      if (target) setHoveredSpell(null)
+    }
+
     el.addEventListener('wikilinkSearch', onWikiSearch)
     el.addEventListener('wikilinkSearchClose', onWikiClose)
     el.addEventListener('sessionlinkSearch', onSessionSearch)
     el.addEventListener('sessionlinkSearchClose', onSessionClose)
+    el.addEventListener('spelllinkSearch', onSpellSearch)
+    el.addEventListener('spelllinkSearchClose', onSpellClose)
+    el.addEventListener('mouseover', onMouseOver)
+    el.addEventListener('mouseout', onMouseOut)
     return () => {
       el.removeEventListener('wikilinkSearch', onWikiSearch)
       el.removeEventListener('wikilinkSearchClose', onWikiClose)
       el.removeEventListener('sessionlinkSearch', onSessionSearch)
       el.removeEventListener('sessionlinkSearchClose', onSessionClose)
+      el.removeEventListener('spelllinkSearch', onSpellSearch)
+      el.removeEventListener('spelllinkSearchClose', onSpellClose)
+      el.removeEventListener('mouseover', onMouseOver)
+      el.removeEventListener('mouseout', onMouseOut)
     }
   }, [])
 
@@ -458,6 +673,18 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       })
       .run()
     setSessionSearch(null)
+  }
+
+  const insertSpellLink = (spellName: string) => {
+    if (!editor || !spellSearch) return
+    editor.chain().focus()
+      .deleteRange({ from: spellSearch.from, to: spellSearch.to })
+      .insertContentAt(spellSearch.from, {
+        type: 'text', text: spellName,
+        marks: [{ type: 'spellLink', attrs: { spellName } }],
+      })
+      .run()
+    setSpellSearch(null)
   }
 
   if (!editor) return null
@@ -541,6 +768,23 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
           coords={sessionSearch.coords}
           onSelect={insertSessionLinkInline}
           onClose={() => setSessionSearch(null)}
+        />
+      )}
+
+      {spellSearch && (
+        <SpellLinkPopover
+          query={spellSearch.query}
+          coords={spellSearch.coords}
+          onSelect={insertSpellLink}
+          onClose={() => setSpellSearch(null)}
+        />
+      )}
+
+      {hoveredSpell && (
+        <SpellHoverCard
+          spell={hoveredSpell.spell}
+          x={hoveredSpell.x}
+          y={hoveredSpell.y}
         />
       )}
     </div>

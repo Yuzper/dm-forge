@@ -1,5 +1,5 @@
 // path: src/components/LootTableEditor.tsx
-import { useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import type { LootItem, LootTable } from '../types'
 import SectionDivider from './SectionDivider'
@@ -8,6 +8,7 @@ interface Props {
   value: LootTable
   onChange: (table: LootTable) => void
   defaultName?: string
+  suggestions?: string[]   // article titles for item/artifact/note autocomplete
 }
 
 function newItem(chance: number): LootItem {
@@ -21,15 +22,21 @@ function newItem(chance: number): LootItem {
 }
 
 function ItemRow({
-  item, onChange, onRemove, showChance,
+  item, onChange, onRemove, showChance, suggestions,
 }: {
   item: LootItem
   onChange: (item: LootItem) => void
   onRemove: () => void
   showChance: boolean
+  suggestions?: string[]
 }) {
   const set = <K extends keyof LootItem>(key: K, val: LootItem[K]) =>
     onChange({ ...item, [key]: val })
+
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const filtered = (suggestions ?? []).filter(s =>
+    item.name.length >= 2 && s.toLowerCase().includes(item.name.toLowerCase())
+  )
 
   return (
     <div style={{
@@ -42,13 +49,42 @@ function ItemRow({
     }}>
       {/* Row 1: name + quantity + chance + remove */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <input
-          className="input"
-          style={{ flex: 1, height: 28, fontSize: 12 }}
-          placeholder="Item name…"
-          value={item.name}
-          onChange={e => set('name', e.target.value)}
-        />
+        <div style={{ flex: 1, position: 'relative' }}>
+          <input
+            className="input"
+            style={{ width: '100%', height: 28, fontSize: 12 }}
+            placeholder="Item name…"
+            value={item.name}
+            onChange={e => { set('name', e.target.value); setShowSuggestions(true) }}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+          />
+          {showSuggestions && filtered.length > 0 && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+              background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+              borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-md)',
+              maxHeight: 160, overflowY: 'auto', marginTop: 2,
+            }}>
+              {filtered.slice(0, 6).map(s => (
+                <button
+                  key={s}
+                  onMouseDown={() => { set('name', s); setShowSuggestions(false) }}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '6px 10px',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: 12, color: 'var(--text-secondary)',
+                    transition: 'background 120ms ease',
+                  }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <input
           className="input"
           style={{ width: 72, height: 28, fontSize: 12, textAlign: 'center' }}
@@ -106,7 +142,7 @@ function ItemRow({
   )
 }
 
-export default function LootTableEditor({ value, onChange, defaultName }: Props) {
+export default function LootTableEditor({ value, onChange, defaultName, suggestions }: Props) {
   const guaranteed = value.items.filter(i => i.chance === 100)
   const random = value.items.filter(i => i.chance < 100)
 
@@ -146,6 +182,7 @@ export default function LootTableEditor({ value, onChange, defaultName }: Props)
             onChange={updated => updateItem(item.id, updated)}
             onRemove={() => removeItem(item.id)}
             showChance={false}
+            suggestions={suggestions}
           />
         ))}
         <button
@@ -175,6 +212,7 @@ export default function LootTableEditor({ value, onChange, defaultName }: Props)
             onChange={updated => updateItem(item.id, updated)}
             onRemove={() => removeItem(item.id)}
             showChance={true}
+            suggestions={suggestions}
           />
         ))}
         <button

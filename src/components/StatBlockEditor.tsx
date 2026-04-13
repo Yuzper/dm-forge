@@ -1,9 +1,13 @@
 // path: src/components/StatBlockEditor.tsx
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import type { StatBlock, StatBlockEntry } from '../types'
 import { calcHpAverage } from '../types'
 import SectionDivider from './SectionDivider'
+import spellsData from '../data/spells_2014.json'
+
+type Spell = { name: string; level: number; school: string; casting_time?: string; range?: string; components?: string; duration?: string; desc: string; higher_levels?: string }
+const spells: Spell[] = spellsData as Spell[]
 
 interface Props {
   value: StatBlock
@@ -21,6 +25,8 @@ function abMod(score: number): string {
   const m = Math.floor((score - 10) / 2)
   return m >= 0 ? `+${m}` : `${m}`
 }
+
+
 
 function EntryList({
   entries, onChange, placeholder,
@@ -76,6 +82,9 @@ function EntryList({
 }
 
 export default function StatBlockEditor({ value, onChange }: Props) {
+  const [search, setSearch] = useState('')
+  const filteredSpells = spells.filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
+
   const set = useCallback(<K extends keyof StatBlock>(key: K, val: StatBlock[K]) => {
     onChange({ ...value, [key]: val })
   }, [value, onChange])
@@ -239,7 +248,7 @@ export default function StatBlockEditor({ value, onChange }: Props) {
         ['legendaryActions','Legendary Actions','Describe the legendary action…'],
       ] as [keyof StatBlock, string, string][]).map(([key, label, placeholder]) => (
         <div key={key}>
-          <SectionDivider label={label} />
+          <SectionDivider label={label} margin="16px 0 8px" />
           <EntryList
             entries={value[key] as StatBlockEntry[]}
             onChange={entries => set(key, entries as any)}
@@ -247,6 +256,140 @@ export default function StatBlockEditor({ value, onChange }: Props) {
           />
         </div>
       ))}
+
+      {/* ── Proficiency & Resistances — plain text, not entry lists ── */}
+      <SectionDivider label="Proficiency & Resistances" margin="16px 0 8px" />
+      {([
+        ['proficiencyBonus',   'Proficiency Bonus',   '+2…'],
+        ['damageImmunities',   'Damage Immunities',   'fire, poison, bludgeoning…'],
+        ['damageResistances',  'Damage Resistances',  'cold, necrotic…'],
+        ['conditionImmunities','Condition Immunities', 'charmed, frightened…'],
+      ] as [keyof StatBlock, string, string][]).map(([key, label, placeholder]) => (
+        <div key={key} style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+          <input
+            className="input"
+            style={{ height: 32, fontSize: 13 }}
+            placeholder={placeholder}
+            value={value[key] as string}
+            onChange={e => set(key, e.target.value)}
+          />
+        </div>
+      ))}
+
+      {/* ── Spell Section ── */}
+      <SectionDivider label="Cantrips & Prepared Spells" margin="16px 0 8px" />
+
+      {/* Search input with dropdown */}
+      <div style={{ position: 'relative', marginBottom: 10 }}>
+        <input
+          className="input"
+          placeholder="Search spells to add…"
+          style={{ height: 32, fontSize: 12 }}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          onBlur={() => setTimeout(() => setSearch(''), 150)}
+        />
+        {search.length > 0 && filteredSpells.length > 0 && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+            background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+            borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-md)',
+            maxHeight: 200, overflowY: 'auto', marginTop: 2,
+          }}>
+            {filteredSpells.slice(0, 8).map(spell => {
+              const alreadyAdded = (value.cantrips ?? []).includes(spell.name) ||
+                (value.preparedSpells ?? []).includes(spell.name)
+              return (
+                <button
+                  key={spell.name}
+                  onMouseDown={() => {
+                    if (alreadyAdded) return
+                    if (spell.level === 0) {
+                      set('cantrips', [...(value.cantrips ?? []), spell.name])
+                    } else {
+                      set('preparedSpells', [...(value.preparedSpells ?? []), spell.name])
+                    }
+                    setSearch('')
+                  }}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '7px 12px',
+                    background: 'none', border: 'none',
+                    cursor: alreadyAdded ? 'default' : 'pointer',
+                    fontSize: 12, color: alreadyAdded ? 'var(--text-muted)' : 'var(--text-secondary)',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    opacity: alreadyAdded ? 0.5 : 1,
+                  }}
+                  onMouseEnter={e => { if (!alreadyAdded) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                >
+                  <span style={{ flex: 1 }}>{spell.name}</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
+                    {spell.level === 0 ? 'Cantrip' : `Lv ${spell.level}`} · {spell.school}
+                  </span>
+                  {alreadyAdded && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>added</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Selected spells as removable pills sorted by level */}
+      {(() => {
+        const allSelected = [
+          ...(value.cantrips ?? []).map(n => ({ name: n, level: 0 })),
+          ...(value.preparedSpells ?? []).map(n => {
+            const sp = spells.find(s => s.name === n)
+            return { name: n, level: sp?.level ?? 1 }
+          }),
+        ].sort((a, b) => a.level - b.level)
+
+        if (allSelected.length === 0) return (
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 0' }}>
+            No spells added — search above to add
+          </div>
+        )
+
+        const byLevel = new Map<number, string[]>()
+        allSelected.forEach(({ name, level }) => {
+          if (!byLevel.has(level)) byLevel.set(level, [])
+          byLevel.get(level)!.push(name)
+        })
+
+        return Array.from(byLevel.entries()).map(([level, names]) => (
+          <div key={level} style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+              {level === 0 ? 'Cantrips' : level === 1 ? '1st Level' : level === 2 ? '2nd Level' : level === 3 ? '3rd Level' : `${level}th Level`}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {names.map(name => (
+                <div key={name} style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '2px 8px', borderRadius: 99, fontSize: 11,
+                  background: 'rgba(155, 125, 232, 0.12)',
+                  border: '1px solid rgba(155, 125, 232, 0.3)',
+                  color: '#9b7de8',
+                }}>
+                  @{name}
+                  <button
+                    onClick={() => {
+                      if (level === 0) {
+                        set('cantrips', (value.cantrips ?? []).filter(n => n !== name))
+                      } else {
+                        set('preparedSpells', (value.preparedSpells ?? []).filter(n => n !== name))
+                      }
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'rgba(155, 125, 232, 0.6)' }}
+                  >
+                    <Trash2 size={9} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
+      })()}
     </div>
   )
 }

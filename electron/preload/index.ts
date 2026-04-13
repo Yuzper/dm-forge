@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld('api', {
   updateSession:   (id: number, data: any) => ipcRenderer.invoke('sessions:update', id, data),
   deleteSession:   (id: number)   => ipcRenderer.invoke('sessions:delete', id),
 
+  // Arcs
+  getArcs:    (campaignId: number)          => ipcRenderer.invoke('arcs:get-all', campaignId),
+  createArc:  (data: any)                   => ipcRenderer.invoke('arcs:create', data),
+  updateArc:  (id: number, data: any)       => ipcRenderer.invoke('arcs:update', id, data),
+  deleteArc:  (id: number)                  => ipcRenderer.invoke('arcs:delete', id),
+
   // Maps
   getMaps:         (sessionId: number) => ipcRenderer.invoke('maps:get-all', sessionId),
   createMap:       (data: any)    => ipcRenderer.invoke('maps:create', data),

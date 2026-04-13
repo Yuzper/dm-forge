@@ -1,10 +1,11 @@
 // path: src/pages/SessionPage.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
-import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X } from 'lucide-react'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
-import type { GameMap } from '../types'
+import RichEditor from '../components/RichEditor'
+import type { GameMap, Session } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
 function EditMapModal({ map, onClose }: { map: GameMap; onClose: () => void }) {
@@ -121,14 +122,96 @@ function MapTabMenu({ map, onEdit }: { map: GameMap; onEdit: () => void }) {
             <Pencil size={13} /> Rename
           </button>
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-          <button
-            onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteMap(map.id); setOpen(false) }) }}
-            style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}
-          >
+          <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteMap(map.id); setOpen(false) }) }} style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}>
             <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+function SessionNotesPanel({ session, onClose }: { session: Session; onClose: () => void }) {
+  const { updateSession } = useStore()
+  const [notes, setNotes] = useState(
+    session.notes && session.notes !== ''
+      ? session.notes
+      : '{"type":"doc","content":[]}'
+  )
+
+  const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Use ref so the unmount flush always sees the latest notes value
+  const notesRef = useRef(notes)
+  notesRef.current = notes
+
+  const handleChange = (v: string) => {
+    setNotes(v)
+    if (saveRef.current) clearTimeout(saveRef.current)
+    saveRef.current = setTimeout(() => {
+      updateSession(session.id, { notes: v })
+    }, 1500)
+  }
+
+  // Flush pending save on close so no notes are lost
+  useEffect(() => () => {
+    if (saveRef.current) {
+      clearTimeout(saveRef.current)
+      updateSession(session.id, { notes: notesRef.current })
+    }
+  }, [])
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 0, right: 0,
+      width: 420, height: 520,
+      background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-light)',
+      borderTop: '2px solid var(--gold-dim)',
+      borderRadius: '8px 0 0 0',
+      boxShadow: 'var(--shadow-lg)',
+      display: 'flex', flexDirection: 'column',
+      zIndex: 100,
+      animation: 'slideUp 150ms ease',
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '10px 14px', borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', gap: 10,
+        flexShrink: 0, background: 'var(--bg-surface)',
+        borderRadius: '8px 0 0 0',
+      }}>
+        <ScrollText size={13} color="var(--gold)" />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, color: 'var(--gold)', letterSpacing: '0.03em' }}>
+            Session Notes
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            Session {session.session_number}{session.session_sub}: {session.name}
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--text-muted)', display: 'flex', padding: 4,
+            borderRadius: 'var(--radius-sm)', transition: 'color 120ms ease',
+          }}
+          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      {/* Editor — key={session.id} reinitialises if session switches while panel is open */}
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <RichEditor
+          key={session.id}
+          content={notes}
+          onChange={handleChange}
+          placeholder="Jot down notes as the session unfolds… player decisions, unexpected events, NPC names, plot twists…"
+        />
+      </div>
     </div>
   )
 }
@@ -143,6 +226,7 @@ export default function SessionPage() {
 
   const [importing, setImporting] = useState(false)
   const [editingMap, setEditingMap] = useState<GameMap | null>(null)
+  const [showNotes, setShowNotes] = useState(false)
 
   if (!currentSession) return null
 
@@ -187,7 +271,7 @@ export default function SessionPage() {
         {/* Session title + Edit/Done toggle */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px', borderRight: '1px solid var(--border)' }}>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, color: 'var(--gold)', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>
-            Session {currentSession.session_number}
+            Session {currentSession.session_number}{currentSession.session_sub}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>·</div>
           <div style={{ fontSize: 13, color: 'var(--text-primary)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -250,10 +334,27 @@ export default function SessionPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', padding: '0 16px', borderLeft: '1px solid var(--border)', flexShrink: 0 }}>
           {sessionReadMode
-            ? <button className="btn btn-sm" onClick={() => setSessionReadMode(false)}>Edit</button>
-            : <button className="btn btn-sm btn-ghost" onClick={() => setSessionReadMode(true)}>Done</button>
+            ? <button className="btn btn-sm" onClick={() => setSessionReadMode(false)} style={{ fontSize: 12 }}>Edit</button>
+            : <button className="btn btn-sm btn-ghost" onClick={() => setSessionReadMode(true)} style={{ fontSize: 12 }}>Done</button>
           }
         </div>
+        {/* Notes toggle — highlights when panel is open */}
+        <button
+          onClick={() => setShowNotes(v => !v)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '0 16px', height: '100%',
+            background: showNotes ? 'var(--bg-active)' : 'transparent',
+            border: 'none', borderLeft: '1px solid var(--border)',
+            color: showNotes ? 'var(--gold)' : 'var(--text-muted)',
+            fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+            transition: 'all var(--transition)', flexShrink: 0,
+          }}
+          onMouseEnter={e => { if (!showNotes) (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
+          onMouseLeave={e => { if (!showNotes) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+        >
+          <ScrollText size={13} /> Notes
+        </button>
       </div>
 
       {/* Main area */}
@@ -280,6 +381,15 @@ export default function SessionPage() {
       </div>
 
       {editingMap && <EditMapModal map={editingMap} onClose={() => setEditingMap(null)} />}
+      {showNotes && currentSession && (
+        <SessionNotesPanel session={currentSession} onClose={() => setShowNotes(false)} />
+      )}
+      <style>{`
+        @keyframes slideUp {
+          from { transform: translateY(20px); opacity: 0; }
+          to   { transform: translateY(0);    opacity: 1; }
+        }
+      `}</style>
     </div>
   )
 }

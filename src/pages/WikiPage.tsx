@@ -4,16 +4,16 @@ import { useStore } from '../store/store'
 import {
   BookOpen, Plus, Search, Trash2, Check, MapPin, User, Package,
   ScrollText, Users, Landmark, FileText, X, ChevronLeft, Calendar,
-  MoreHorizontal, Tag, Image as ImageIcon, Link, PawPrint
+  MoreHorizontal, Tag, Image as ImageIcon, Link, PawPrint, StickyNote
 } from 'lucide-react'
 import RichEditor from '../components/RichEditor'
 import type { Article, ArticleSummary, ArticleType } from '../types'
 import StatBlockEditor from '../components/StatBlockEditor'
 import { parseStatBlock, DEFAULT_STATBLOCK } from '../types'
-import StatBlockView from '@/components/StatBlockView'
+import StatBlockView from '../components/StatBlockView'
 import LootTableEditor from '../components/LootTableEditor'
 import { parseLootTable } from '../types'
-import SectionDivider from '@/components/SectionDivider'
+import SectionDivider from '../components/SectionDivider'
 
 const ARTICLE_TYPES: { value: ArticleType; label: string; icon: any; color: string }[] = [
   { value: 'character',       label: 'Character',    icon: User,       color: '#5bbfb0' },
@@ -25,7 +25,7 @@ const ARTICLE_TYPES: { value: ArticleType; label: string; icon: any; color: stri
   { value: 'culture',         label: 'Culture',      icon: Landmark,   color: '#4da6ff' },
   { value: 'religion',        label: 'Religion',     icon: Landmark,   color: '#b07de8' },
   { value: 'item',            label: 'Item',         icon: Package,    color: '#9b7de8' },
-  { value: 'artifact',        label: 'Artifact',     icon: Package,    color: '#e8d44d' },
+  { value: 'note',            label: 'Note',         icon: StickyNote, color: '#776d92' },
   { value: 'quest',           label: 'Quest',        icon: ScrollText, color: '#5b9fe8' },
   { value: 'event',           label: 'Event',        icon: ScrollText, color: '#e05555' },
   { value: 'lore',            label: 'Lore',         icon: Landmark,   color: '#e05555' },
@@ -47,7 +47,6 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   playerCharacter: {
     Vitality:    ['Alive', 'Dead', 'Unknown', 'Retired'],
     Disposition: ['Friendly', 'Neutral', 'Hostile'],
-    Species:     [],
     Location:    [],
     Faction:     [],
     Religion:    [],
@@ -56,7 +55,7 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   creature: {
     Vitality:    ['Living', 'Extinct', 'Threatened','Unknown'],
     Disposition: ['Hostile', 'Neutral', 'Friendly'],
-    Species:     [],
+    Awareness:   ['Unaware', 'Alerted', 'Hunting'],
     Size:        ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'],
     Location:    [],
   },
@@ -82,11 +81,6 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   },
   item: {
     Status:   ['Found', 'Lost', 'Destroyed', 'Unknown'],
-    Rarity:   ['Common', 'Uncommon', 'Rare', 'Very Rare', 'Legendary'],
-    Location: [],
-  },
-  artifact: {
-    Status:   ['Found', 'Lost', 'Destroyed', 'Unknown'],
     Rarity:   ['Common', 'Uncommon', 'Rare', 'Very Rare', 'Legendary', 'Artifact'],
     Location: [],
   },
@@ -97,6 +91,11 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   culture:  { Status: ['Active', 'Extinct', 'Unknown'] },
   religion: { Status: ['Active','Undercover', 'Extinct', 'Unknown'] },
   lore:     { Status: ['Active', 'Extinct', 'Unknown'] },
+  note: {
+    Sender:             [],   // dynamic: character names
+    Intended_Recipient: [],   // dynamic: character names
+    Language:           [],
+  },
   other:    { Status: ['Active', 'Inactive', 'Unknown'] },
 }
 
@@ -440,12 +439,14 @@ const STATBLOCK_TYPES: ArticleType[] = ['creature', 'character', 'playerCharacte
 
 function ArticleEditor({ article, onBack }: { article: Article; onBack: () => void }) {
   const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks } = useStore()
-  const { currentCampaign } = useStore()
+  const { currentCampaign, articles } = useStore()
   const [factionNames, setFactionNames] = useState<string[]>([])
   const [organizationNames, setOrganizationNames] = useState<string[]>([])
   const [religionNames, setReligionNames] = useState<string[]>([])
   const [cultureNames, setCultureNames] = useState<string[]>([])
+  const [locationNames, setLocationNames] = useState<string[]>([])
   const [creatureNames, setCreatureNames] = useState<string[]>([])
+  const [characterNames, setCharacterNames] = useState<string[]>([])
   const [title, setTitle] = useState(article.title)
   const [content, setContent] = useState(article.content)
   const [articleType, setArticleType] = useState<ArticleType>(article.article_type as ArticleType)
@@ -498,30 +499,39 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
     setTags(() => { try { return JSON.parse(article.tags) } catch { return [] } })
     setCoverImage(article.cover_image || null)
     setPortraitImage(article.portrait_image || null)
-    setLootTableJson(article.loot_table || '{"name":"Loot","items":[]}')
     setDirty(false)
   }, [article.id])
 
   useEffect(() => { getArticleBacklinks(article.title).then(setBacklinks) }, [article.title])
 
-useEffect(() => {
-  if (!currentCampaign) return
-  window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'organization' }).then(organization =>
-    setOrganizationNames(organization.map(a => a.title).sort())
-  )
-  window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'faction' }).then(faction =>
-    setFactionNames(faction.map(a => a.title).sort())
-  )
-  window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'creature' }).then(creature =>
-    setCreatureNames(creature.map(a => a.title).sort())
-  )
-  window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'religion' }).then(religion =>
-    setReligionNames(religion.map(a => a.title).sort())
-  )
-  window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'culture' }).then(culture =>
-    setCultureNames(culture.map(a => a.title).sort())
-  )
-}, [currentCampaign?.id])
+  useEffect(() => {
+    if (!currentCampaign) return
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'faction' }).then(f =>
+      setFactionNames(f.map(a => a.title).sort())
+    )
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'organization' }).then(o =>
+      setOrganizationNames(o.map(a => a.title).sort())
+    )
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'religion' }).then(r =>
+      setReligionNames(r.map(a => a.title).sort())
+    )
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'culture' }).then(c =>
+      setCultureNames(c.map(a => a.title).sort())
+    )
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'creature' }).then(c =>
+      setCreatureNames(c.map(a => a.title).sort())
+    )
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'location' }).then(l =>
+      setLocationNames(l.map(a => a.title).sort())
+    )
+    // Characters + playerCharacters combined for Sender/Intended_Recipient on notes
+    Promise.all([
+      window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'character' }),
+      window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'playerCharacter' }),
+    ]).then(([chars, pcs]) =>
+      setCharacterNames([...chars, ...pcs].map(a => a.title).sort())
+    )
+  }, [currentCampaign?.id])
 
   const save = useCallback(async () => {
     if (!dirty) return
@@ -536,13 +546,13 @@ useEffect(() => {
     })
     setDirty(false)
     setSaving(false)
-  }, [article.id, dirty, title, content, articleType, tracks, statblock, tags, coverImage, portraitImage, updateArticle])
+  }, [article.id, dirty, title, content, articleType, tracks, statblock, lootTableJson, tags, coverImage, portraitImage, updateArticle])
 
   useEffect(() => {
     if (!dirty) return
     const t = setTimeout(save, 1500)
     return () => clearTimeout(t)
-  }, [dirty, title, content, articleType, tracks, statblock, tags, coverImage, portraitImage])
+  }, [dirty, title, content, articleType, tracks, statblock, lootTableJson, tags, coverImage, portraitImage])
 
   const pickImage = async (setter: (v: string | null) => void) => {
     const path = await window.api.selectImageFile()
@@ -580,11 +590,11 @@ useEffect(() => {
           style={{
             display: 'flex', alignItems: 'center', gap: 5, padding: '0 16px',
             background: 'transparent', border: 'none', borderRight: '1px solid var(--border)',
-            color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+            color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
             transition: 'color var(--transition)',
           }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}
         >
           <ChevronLeft size={14} /> Back to Wiki
         </button>
@@ -686,7 +696,7 @@ useEffect(() => {
                 key={article.id}
                 content={content}
                 onChange={v => { setContent(v); setDirty(true) }}
-                placeholder="Start writing… Use [[Article Title]] to link to wiki articles, (( to link to sessions."
+                placeholder="Start writing… Use [[Article Title]] to link to wiki articles, (( to link to sessions and @ to link spells."
                 onWikiLinkClick={navigateToArticleByTitle}
                 expandable
                 readOnly={readMode}
@@ -698,7 +708,16 @@ useEffect(() => {
               <div style={{ padding: '0 24px 32px' }}>
 
                 {/* Divider + heading */}
-                <SectionDivider label="Stat Block" />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0 20px' }}>
+                  <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, var(--border-light), transparent)' }} />
+                  <div style={{
+                    fontSize: 11, fontWeight: 700, color: 'var(--text-muted)',
+                    letterSpacing: '0.1em', textTransform: 'uppercase', flexShrink: 0,
+                  }}>
+                    Stat Block
+                  </div>
+                  <div style={{ flex: 1, height: 1, background: 'linear-gradient(270deg, var(--border-light), transparent)' }} />
+                </div>
 
                 {readMode ? (
                   statblockHasData ? (
@@ -731,13 +750,87 @@ useEffect(() => {
             {/* ── Loot table section — creature/character/playerCharacter ── */}
             {hasStatblock && (() => {
               const lootTable = parseLootTable(lootTableJson)
+              const lootSuggestions = articles
+                .filter(a => ['item', 'artifact', 'note'].includes(a.article_type))
+                .map(a => a.title)
               return (
                 <div style={{ padding: '0 24px 32px' }}>
-                    <SectionDivider label={lootTable.name || 'Loot'} />
+                  <SectionDivider label={lootTable.name || 'Loot'} />
                   {readMode ? (
                     lootTable.items.length > 0 ? (
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {lootTable.items.length} item{lootTable.items.length !== 1 ? 's' : ''} in table
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {lootTable.items.filter(i => i.chance === 100).length > 0 && (
+                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+                            Guaranteed
+                          </div>
+                        )}
+                        {lootTable.items.filter(i => i.chance === 100).map(item => {
+                          const isLink = articles.some(a => a.title.toLowerCase() === item.name.toLowerCase())
+                          return (
+                            <div key={item.id} style={{
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              padding: '6px 10px', borderRadius: 'var(--radius-sm)',
+                              border: '1px solid var(--border-gold)', background: 'var(--gold-glow)',
+                              fontSize: 12,
+                            }}>
+                              <span
+                                onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined}
+                                style={{
+                                  color: 'var(--gold)', fontWeight: 500, flex: 1,
+                                  cursor: isLink ? 'pointer' : 'default',
+                                  borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none',
+                                  width: 'fit-content',
+                                }}
+                              >{item.name}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Quantity: </span>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{item.quantity}</span>
+                                <span style={{
+                                  fontSize: 12, fontWeight: 700, marginLeft: 4,
+                                  color: '#3dbf7f',
+                                  background: 'var(--bg-surface)', padding: '2px 8px',
+                                  borderRadius: 99, border: '1px solid var(--border-light)',
+                                }}>{item.chance}%</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {lootTable.items.filter(i => i.chance < 100).length > 0 && (
+                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '8px 0 4px' }}>
+                            Random
+                          </div>
+                        )}
+                        {lootTable.items.filter(i => i.chance < 100).map(item => {
+                          const isLink = articles.some(a => a.title.toLowerCase() === item.name.toLowerCase())
+                          return (
+                            <div key={item.id} style={{
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              padding: '6px 10px', borderRadius: 'var(--radius-sm)',
+                              border: '1px solid var(--border-light)', background: 'var(--bg-elevated)',
+                              fontSize: 12,
+                            }}>
+                              <span
+                                onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined}
+                                style={{
+                                  color: isLink ? 'var(--gold)' : 'var(--text-secondary)', flex: 1,
+                                  cursor: isLink ? 'pointer' : 'default',
+                                  borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none',
+                                  width: 'fit-content',
+                                }}
+                              >{item.name}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Quantity: </span>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{item.quantity}</span>
+                                <span style={{
+                                  fontSize: 12, fontWeight: 700, marginLeft: 4,
+                                  color: item.chance >= 75 ? '#3dbf7f' : item.chance >= 40 ? '#c8a84b' : '#e88c3a',
+                                  background: 'var(--bg-surface)', padding: '2px 8px',
+                                  borderRadius: 99, border: '1px solid var(--border-light)',
+                                }}>{item.chance}%</span>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     ) : (
                       <div style={{ padding: '16px', textAlign: 'center', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: 12 }}>
@@ -749,6 +842,7 @@ useEffect(() => {
                       value={lootTable}
                       onChange={t => { setLootTableJson(JSON.stringify(t)); setDirty(true) }}
                       defaultName="Loot"
+                      suggestions={lootSuggestions}
                     />
                   )}
                 </div>
@@ -766,7 +860,7 @@ useEffect(() => {
 
             {/* Portrait */}
             <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
-              <div style={sidebarSectionLabel}>Portrait</div>
+              <div style={sidebarSectionLabel}>{article.title}</div>
               {portraitImage ? (
                 <div style={{ position: 'relative', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
                   <img src={`file://${portraitImage}`} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', display: 'block' }} />
@@ -847,11 +941,15 @@ useEffect(() => {
                         setDirty(true)
                       }}
                       dynamicOptions={
-                        trackName === 'Faction' ? factionNames :
-                        trackName === 'Organization' ? organizationNames :
-                        trackName === 'Religion' ? religionNames :
-                        trackName === 'Culture' ? cultureNames :
-                        trackName === 'Species' ? creatureNames :
+                        trackName === 'Faction'             ? factionNames :
+                        trackName === 'Organization'        ? organizationNames :
+                        trackName === 'Religion'            ? religionNames :
+                        trackName === 'Culture'             ? cultureNames :
+                        trackName === 'Species'             ? creatureNames :
+                        trackName === 'Location'            ? locationNames :
+                        trackName === 'HQ'                  ? locationNames :
+                        trackName === 'Sender'              ? characterNames :
+                        trackName === 'Intended_Recipient'  ? characterNames :
                         undefined
                       }
                     />

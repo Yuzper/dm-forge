@@ -23,11 +23,22 @@ function initDatabase() {
       updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS arcs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      name        TEXT    NOT NULL,
+      color       TEXT    NOT NULL DEFAULT '#c8a84b',
+      is_default  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS sessions (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       campaign_id    INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
       name           TEXT    NOT NULL,
       session_number INTEGER NOT NULL DEFAULT 1,
+      session_sub    TEXT    NOT NULL DEFAULT '',
+      arc_id         INTEGER,
       date           TEXT,
       notes          TEXT    NOT NULL DEFAULT '',
       created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -111,6 +122,20 @@ function initDatabase() {
   if (!creatureCols.some((c) => c.name === "loot_result")) {
     db.exec(`ALTER TABLE combat_creatures ADD COLUMN loot_result TEXT`);
   }
+  if (!creatureCols.some((c) => c.name === "resources")) {
+    db.exec(`ALTER TABLE combat_creatures ADD COLUMN resources TEXT NOT NULL DEFAULT '[]'`);
+  }
+  const sessionCols = db.pragma("table_info(sessions)");
+  if (!sessionCols.some((c) => c.name === "session_sub")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN session_sub TEXT NOT NULL DEFAULT ''`);
+  }
+  if (!sessionCols.some((c) => c.name === "arc_id")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN arc_id INTEGER`);
+  }
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_unique
+    ON sessions(campaign_id, session_number, session_sub)
+  `);
   return { userDataPath, imagesPath };
 }
 function processAndSaveImage(srcPath, destDir, baseName, maxWidth, quality = 85) {
@@ -232,14 +257,14 @@ function registerIPC(imagesPath) {
       LEFT JOIN maps m ON m.session_id = s.id
       WHERE s.campaign_id = ?
       GROUP BY s.id
-      ORDER BY s.session_number ASC
+      ORDER BY s.session_number ASC, s.session_sub ASC
     `).all(campaignId);
   });
   electron.ipcMain.handle("sessions:create", (_e, data) => {
     const result = db.prepare(`
-      INSERT INTO sessions (campaign_id, name, session_number, date, notes)
-      VALUES (@campaign_id, @name, @session_number, @date, @notes)
-    `).run({ date: null, notes: "", ...data });
+      INSERT INTO sessions (campaign_id, name, session_number, session_sub, arc_id, date, notes)
+      VALUES (@campaign_id, @name, @session_number, @session_sub, @arc_id, @date, @notes)
+    `).run({ date: null, notes: "", session_sub: "", arc_id: null, ...data });
     return db.prepare("SELECT * FROM sessions WHERE id = ?").get(result.lastInsertRowid);
   });
   electron.ipcMain.handle("sessions:update", (_e, id, data) => {
@@ -252,6 +277,46 @@ function registerIPC(imagesPath) {
     const maps = db.prepare("SELECT image_path FROM maps WHERE session_id = ?").all(id);
     db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
     for (const map of maps) safeUnlinkRelative(map.image_path, userDataPath);
+  });
+  electron.ipcMain.handle("arcs:get-all", (_e, campaignId) => {
+    let arcs = db.prepare(
+      "SELECT * FROM arcs WHERE campaign_id = ? ORDER BY name ASC"
+    ).all(campaignId);
+    if (arcs.length === 0) {
+      const result = db.prepare(`
+        INSERT INTO arcs (campaign_id, name, color, is_default)
+        VALUES (?, 'Main Story', '#c8a84b', 1)
+      `).run(campaignId);
+      arcs = [db.prepare("SELECT * FROM arcs WHERE id = ?").get(result.lastInsertRowid)];
+    }
+    return arcs.map((a) => ({ ...a, is_default: a.is_default === 1 }));
+  });
+  electron.ipcMain.handle("arcs:create", (_e, data) => {
+    const result = db.prepare(`
+      INSERT INTO arcs (campaign_id, name, color, is_default)
+      VALUES (@campaign_id, @name, @color, 0)
+    `).run({ color: "#c8a84b", ...data });
+    const arc = db.prepare("SELECT * FROM arcs WHERE id = ?").get(result.lastInsertRowid);
+    return { ...arc, is_default: false };
+  });
+  electron.ipcMain.handle("arcs:update", (_e, id, data) => {
+    const fields = Object.keys(data).map((k) => `${k} = @${k}`).join(", ");
+    db.prepare(`UPDATE arcs SET ${fields} WHERE id = @id`).run({ ...data, id });
+    const arc = db.prepare("SELECT * FROM arcs WHERE id = ?").get(id);
+    return { ...arc, is_default: arc.is_default === 1 };
+  });
+  electron.ipcMain.handle("arcs:delete", (_e, id) => {
+    const arc = db.prepare("SELECT * FROM arcs WHERE id = ?").get(id);
+    if (!arc) return { success: false, error: "Arc not found" };
+    if (arc.is_default) return { success: false, error: "Cannot delete the default arc" };
+    const defaultArc = db.prepare(
+      "SELECT id FROM arcs WHERE campaign_id = ? AND is_default = 1"
+    ).get(arc.campaign_id);
+    if (defaultArc) {
+      db.prepare("UPDATE sessions SET arc_id = ? WHERE arc_id = ?").run(defaultArc.id, id);
+    }
+    db.prepare("DELETE FROM arcs WHERE id = ?").run(id);
+    return { success: true };
   });
   electron.ipcMain.handle("maps:get-all", (_e, sessionId) => {
     return db.prepare(`
@@ -480,7 +545,8 @@ function registerIPC(imagesPath) {
     const stmt = db.prepare(`
       UPDATE combat_creatures
       SET current_hp = @current_hp, ac_override = @ac_override,
-          is_dead = @is_dead, initiative = @initiative
+          is_dead = @is_dead, initiative = @initiative,
+          resources = @resources
       WHERE id = @id
     `);
     const transaction = db.transaction((list) => {

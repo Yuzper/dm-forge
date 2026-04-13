@@ -4,7 +4,7 @@
 
 :root {
   /* Palette */
-  --bg-base:       #0c0a08;
+  --bg-base:       #0d0b09;
   --bg-surface:    #15120e;
   --bg-elevated:   #1e1a14;
   --bg-hover:      #26211a;
@@ -229,43 +229,48 @@ select.input {
   height: 0;
 }
 
+/* Wiki links inside editor */
+.wiki-link {
+  color:  #efc750;
+  border-bottom: 1px dashed var(--gold-dim);
+  cursor: pointer;
+  transition: color var(--transition);
+  font-style: italic;
+}
+.wiki-link:hover { color: #927b35; border-bottom-style: solid; }
+
+.wiki-link-broken {
+  color: #e05555 !important;
+  border-bottom-color: #e05555 !important;
+  opacity: 0.85;
+}
+
 /* Session links inside editor */
 .session-link {
-  color: #5b9fe8;
-  border-bottom: 1px solid rgba(91,159,232,0.5);
-  cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease;
+  color: #4697ed;
+  border-bottom: 1px dashed #5b9fe844;
+  cursor: help;
+  transition: color var(--transition);
+  font-style: italic;
 }
-.session-link:hover {
-  color: #7db8f0;
-  border-bottom-color: transparent;
-}
+.session-link:hover { color: #4c71b0; border-bottom-style: solid; }
 
 .session-link-broken {
-  color: var(--crimson, #c23b3b);
-  border-bottom: 1px dashed var(--crimson-dim, #8b2533);
-  cursor: pointer;
+  color: #e05555 !important;
+  border-bottom-color: #e05555 !important;
+  opacity: 0.85;
 }
 
-/* Wiki links */
-.wiki-link {
-  color: var(--gold);
-  border-bottom: 1px solid var(--gold-dim);
-  cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease;
-}
 
-.wiki-link:hover {
-  color: var(--gold-dim);
-  border-bottom-color: transparent;
+/* Spell links inside editor */
+.spell-link {
+  color: #8b63f1;
+  border-bottom: 1px dashed #9b7de844;
+  cursor: help;
+  transition: color var(--transition);
+  font-style: italic;
 }
-
-/* Broken wiki links — article not found */
-.wiki-link-broken {
-  color: var(--crimson, #c23b3b);
-  border-bottom: 1px dashed var(--crimson-dim, #8b2533);
-  cursor: pointer;
-}
+.spell-link:hover { color: #6043a8; border-bottom-style: solid; }
 
 /* ─── POI Type Colors ─────────────────────────────────────────────────────── */
 .poi-location  { --poi-color: #c8a84b; }

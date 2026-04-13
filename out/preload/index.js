@@ -12,6 +12,11 @@ electron.contextBridge.exposeInMainWorld("api", {
   createSession: (data) => electron.ipcRenderer.invoke("sessions:create", data),
   updateSession: (id, data) => electron.ipcRenderer.invoke("sessions:update", id, data),
   deleteSession: (id) => electron.ipcRenderer.invoke("sessions:delete", id),
+  // Arcs
+  getArcs: (campaignId) => electron.ipcRenderer.invoke("arcs:get-all", campaignId),
+  createArc: (data) => electron.ipcRenderer.invoke("arcs:create", data),
+  updateArc: (id, data) => electron.ipcRenderer.invoke("arcs:update", id, data),
+  deleteArc: (id) => electron.ipcRenderer.invoke("arcs:delete", id),
   // Maps
   getMaps: (sessionId) => electron.ipcRenderer.invoke("maps:get-all", sessionId),
   createMap: (data) => electron.ipcRenderer.invoke("maps:create", data),

@@ -14,7 +14,7 @@ import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
 
 export default function POIPanel({ readMode }: { readMode?: boolean }) {
-  const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI } = useStore()
+  const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI, articles, navigateToArticleByTitle, currentCampaign } = useStore()
   const [label, setLabel] = useState('')
   const [poiType, setPoiType] = useState<POIType>('location')
   const [content, setContent] = useState('')
@@ -23,6 +23,18 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
   const [saving, setSaving] = useState(false)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
   const [lootResult, setLootResult] = useState<LootItem[] | null>(null)
+  const [lootSuggestions, setLootSuggestions] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!currentCampaign) return
+    Promise.all([
+      window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'item' }),
+      window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'artifact' }),
+      window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'note' }),
+    ]).then(([items, artifacts, notes]) =>
+      setLootSuggestions([...items, ...artifacts, ...notes].map(a => a.title).sort())
+    )
+  }, [currentCampaign?.id])
   
 
   useEffect(() => {
@@ -179,18 +191,87 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
           <SectionDivider label={lootTable.name || 'Loot'} margin="8px 0 14px" />
 
           {readMode ? (
-            // Read mode: show generate button if items exist, else placeholder
             hasLootItems ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {lootTable.items.length} item{lootTable.items.length !== 1 ? 's' : ''} in table
-                  {' · '}{lootTable.items.filter(i => i.chance === 100).length} guaranteed
-                  {' · '}{lootTable.items.filter(i => i.chance < 100).length} random
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {lootTable.items.filter(i => i.chance === 100).length > 0 && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+                    Guaranteed
+                  </div>
+                )}
+                {lootTable.items.filter(i => i.chance === 100).map(item => {
+                  const isLink = articles.some(a => a.title.toLowerCase() === item.name.toLowerCase())
+                  return (
+                  <div key={item.id} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '6px 10px', borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-gold)', background: 'var(--gold-glow)',
+                    fontSize: 12,
+                  }}>
+                    <span
+                      onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined}
+                      style={{
+                        color: 'var(--gold)', fontWeight: 500, flex: 1,
+                        cursor: isLink ? 'pointer' : 'default',
+                        borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none',
+                        width: 'fit-content',
+                      }}
+                    >{item.name}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Quantity: </span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{item.quantity}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, marginLeft: 4,
+                        color: '#3dbf7f',
+                        background: 'var(--bg-surface)',
+                        padding: '2px 8px',
+                        borderRadius: 99,
+                        border: '1px solid var(--border-light)'}}>
+                        {item.chance}%</span>
+                    </div>
+                  </div>
+                  )
+                })}
+                {lootTable.items.filter(i => i.chance < 100).length > 0 && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '8px 0 4px' }}>
+                    Random
+                  </div>
+                )}
+                {lootTable.items.filter(i => i.chance < 100).map(item => {
+                  const isLink = articles.some(a => a.title.toLowerCase() === item.name.toLowerCase())
+                  return (
+                  <div key={item.id} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '6px 10px', borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-light)', background: 'var(--bg-elevated)',
+                    fontSize: 12,
+                  }}>
+                    <span
+                      onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined}
+                      style={{
+                        color: isLink ? 'var(--gold)' : 'var(--text-secondary)', flex: 1,
+                        cursor: isLink ? 'pointer' : 'default',
+                        borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none',
+                        width: 'fit-content',
+                      }}
+                    >{item.name}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Quantity: </span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{item.quantity}</span>
+                      <span style={{
+                        fontSize: 12, fontWeight: 700, marginLeft: 4,
+                        color: item.chance >= 75 ? '#3dbf7f' : item.chance >= 40 ? '#c8a84b' : '#e88c3a',
+                        background: 'var(--bg-surface)', padding: '2px 8px',
+                        borderRadius: 99, border: '1px solid var(--border-light)',
+                      }}>
+                        {item.chance}%
+                      </span>
+                    </div>
+                  </div>
+                  )
+                })}
                 <button
                   className="btn btn-sm"
                   onClick={handleGenerateLoot}
-                  style={{ alignSelf: 'flex-start', gap: 6 }}
+                  style={{ alignSelf: 'flex-start', gap: 6, marginTop: 8 }}
                 >
                   <PackageOpen size={12} /> Generate Loot
                 </button>
@@ -205,11 +286,11 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
               </div>
             )
           ) : (
-            // Edit mode: show full loot table editor
             <LootTableEditor
               value={lootTable}
               onChange={t => { setLootTableJson(JSON.stringify(t)); setDirty(true) }}
               defaultName="Loot"
+              suggestions={lootSuggestions}
             />
           )}
         </div>

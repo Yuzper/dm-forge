@@ -8,13 +8,11 @@ import type { CombatEncounter, CombatCreature, ArticleSummary, LootItem } from '
 import { parseStatBlock, calcHpAverage, rollHp, parseLootTable, generateLoot } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
-
 type Tab = 'general' | 'combatants'
 
 export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI } = useStore()
   const { currentCampaign } = useStore()
-  
 
   // ── General text state ─────────────────────────────────────────────────────
   const [label, setLabel] = useState('')
@@ -74,6 +72,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
           p.creatures.map(c => ({
             id: c.id, current_hp: c.current_hp,
             ac_override: c.ac_override, is_dead: c.is_dead, initiative: c.initiative,
+            resources: c.resources ?? '[]',
           }))
         )
       }
@@ -106,6 +105,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
         creatures.map(c => ({
           id: c.id, current_hp: c.current_hp,
           ac_override: c.ac_override, is_dead: c.is_dead, initiative: c.initiative,
+          resources: c.resources ?? '[]',
         }))
       )
       setCreaturesDirty(false)
@@ -143,11 +143,10 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
     window.api.openStatBlockWindow(articleId)
   }, [])
 
-  const handleLootGenerated = useCallback(async (creatureId: number, result: LootItem[], articleId: number) => {
-    // result already contains the article's own loot roll
-    // now check if the article is a character with a species
+  // ── Loot generation with species chain ─────────────────────────────────────
+  const handleLootGenerated = useCallback(async (creatureId: number, result: LootItem[], articleId: number): Promise<LootItem[]> => {
     const full = await window.api.getArticle(articleId)
-    if (full && (full.article_type === 'character' || full.article_type === 'playerCharacter')) {
+    if (full && (full.article_type === 'character' || full.article_type === 'playerCharacter' || full.article_type === 'creature')) {
       try {
         const tracks = JSON.parse(full.tracks) as Record<string, string>
         const speciesName = tracks['Species']
@@ -159,9 +158,12 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
             result = [...result, ...speciesRoll]
           }
         }
-      } catch {}
+      } catch (e) {
+        console.error('Species loot error:', e)
+      }
     }
     await window.api.saveLootResult(creatureId, result)
+    return result
   }, [currentCampaign])
 
   // ── Sort creatures by initiative (desc, nulls last) ────────────────────────
@@ -225,12 +227,11 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
           )}
           {!readMode && (
             <button
-              className="btn btn-ghost btn-icon btn-sm btn-danger"
+              className="btn btn-sm btn-danger"
               onClick={() => triggerDelete(() => deletePOI(selectedPOI.id))}
-              title={confirmDelete ? 'Click again to confirm' : 'Delete POI'}
-              style={{ border: confirmDelete ? '1px solid var(--crimson-dim)' : undefined }}
+              style={{ padding: '3px 8px', fontSize: 11, border: confirmDelete ? '1px solid var(--crimson)' : undefined }}
             >
-              <Trash2 size={13} />
+              {confirmDelete ? 'Confirm delete' : 'Delete'}
             </button>
           )}
           <button className="btn btn-ghost btn-icon btn-sm" onClick={handleClose} title="Close" disabled={saving}>

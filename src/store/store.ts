@@ -1,6 +1,6 @@
 // path: src/store/store.ts
 import { create } from 'zustand'
-import type { Campaign, Session, GameMap, POI, Article, ArticleSummary, ArticleType, CreateArticleInput } from '../types'
+import type { Campaign, Session, Arc, GameMap, POI, Article, ArticleSummary, ArticleType } from '../types'
 
 type View = 'campaigns' | 'campaign' | 'session' | 'wiki'
 
@@ -38,9 +38,17 @@ interface AppStore {
   currentSession: Session | null
   loadSessions: (campaignId: number) => Promise<void>
   selectSession: (s: Session) => void
-  createSession: (data: { name: string; session_number: number; date?: string }) => Promise<void>
+  createSession: (data: { name: string; session_number: number; session_sub?: string; arc_id?: number | null; date?: string }) => Promise<void>
   deleteSession: (id: number) => Promise<void>
   updateSession: (id: number, data: Partial<Session>) => Promise<void>
+
+  arcs: Arc[]
+  lastUsedArcId: Record<number, number>
+  loadArcs: (campaignId: number) => Promise<void>
+  createArc: (data: { name: string; color?: string }) => Promise<void>
+  updateArc: (id: number, data: { name?: string; color?: string }) => Promise<void>
+  deleteArc: (id: number) => Promise<void>
+  setLastUsedArcId: (campaignId: number, arcId: number) => void
 
   // Map state
   maps: GameMap[]
@@ -78,7 +86,7 @@ interface AppStore {
   selectArticle: (a: Article | null) => void
   navigateToArticleByTitle: (title: string) => Promise<void>
   createArticle: (data: { title: string; article_type: ArticleType }) => Promise<Article>
-  updateArticle: (id: number, data: Partial<CreateArticleInput>) => Promise<void>
+  updateArticle: (id: number, data: Partial<Article>) => Promise<void>
   deleteArticle: (id: number) => Promise<void>
   setWikiFilter: (f: ArticleType | 'all') => void
   setWikiSearch: (s: string) => void
@@ -139,11 +147,13 @@ export const useStore = create<AppStore>((set, get) => ({
         set({
           currentCampaign: entry.campaign, view: 'campaign',
           sessions: [], currentSession: null,
+          arcs: [],
           maps: [], currentMap: null,
           pois: [], selectedPOI: null,
           articles: [], currentArticle: null,
         })
         get().loadSessions(entry.campaign.id)
+        get().loadArcs(entry.campaign.id)
         break
 
       case 'session':
@@ -208,6 +218,7 @@ export const useStore = create<AppStore>((set, get) => ({
     set(s => ({
       currentCampaign: campaign, view: 'campaign',
       sessions: [], currentSession: null,
+      arcs: [],
       maps: [], currentMap: null,
       pois: [], selectedPOI: null,
       articles: [], currentArticle: null,
@@ -216,6 +227,7 @@ export const useStore = create<AppStore>((set, get) => ({
       }),
     }))
     get().loadSessions(campaign.id)
+    get().loadArcs(campaign.id)
   },
 
   createCampaign: async (data) => {
@@ -260,7 +272,7 @@ export const useStore = create<AppStore>((set, get) => ({
       sessionReadMode: true,
       navigationHistory: pushEntry(s.navigationHistory, {
         type: 'session',
-        label: `Session ${session.session_number}: ${session.name}`,
+        label: `Session ${session.session_number}${session.session_sub ?? ''}: ${session.name}`,
         campaign: currentCampaign,
         session,
       }),
@@ -285,7 +297,7 @@ export const useStore = create<AppStore>((set, get) => ({
       // Update label in history if this session appears there
       navigationHistory: s.navigationHistory.map(e =>
         e.type === 'session' && e.session.id === id
-          ? { ...e, session: { ...e.session, ...data }, label: `Session ${e.session.session_number}: ${(data as any).name ?? e.session.name}` }
+          ? { ...e, session: { ...e.session, ...data }, label: `Session ${(data as any).session_number ?? e.session.session_number}${(data as any).session_sub ?? e.session.session_sub ?? ''}: ${(data as any).name ?? e.session.name}` }
           : e
       ),
     }))
@@ -300,8 +312,51 @@ export const useStore = create<AppStore>((set, get) => ({
     set(s => ({ navigationHistory: s.navigationHistory.filter(e => !(e.type === 'session' && e.session.id === id)) }))
   },
 
-  // ── Maps ────────────────────────────────────────────────────────────────────
+  // ── Arcs ─────────────────────────────────────────────────────────────────────
 
+  arcs: [],
+
+  lastUsedArcId: (() => {
+    try { return JSON.parse(localStorage.getItem('dmforge:last-arc-id') ?? '{}') } catch { return {} }
+  })(),
+
+  loadArcs: async (campaignId) => {
+    const arcs = await window.api.getArcs(campaignId)
+    set({ arcs })
+  },
+
+  createArc: async (data) => {
+    const { currentCampaign } = get()
+    if (!currentCampaign) return
+    await window.api.createArc({ campaign_id: currentCampaign.id, ...data })
+    await get().loadArcs(currentCampaign.id)
+  },
+
+  updateArc: async (id, data) => {
+    await window.api.updateArc(id, data)
+    set(s => ({ arcs: s.arcs.map(a => a.id === id ? { ...a, ...data } : a) }))
+  },
+
+  deleteArc: async (id) => {
+    const result = await window.api.deleteArc(id)
+    if (result.success) {
+      const { currentCampaign } = get()
+      if (currentCampaign) {
+        await get().loadArcs(currentCampaign.id)
+        await get().loadSessions(currentCampaign.id)
+      }
+    }
+  },
+
+  setLastUsedArcId: (campaignId, arcId) => {
+    set(s => {
+      const updated = { ...s.lastUsedArcId, [campaignId]: arcId }
+      try { localStorage.setItem('dmforge:last-arc-id', JSON.stringify(updated)) } catch {}
+      return { lastUsedArcId: updated }
+    })
+  },
+
+  // ── Maps ────────────────────────────────────────────────────────────────────
   maps: [],
   currentMap: null,
 
@@ -357,7 +412,7 @@ export const useStore = create<AppStore>((set, get) => ({
   createPOI: async (x, y) => {
     const { currentMap } = get()
     if (!currentMap) return
-    const poi = await window.api.createPOI({ map_id: currentMap.id, label: 'New POI', x, y })
+    const poi = await window.api.createPOI({ map_id: currentMap.id, label: 'New Point of Interest', x, y })
     set(s => ({ pois: [...s.pois, poi], selectedPOI: poi, poiPanelOpen: true }))
   },
 
