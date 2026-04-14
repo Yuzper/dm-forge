@@ -39,6 +39,10 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   character: {
     Vitality:    ['Alive', 'Dead', 'Unknown', 'Missing', 'Immortal'],
     Disposition: ['Friendly', 'Neutral', 'Hostile'],
+    Attitude_Towards_Party: ['Friendly', 'Neutral', 'Hostile', 'Unknown'],
+    Age:         [],
+    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned'],
+    Title:       ['Professor','Captain' ,'General', 'Admiral', 'Archmage', 'High Priest'],
     Location:    [],
     Faction:     [],
     Religion:    [],
@@ -47,17 +51,20 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   playerCharacter: {
     Vitality:    ['Alive', 'Dead', 'Unknown', 'Retired', 'Immortal'],
     Disposition: ['Friendly', 'Neutral', 'Hostile'],
+    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned'],
+    Title:       ['Professor','Captain' ,'General', 'Admiral', 'Archmage', 'High Priest'],
+    Age:         [],
     Location:    [],
     Faction:     [],
     Religion:    [],
     Culture:     [],
   },
   creature: {
-    Vitality:    ['Living', 'Extinct', 'Threatened','Unknown'],
+    Vitality:    ['Living', 'Extinct', 'Endangered', 'Unknown'],
     Disposition: ['Hostile', 'Neutral', 'Friendly'],
-    Awareness:   ['Unaware', 'Alerted', 'Hunting'],
+    Creature_Type: ['Beast', 'Dragon', 'Fiend', 'Celestial', 'Fey', 'Undead', 'Aberration', 'Humanoid', 'Construct', 'Elemental', 'Giant', 'Monstrosity', 'Ooze', 'Plant'],
     Size:        ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'],
-    Location:    [],
+    Habitat:    ['Forest', 'Desert', 'Mountain', 'Swamp', 'Ocean', 'Underdark', 'Urban', 'Arctic', 'Plains'],
   },
   location: {
     State:  ['Discovered', 'Undiscovered','Destroyed', 'Abandoned'],
@@ -68,12 +75,18 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   faction: {
     Status: ['Active', 'Disbanded', 'Unknown'],
     Scale:  ['Local', 'Regional', 'National', 'Global', 'Secret'],
+    Leader: [],
     HQ:     [],
+    Allies: [],
+    Rivals: [],
   },
   organization: {
     Status: ['Active', 'Disbanded', 'Unknown'],
     Scale:  ['Local', 'Regional', 'National', 'Global', 'Secret'],
+    Leader: [],
     HQ:     [],
+    Allies: [],
+    Rivals: [],
   },
   quest: {
     Status:     ['Active', 'Completed', 'Failed', 'Abandoned'],
@@ -88,13 +101,24 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Status: ['Upcoming', 'Ongoing', 'Past'],
     Scale:  ['Personal', 'Local', 'Regional', 'World-shaking'],
   },
-  culture:  { Status: ['Active', 'Extinct', 'Unknown'] },
-  religion: { Status: ['Active','Undercover', 'Extinct', 'Unknown'] },
+  culture:  { Status: ['Active','Undercover', 'Extinct', 'Unknown'] },
+  religion: {
+    Status: ['Active','Undercover', 'Extinct', 'Unknown'],
+    Leader: [],
+    Holy_Symbol: [],
+    Follower_Count: [],
+    Allies: [],
+    Rivals: [],
+    Sacred_Sites: [],
+
+  },
   lore:     { Status: ['Active', 'Extinct', 'Unknown'] },
   note: {
     Sender:             [],   // dynamic: character names
     Intended_Recipient: [],   // dynamic: character names
     Language:           [],
+    Date:               [],
+    Location:           []
   },
   other:    { Status: ['Active', 'Inactive', 'Unknown'] },
 }
@@ -950,6 +974,9 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                         trackName === 'HQ'                  ? locationNames :
                         trackName === 'Sender'              ? characterNames :
                         trackName === 'Intended_Recipient'  ? characterNames :
+                        trackName === 'Leader'              ? characterNames :
+                        trackName === 'Allies'              ? [characterNames, organizationNames, factionNames, religionNames].flat() :
+                        trackName === 'Rivals'              ? [characterNames, organizationNames, factionNames, religionNames].flat() :
                         undefined
                       }
                     />
