@@ -272,6 +272,12 @@ select.input {
 }
 .spell-link:hover { color: #6043a8; border-bottom-style: solid; }
 
+.spell-link-broken {
+  color: #e05555 !important;
+  border-bottom-color: #e05555 !important;
+  opacity: 0.85;
+}
+
 /* ─── POI Type Colors ─────────────────────────────────────────────────────── */
 .poi-location  { --poi-color: #c8a84b; }
 .poi-character { --poi-color: #5bbfb0; }

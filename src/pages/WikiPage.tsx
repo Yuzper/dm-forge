@@ -45,7 +45,7 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Culture:     [],
   },
   playerCharacter: {
-    Vitality:    ['Alive', 'Dead', 'Unknown', 'Retired'],
+    Vitality:    ['Alive', 'Dead', 'Unknown', 'Retired', 'Immortal'],
     Disposition: ['Friendly', 'Neutral', 'Hostile'],
     Location:    [],
     Faction:     [],

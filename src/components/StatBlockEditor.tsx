@@ -209,16 +209,6 @@ export default function StatBlockEditor({ value, onChange }: Props) {
         })}
       </div>
 
-      {/* ── CR ── */}
-      <SectionDivider label="Challenge Rating" />
-      <input
-        className="input"
-        style={{ height: 34, fontSize: 13, width: 100 }}
-        placeholder="1/4, 1, 5…"
-        value={value.cr}
-        onChange={e => set('cr', e.target.value)}
-      />
-
       {/* ── Other Fields ── */}
       <SectionDivider label="Details" />
       {([

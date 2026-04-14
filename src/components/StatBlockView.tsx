@@ -139,9 +139,6 @@ export default function StatBlockView({ statblock: sb, name, articleType }: Prop
         }}>
           {name}
         </div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-          {articleType === 'character' ? 'Character' : 'Creature'} · CR {sb.cr}
-        </div>
       </div>
 
       <div style={{ padding: '12px 16px' }}>
@@ -190,7 +187,6 @@ export default function StatBlockView({ statblock: sb, name, articleType }: Prop
         <StatRow label="Skills" value={sb.skills} />
         <StatRow label="Senses" value={sb.senses} />
         <StatRow label="Languages" value={sb.languages} />
-        <StatRow label="Proficiency Bonus"    value={sb.proficiencyBonus} />
         <StatRow label="Damage Immunities"    value={sb.damageImmunities} />
         <StatRow label="Damage Resistances"   value={sb.damageResistances} />
         <StatRow label="Condition Immunities" value={sb.conditionImmunities} />

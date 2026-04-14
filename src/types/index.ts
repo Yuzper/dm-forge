@@ -102,7 +102,6 @@ export interface StatBlock {
   speed: string
   str: number; dex: number; con: number
   int: number; wis: number; cha: number
-  cr: string
   savingThrows: string
   skills: string
   senses: string
@@ -110,7 +109,6 @@ export interface StatBlock {
   damageImmunities: string
   damageResistances: string
   conditionImmunities: string
-  proficiencyBonus: string
   traits: StatBlockEntry[]
   actions: StatBlockEntry[]
   bonusActions: StatBlockEntry[]
@@ -125,8 +123,7 @@ export const DEFAULT_STATBLOCK: StatBlock = {
   hpDice: { count: 1, die: 8, bonus: 0 },
   speed: '30 ft.',
   str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
-  cr: '0',
-  savingThrows: '', skills: '', senses: '', languages: '', proficiencyBonus: '',
+  savingThrows: '', skills: '', senses: '', languages: '',
   damageImmunities: '', damageResistances: '', conditionImmunities: '',
   traits: [], actions: [], bonusActions: [], reactions: [], legendaryActions: [],
   cantrips: [], preparedSpells: [],
