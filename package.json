@@ -1,6 +1,6 @@
 {
   "name": "dm-forge",
-  "version": "0.2.0",
+  "version": "0.4.1",
   "description": "A DM's companion for planning and running D&D sessions",
   "main": "out/main/index.js",
   "scripts": {
@@ -45,7 +45,8 @@
   },
   "build": {
     "appId": "com.dmforge.app",
-    "productName": "DM Forge",
+    "productName": "DM-Forge",
+    "artifactName": "${productName}-Setup-${version}.${ext}",
     "directories": {
       "output": "dist"
     },
