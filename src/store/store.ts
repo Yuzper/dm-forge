@@ -2,11 +2,9 @@
 import { create } from 'zustand'
 import type { Campaign, Session, Arc, GameMap, POI, Article, ArticleSummary, ArticleType } from '../types'
 
-type View = 'campaigns' | 'campaign' | 'session' | 'wiki'
+type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes'
 
 // ── Navigation History ────────────────────────────────────────────────────────
-// Each entry stores enough context to reconstruct the navigation on back/click.
-// Max 5 entries. Most recent is last.
 
 export type HistoryEntry =
   | { type: 'campaign'; label: string; campaign: Campaign }
@@ -18,11 +16,13 @@ interface AppStore {
   // Navigation
   view: View
   setView: (v: View) => void
+  campaignSubView: 'hub' | 'sessions'
+  setCampaignSubView: (v: 'hub' | 'sessions') => void
   navigationHistory: HistoryEntry[]
   navigateBack: () => Promise<void>
   navigateToSessionById: (sessionId: number) => Promise<void>
   navigateToHistoryEntry: (index: number) => Promise<void>
-  _navigateToEntry: (entry: HistoryEntry) => Promise<void>   // internal, doesn't push to history
+  _navigateToEntry: (entry: HistoryEntry) => Promise<void>
 
   // Campaign state
   campaigns: Campaign[]
@@ -96,9 +96,6 @@ interface AppStore {
   getArticleBacklinks: (title: string) => Promise<ArticleSummary[]>
 }
 
-// Internal helper — push an entry to history, capping at 5.
-// Deduplicates consecutive identical entries so refreshing the same view
-// doesn't stack up.
 function pushEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
   const last = history[history.length - 1]
   if (last) {
@@ -107,45 +104,42 @@ function pushEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[]
       (entry.type !== 'article' || (last as any).articleId === (entry as any).articleId) &&
       (entry.type !== 'session' || (last as any).session.id === (entry as any).session.id)
     ) {
-      // Same destination — replace rather than push
       return [...history.slice(0, -1), entry]
     }
   }
-  return [...history.slice(-4), entry]   // keep last 5
+  return [...history.slice(-4), entry]
 }
-
-  // ── Navigation ──────────────────────────────────────────────────────────────
 
 export const useStore = create<AppStore>((set, get) => ({
   view: 'campaigns',
   setView: (view) => set({ view }),
+  campaignSubView: 'hub',
+  setCampaignSubView: (campaignSubView) => set({ campaignSubView }),
   navigationHistory: [],
 
   navigateBack: async () => {
     const { navigationHistory } = get()
     if (navigationHistory.length < 2) return
     const prev = navigationHistory[navigationHistory.length - 2]
-    // Trim history to the entry we're going back to
     set({ navigationHistory: navigationHistory.slice(0, -1) })
     await get()._navigateToEntry(prev)
   },
 
   navigateToHistoryEntry: async (index: number) => {
-      const { navigationHistory } = get()
-      const entry = navigationHistory[index]
-      if (!entry) return
-      // Remove the entry from its current position and push it to the end (most recent)
-      const without = navigationHistory.filter((_, i) => i !== index)
-      set({ navigationHistory: [...without.slice(-4), entry] })
-      await get()._navigateToEntry(entry)
-    },
+    const { navigationHistory } = get()
+    const entry = navigationHistory[index]
+    if (!entry) return
+    const without = navigationHistory.filter((_, i) => i !== index)
+    set({ navigationHistory: [...without.slice(-4), entry] })
+    await get()._navigateToEntry(entry)
+  },
 
-    // Internal navigation without pushing to history — called by back/history clicks
   _navigateToEntry: async (entry: HistoryEntry) => {
     switch (entry.type) {
       case 'campaign':
         set({
           currentCampaign: entry.campaign, view: 'campaign',
+          campaignSubView: 'hub',
           sessions: [], currentSession: null,
           arcs: [],
           maps: [], currentMap: null,
@@ -217,6 +211,7 @@ export const useStore = create<AppStore>((set, get) => ({
   selectCampaign: (campaign) => {
     set(s => ({
       currentCampaign: campaign, view: 'campaign',
+      campaignSubView: 'hub',
       sessions: [], currentSession: null,
       arcs: [],
       maps: [], currentMap: null,
@@ -294,7 +289,6 @@ export const useStore = create<AppStore>((set, get) => ({
     set(s => ({
       sessions: s.sessions.map(s2 => s2.id === id ? { ...s2, ...data } : s2),
       currentSession: s.currentSession?.id === id ? { ...s.currentSession!, ...data } : s.currentSession,
-      // Update label in history if this session appears there
       navigationHistory: s.navigationHistory.map(e =>
         e.type === 'session' && e.session.id === id
           ? { ...e, session: { ...e.session, ...data }, label: `Session ${(data as any).session_number ?? e.session.session_number}${(data as any).session_sub ?? e.session.session_sub ?? ''}: ${(data as any).name ?? e.session.name}` }
@@ -357,6 +351,7 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   // ── Maps ────────────────────────────────────────────────────────────────────
+
   maps: [],
   currentMap: null,
 
@@ -515,7 +510,6 @@ export const useStore = create<AppStore>((set, get) => ({
         updated_at:   updated.updated_at,
       } : a),
       currentArticle: s.currentArticle?.id === id ? updated : s.currentArticle,
-      // Keep history label in sync if article title changed
       navigationHistory: s.navigationHistory.map(e =>
         e.type === 'article' && e.articleId === id
           ? { ...e, label: updated.title }

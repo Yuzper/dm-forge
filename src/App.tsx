@@ -6,6 +6,7 @@ import CampaignsPage from './pages/CampaignsPage'
 import CampaignDetailPage from './pages/CampaignDetailPage'
 import SessionPage from './pages/SessionPage'
 import WikiPage from './pages/WikiPage'
+import DMNotesPage from './pages/DMNotesPage'
 import StatBlockPage from './pages/StatBlockPage'
 import { UpdateBanner } from './components/UpdateBanner'
 
@@ -31,6 +32,7 @@ export default function App() {
         {view === 'campaign'  && <CampaignDetailPage />}
         {view === 'session'   && <SessionPage />}
         {view === 'wiki'      && <WikiPage />}
+        {view === 'dm-notes'  && <DMNotesPage />}
       </main>
     </div>
   )

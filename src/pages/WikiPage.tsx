@@ -4,7 +4,8 @@ import { useStore } from '../store/store'
 import {
   BookOpen, Plus, Search, Trash2, Check, MapPin, User, Package,
   ScrollText, Users, Landmark, FileText, X, ChevronLeft, Calendar,
-  MoreHorizontal, Tag, Image as ImageIcon, Link, PawPrint, StickyNote
+  MoreHorizontal, Tag, Image as ImageIcon, Link, PawPrint, StickyNote,
+  ArrowLeft,
 } from 'lucide-react'
 import RichEditor from '../components/RichEditor'
 import type { Article, ArticleSummary, ArticleType } from '../types'
@@ -33,8 +34,6 @@ const ARTICLE_TYPES: { value: ArticleType; label: string; icon: any; color: stri
 ]
 
 // ── Track definitions ──────────────────────────────────────────────────────────
-// Maps article type → track name → predefined options.
-// An empty options array means the track is custom-input only.
 const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   character: {
     Vitality:    ['Alive', 'Dead', 'Unknown', 'Missing', 'Immortal'],
@@ -110,12 +109,11 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Allies: [],
     Rivals: [],
     Sacred_Sites: [],
-
   },
   lore:     { Status: ['Active', 'Extinct', 'Unknown'] },
   note: {
-    Sender:             [],   // dynamic: character names
-    Intended_Recipient: [],   // dynamic: character names
+    Sender:             [],
+    Intended_Recipient: [],
     Language:           [],
     Date:               [],
     Location:           []
@@ -123,31 +121,21 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   other:    { Status: ['Active', 'Inactive', 'Unknown'] },
 }
 
-// Colour map for track values — unrecognised values fall back to grey
 const TRACK_VALUE_COLORS: Record<string, string> = {
-  // Vitality / general
   Alive: '#3dbf7f', Active: '#3dbf7f', Found: '#3dbf7f', Discovered: '#3dbf7f',
   Dead: '#e05555', Destroyed: '#e05555', Disbanded: '#e05555', Failed: '#e05555', Extinct: '#e05555',
   Unknown: '#8a8a8a', Missing: '#8a8a8a', Lost: '#8a8a8a', Abandoned: '#8a8a8a',
   Inactive: '#8a8a8a', Undiscovered: '#8a8a8a',
-  // Disposition
   Friendly: '#3dbf7f', Neutral: '#bab637', Hostile: '#e05555',
-  // Awareness
   Unaware: '#8a8a8a', Alerted: '#e88c3a', Hunting: '#e05555',
-  // Quest / time
   Completed: '#5b9fe8', Past: '#5b9fe8', Retired: '#5b9fe8',
   Upcoming: '#c8a84b', Ongoing: '#e88c3a',
-  // Difficulty
   Trivial: '#8a8a8a', Easy: '#3dbf7f', Medium: '#c8a84b', Hard: '#e88c3a', Deadly: '#e05555',
-  // Rarity
   Common: '#8a8a8a', Uncommon: '#3dbf7f', Rare: '#5b9fe8',
   'Very Rare': '#b07de8', Legendary: '#e8d44d', Artifact: '#c8a84b',
-  // Scale
   Personal: '#8a8a8a', Local: '#5bbfb0', Regional: '#5b9fe8',
   National: '#b07de8', Global: '#e88c3a', Secret: '#e05555', 'World-shaking': '#e05555',
-  // Creature size
   Tiny: '#8a8a8a', Small: '#5bbfb0', Large: '#e88c3a', Huge: '#e05555', Gargantuan: '#8b2533',
-  // Location size
   Hamlet: '#8a8a8a', Village: '#5bbfb0', Town: '#c8a84b', City: '#e88c3a',
   Metropolis: '#e05555', Ruins: '#5a5040', Dungeon: '#8b2533', Wilderness: '#3dbf7f',
 }
@@ -361,7 +349,6 @@ function ArticleCard({ article, onOpen }: { article: ArticleSummary; onOpen: () 
       )}
 
       <div style={{ padding: '14px 16px' }}>
-        {/* Type pill + track value pills */}
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 5,
@@ -374,7 +361,6 @@ function ArticleCard({ article, onOpen }: { article: ArticleSummary; onOpen: () 
           </div>
         </div>
 
-        {/* Title */}
         <h3 style={{
           fontFamily: 'var(--font-display)', fontSize: 15,
           color: 'var(--text-primary)', marginBottom: 8,
@@ -384,7 +370,6 @@ function ArticleCard({ article, onOpen }: { article: ArticleSummary; onOpen: () 
           {article.title}
         </h3>
 
-        {/* Tags */}
         {tags.length > 0 && wikiSearchFields.tags && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
             {tags.slice(0, 3).map(tag => (
@@ -400,7 +385,6 @@ function ArticleCard({ article, onOpen }: { article: ArticleSummary; onOpen: () 
           </div>
         )}
 
-        {/* Footer */}
         <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
           <Calendar size={10} />
           Updated {new Date(article.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -488,7 +472,6 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
   const [readMode, setReadMode] = useState(true)
   const [lootTableJson, setLootTableJson] = useState(article.loot_table || '{"name":"Loot","items":[]}')
 
-
   const hasStatblock = STATBLOCK_TYPES.includes(articleType)
 
   const pendingRef = useRef({
@@ -548,7 +531,6 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
     window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'location' }).then(l =>
       setLocationNames(l.map(a => a.title).sort())
     )
-    // Characters + playerCharacters combined for Sender/Intended_Recipient on notes
     Promise.all([
       window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'character' }),
       window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'playerCharacter' }),
@@ -603,8 +585,6 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-      {/* ── Header ── */}
       <div style={{
         borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)',
         flexShrink: 0, display: 'flex', alignItems: 'stretch', minHeight: 48,
@@ -656,10 +636,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
         </div>
       </div>
 
-      {/* ── Scrollable body ── */}
       <div style={{ flex: 1, overflow: 'auto' }}>
-
-        {/* Banner */}
         {coverImage ? (
           <div style={{ height: 200, position: 'relative', overflow: 'hidden' }}>
             <img src={`file://${coverImage}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -684,23 +661,15 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
           </button>
         ) : null}
 
-        {/* ── Two-column layout ── */}
         <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-
-          {/* ── Left: type selector + lore + stat block ── */}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-
-            {/* Type selector — edit mode only */}
             {!readMode && (
               <div style={{ padding: '10px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 {ARTICLE_TYPES.map(t => {
                   const Icon = t.icon
                   const active = t.value === articleType
                   return (
-                    <button key={t.value} onClick={() => {
-                      setArticleType(t.value)
-                      setDirty(true)
-                    }} style={{
+                    <button key={t.value} onClick={() => { setArticleType(t.value); setDirty(true) }} style={{
                       display: 'flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 99,
                       border: `1px solid ${active ? t.color + '88' : 'var(--border-light)'}`,
                       background: active ? `${t.color}18` : 'transparent',
@@ -714,7 +683,6 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               </div>
             )}
 
-            {/* Lore editor */}
             <div style={{ padding: '0 8px' }}>
               <RichEditor
                 key={article.id}
@@ -727,17 +695,11 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               />
             </div>
 
-            {/* ── Stat block section — creature/character types only ── */}
             {hasStatblock && (
               <div style={{ padding: '0 24px 32px' }}>
-
-                {/* Divider + heading */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0 20px' }}>
                   <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, var(--border-light), transparent)' }} />
-                  <div style={{
-                    fontSize: 11, fontWeight: 700, color: 'var(--text-muted)',
-                    letterSpacing: '0.1em', textTransform: 'uppercase', flexShrink: 0,
-                  }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase', flexShrink: 0 }}>
                     Stat Block
                   </div>
                   <div style={{ flex: 1, height: 1, background: 'linear-gradient(270deg, var(--border-light), transparent)' }} />
@@ -745,33 +707,19 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
 
                 {readMode ? (
                   statblockHasData ? (
-                    <StatBlockView
-                      statblock={statblock}
-                      name={title}
-                      articleType={articleType}
-                    />
+                    <StatBlockView statblock={statblock} name={title} articleType={articleType} />
                   ) : (
-                    <div style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'center',
-                      gap: 8, padding: '24px 16px', textAlign: 'center',
-                      border: '1px dashed var(--border-light)',
-                      borderRadius: 'var(--radius-md)',
-                      color: 'var(--text-muted)',
-                    }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '24px 16px', textAlign: 'center', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-md)', color: 'var(--text-muted)' }}>
                       <span style={{ fontSize: 13 }}>No stat block yet</span>
                       <span style={{ fontSize: 11 }}>Switch to Edit mode to add combat stats</span>
                     </div>
                   )
                 ) : (
-                  <StatBlockEditor
-                    value={statblock}
-                    onChange={sb => { setStatblock(sb); setDirty(true) }}
-                  />
+                  <StatBlockEditor value={statblock} onChange={sb => { setStatblock(sb); setDirty(true) }} />
                 )}
               </div>
             )}
 
-            {/* ── Loot table section — creature/character/playerCharacter ── */}
             {hasStatblock && (() => {
               const lootTable = parseLootTable(lootTableJson)
               const lootSuggestions = articles
@@ -784,73 +732,33 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                     lootTable.items.length > 0 ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {lootTable.items.filter(i => i.chance === 100).length > 0 && (
-                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
-                            Guaranteed
-                          </div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Guaranteed</div>
                         )}
                         {lootTable.items.filter(i => i.chance === 100).map(item => {
                           const isLink = articles.some(a => a.title.toLowerCase() === item.name.toLowerCase())
                           return (
-                            <div key={item.id} style={{
-                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                              padding: '6px 10px', borderRadius: 'var(--radius-sm)',
-                              border: '1px solid var(--border-gold)', background: 'var(--gold-glow)',
-                              fontSize: 12,
-                            }}>
-                              <span
-                                onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined}
-                                style={{
-                                  color: 'var(--gold)', fontWeight: 500, flex: 1,
-                                  cursor: isLink ? 'pointer' : 'default',
-                                  borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none',
-                                  width: 'fit-content',
-                                }}
-                              >{item.name}</span>
+                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-gold)', background: 'var(--gold-glow)', fontSize: 12 }}>
+                              <span onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined} style={{ color: 'var(--gold)', fontWeight: 500, flex: 1, cursor: isLink ? 'pointer' : 'default', borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none', width: 'fit-content' }}>{item.name}</span>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Quantity: </span>
                                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{item.quantity}</span>
-                                <span style={{
-                                  fontSize: 12, fontWeight: 700, marginLeft: 4,
-                                  color: '#3dbf7f',
-                                  background: 'var(--bg-surface)', padding: '2px 8px',
-                                  borderRadius: 99, border: '1px solid var(--border-light)',
-                                }}>{item.chance}%</span>
+                                <span style={{ fontSize: 12, fontWeight: 700, marginLeft: 4, color: '#3dbf7f', background: 'var(--bg-surface)', padding: '2px 8px', borderRadius: 99, border: '1px solid var(--border-light)' }}>{item.chance}%</span>
                               </div>
                             </div>
                           )
                         })}
                         {lootTable.items.filter(i => i.chance < 100).length > 0 && (
-                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '8px 0 4px' }}>
-                            Random
-                          </div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '8px 0 4px' }}>Random</div>
                         )}
                         {lootTable.items.filter(i => i.chance < 100).map(item => {
                           const isLink = articles.some(a => a.title.toLowerCase() === item.name.toLowerCase())
                           return (
-                            <div key={item.id} style={{
-                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                              padding: '6px 10px', borderRadius: 'var(--radius-sm)',
-                              border: '1px solid var(--border-light)', background: 'var(--bg-elevated)',
-                              fontSize: 12,
-                            }}>
-                              <span
-                                onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined}
-                                style={{
-                                  color: isLink ? 'var(--gold)' : 'var(--text-secondary)', flex: 1,
-                                  cursor: isLink ? 'pointer' : 'default',
-                                  borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none',
-                                  width: 'fit-content',
-                                }}
-                              >{item.name}</span>
+                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', fontSize: 12 }}>
+                              <span onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined} style={{ color: isLink ? 'var(--gold)' : 'var(--text-secondary)', flex: 1, cursor: isLink ? 'pointer' : 'default', borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none', width: 'fit-content' }}>{item.name}</span>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Quantity: </span>
                                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{item.quantity}</span>
-                                <span style={{
-                                  fontSize: 12, fontWeight: 700, marginLeft: 4,
-                                  color: item.chance >= 75 ? '#3dbf7f' : item.chance >= 40 ? '#c8a84b' : '#e88c3a',
-                                  background: 'var(--bg-surface)', padding: '2px 8px',
-                                  borderRadius: 99, border: '1px solid var(--border-light)',
-                                }}>{item.chance}%</span>
+                                <span style={{ fontSize: 12, fontWeight: 700, marginLeft: 4, color: item.chance >= 75 ? '#3dbf7f' : item.chance >= 40 ? '#c8a84b' : '#e88c3a', background: 'var(--bg-surface)', padding: '2px 8px', borderRadius: 99, border: '1px solid var(--border-light)' }}>{item.chance}%</span>
                               </div>
                             </div>
                           )
@@ -874,15 +782,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
             })()}
           </div>
 
-          {/* ── Right sidebar ── */}
-          <div style={{
-            width: 260, flexShrink: 0,
-            borderLeft: '1px solid var(--border)',
-            position: 'sticky', top: 0,
-            display: 'flex', flexDirection: 'column',
-          }}>
-
-            {/* Portrait */}
+          <div style={{ width: 260, flexShrink: 0, borderLeft: '1px solid var(--border)', position: 'sticky', top: 0, display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
               <div style={sidebarSectionLabel}>{article.title}</div>
               {portraitImage ? (
@@ -902,13 +802,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               ) : !readMode ? (
                 <button
                   onClick={() => pickImage(setPortraitImage)}
-                  style={{
-                    width: '100%', aspectRatio: '3/4', display: 'flex', flexDirection: 'column',
-                    alignItems: 'center', justifyContent: 'center', gap: 8,
-                    background: 'var(--bg-elevated)', border: '1px dashed var(--border-light)',
-                    borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer',
-                    fontSize: 12, transition: 'all 120ms ease',
-                  }}
+                  style={{ width: '100%', aspectRatio: '3/4', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--bg-elevated)', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, transition: 'all 120ms ease' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--gold)'; (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
                 >
@@ -918,7 +812,6 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               ) : null}
             </div>
 
-            {/* Tracks */}
             {currentTypeTracks.length > 0 && (
               <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
                 <div style={sidebarSectionLabel}>Details</div>
@@ -929,12 +822,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                       if (!val) return null
                       const color = TRACK_VALUE_COLORS[val] || '#8a8a8a'
                       return (
-                        <div key={trackName} style={{
-                          fontSize: 11, fontWeight: 600, color,
-                          padding: '3px 10px', borderRadius: 99,
-                          border: `1px solid ${color}44`,
-                          background: `${color}12`,
-                        }}>
+                        <div key={trackName} style={{ fontSize: 11, fontWeight: 600, color, padding: '3px 10px', borderRadius: 99, border: `1px solid ${color}44`, background: `${color}12` }}>
                           <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{trackName}: </span>{val}
                         </div>
                       )
@@ -985,17 +873,11 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               </div>
             )}
 
-            {/* Tags */}
             <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
               <div style={sidebarSectionLabel}>Tags</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                 {tags.map(tag => (
-                  <span key={tag} style={{
-                    display: 'flex', alignItems: 'center', gap: 4,
-                    padding: '2px 8px', borderRadius: 99, fontSize: 11,
-                    background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
-                    color: 'var(--text-secondary)',
-                  }}>
+                  <span key={tag} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 11, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     #{tag}
                     {!readMode && (
                       <button onClick={() => removeTag(tag)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--text-muted)' }}>
@@ -1016,7 +898,6 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               </div>
             </div>
 
-            {/* Backlinks */}
             {backlinks.length > 0 && (
               <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
                 <div style={{ ...sidebarSectionLabel, display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -1029,13 +910,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                       <button
                         key={a.id}
                         onClick={() => navigateToArticleByTitle(a.title)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 6,
-                          padding: '5px 8px', borderRadius: 'var(--radius-sm)',
-                          background: 'transparent', border: '1px solid var(--border-light)',
-                          color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer',
-                          textAlign: 'left', transition: 'all 120ms ease',
-                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 'var(--radius-sm)', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease' }}
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = t.color; (e.currentTarget as HTMLElement).style.color = t.color }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}
                       >
@@ -1048,7 +923,6 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               </div>
             )}
 
-            {/* Dates */}
             <div style={{ padding: 16, fontSize: 11, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span>Created {new Date(article.created_at).toLocaleDateString()}</span>
               <span>Updated {new Date(article.updated_at).toLocaleDateString()}</span>
@@ -1066,6 +940,7 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
   const {
     articles, currentCampaign, wikiFilter, wikiSearch, wikiTagFilter, wikiSearchFields, wikiShowTags, setWikiShowTags,
     loadArticles, setWikiFilter, setWikiSearch, setWikiTagFilter, setWikiSearchFields,
+    setView, setCampaignSubView,
   } = useStore()
   const [showCreate, setShowCreate] = useState(false)
 
@@ -1080,11 +955,31 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
     return [...tagSet].sort()
   }, [articles, wikiTagFilter])
 
+  const handleBack = () => {
+    setView('campaign')
+    setCampaignSubView('hub')
+  }
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ padding: '20px 32px 0', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={handleBack}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                background: 'transparent', border: 'none',
+                borderRight: '1px solid var(--border)',
+                paddingRight: 12, marginRight: 4,
+                color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
+                transition: 'color var(--transition)',
+              }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+            >
+              <ArrowLeft size={14} /> Back
+            </button>
             <BookOpen size={22} color="var(--gold)" />
             <h1 style={{ fontSize: 22, letterSpacing: '0.05em' }}>Campaign Wiki</h1>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -1158,16 +1053,7 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
         <div style={{ display: 'flex', justifyContent: 'flex-start', paddingBottom: 8 }}>
           <button
             onClick={() => setWikiShowTags(!wikiShowTags)}
-            style={{
-              fontSize: 11,
-              padding: '2px 10px',
-              borderRadius: 99,
-              border: '1px solid var(--border-light)',
-              background: 'transparent',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              transition: 'all 120ms ease',
-            }}
+            style={{ fontSize: 11, padding: '2px 10px', borderRadius: 99, border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}
           >
             {wikiShowTags ? 'Hide tags' : 'Show tags'}
           </button>
@@ -1183,13 +1069,7 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
                 <button
                   key={tag}
                   onClick={() => setWikiTagFilter(active ? null : tag)}
-                  style={{
-                    padding: '2px 10px', borderRadius: 99, fontSize: 11,
-                    border: `1px solid ${active ? 'var(--gold-dim)' : 'var(--border-light)'}`,
-                    background: active ? 'var(--gold-glow)' : 'transparent',
-                    color: active ? 'var(--gold)' : 'var(--text-muted)',
-                    cursor: 'pointer', transition: 'all 120ms ease',
-                  }}
+                  style={{ padding: '2px 10px', borderRadius: 99, fontSize: 11, border: `1px solid ${active ? 'var(--gold-dim)' : 'var(--border-light)'}`, background: active ? 'var(--gold-glow)' : 'transparent', color: active ? 'var(--gold)' : 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}
                 >
                   #{tag}
                 </button>
@@ -1198,13 +1078,7 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
             {wikiTagFilter && (
               <button
                 onClick={() => setWikiTagFilter(null)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '2px 8px', borderRadius: 99, fontSize: 11,
-                  border: '1px solid var(--border-light)',
-                  background: 'transparent', color: 'var(--text-primary)',
-                  cursor: 'pointer', transition: 'all 120ms ease', marginLeft: 2,
-                }}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 11, border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', transition: 'all 120ms ease', marginLeft: 2 }}
               >
                 <X size={10} /> Clear
               </button>

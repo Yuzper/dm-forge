@@ -34,9 +34,9 @@ contextBridge.exposeInMainWorld('api', {
   updatePOI:       (id: number, data: any) => ipcRenderer.invoke('pois:update', id, data),
   deletePOI:       (id: number)   => ipcRenderer.invoke('pois:delete', id),
 
-  // Articles — full rows (use for opening individual articles in the editor)
+  // Articles — full rows
   getArticles:         (filter?: any)  => ipcRenderer.invoke('articles:get-all', filter),
-  // Articles — lean rows (use for list/grid views and wiki-link checks; no content blob)
+  // Articles — lean rows
   getArticlesList:     (filter?: any)  => ipcRenderer.invoke('articles:get-list', filter),
   getArticle:          (id: number)    => ipcRenderer.invoke('articles:get', id),
   getArticleByTitle:   (title: string, campaignId: number) =>
@@ -75,4 +75,29 @@ contextBridge.exposeInMainWorld('api', {
 
   getAppVersion: () => ipcRenderer.invoke('app:get-version'),
 
+  // DM Notes — pages
+  getDMNotesPages:    (campaignId: number) =>
+                        ipcRenderer.invoke('dm-notes:get-all', campaignId),
+  getDMNotePage:      (id: number) =>
+                        ipcRenderer.invoke('dm-notes:get', id),
+  createDMNotePage:   (campaignId: number, groupId?: number | null) =>
+                        ipcRenderer.invoke('dm-notes:create', campaignId, groupId ?? null),
+  updateDMNotePage:   (id: number, data: any) =>
+                        ipcRenderer.invoke('dm-notes:update', id, data),
+  deleteDMNotePage:   (id: number) =>
+                        ipcRenderer.invoke('dm-notes:delete', id),
+  reorderDMNotePages: (orders: any[]) =>
+                        ipcRenderer.invoke('dm-notes:reorder-pages', orders),
+
+  // DM Notes — groups
+  getDMNoteGroups:     (campaignId: number) =>
+                         ipcRenderer.invoke('dm-notes:get-groups', campaignId),
+  createDMNoteGroup:   (campaignId: number, name: string, color: string) =>
+                         ipcRenderer.invoke('dm-notes:create-group', campaignId, name, color),
+  updateDMNoteGroup:   (id: number, data: any) =>
+                         ipcRenderer.invoke('dm-notes:update-group', id, data),
+  deleteDMNoteGroup:   (id: number) =>
+                         ipcRenderer.invoke('dm-notes:delete-group', id),
+  reorderDMNoteGroups: (orders: any[]) =>
+                         ipcRenderer.invoke('dm-notes:reorder-groups', orders),
 })

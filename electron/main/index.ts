@@ -7,11 +7,9 @@ import { autoUpdater } from 'electron-updater'
 import log from 'electron-log'
 
 function initUpdater(mainWindow: BrowserWindow) {
-  // Logs go to ~/Library/Logs/DM Forge/main.log (Mac)
-  // or %AppData%\DM Forge\logs\main.log (Windows)
   autoUpdater.logger = log
-  autoUpdater.autoDownload = true       // download silently in background
-  autoUpdater.autoInstallOnAppQuit = false  // we control when to install
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = false
 
   autoUpdater.on('update-available', (info) => {
     mainWindow.webContents.send('updater:available', { version: info.version })
@@ -23,10 +21,8 @@ function initUpdater(mainWindow: BrowserWindow) {
 
   autoUpdater.on('error', (err) => {
     log.error('Updater error:', err)
-    // Silently swallow — user is probably offline, no need to surface this
   })
 
-  // Check on launch, then every 4 hours
   autoUpdater.checkForUpdates()
   setInterval(() => autoUpdater.checkForUpdates(), 1000 * 60 * 60 * 4)
 
@@ -136,6 +132,26 @@ function initDatabase() {
       loot_result     TEXT,
       created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS dm_notes_groups (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      name        TEXT    NOT NULL DEFAULT 'New Group',
+      color       TEXT    NOT NULL DEFAULT '#9b7de8',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS dm_notes_pages (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      title       TEXT    NOT NULL DEFAULT 'Untitled',
+      content     TEXT    NOT NULL DEFAULT '{"type":"doc","content":[]}',
+      group_id    INTEGER REFERENCES dm_notes_groups(id) ON DELETE SET NULL,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
   `)
 
   // ── Migrations for existing databases ────────────────────────────────────────
@@ -170,7 +186,18 @@ function initDatabase() {
   if (!sessionCols.some(c => c.name === 'arc_id')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN arc_id INTEGER`)
   }
-  // Unique index so (campaign_id, session_number, session_sub) never duplicates
+
+  // DM Notes page migrations (for DBs created before groups/ordering feature)
+  const dmNotesPageCols = db.pragma('table_info(dm_notes_pages)') as { name: string }[]
+  if (!dmNotesPageCols.some(c => c.name === 'group_id')) {
+    db.exec(`ALTER TABLE dm_notes_pages ADD COLUMN group_id INTEGER REFERENCES dm_notes_groups(id) ON DELETE SET NULL`)
+  }
+  if (!dmNotesPageCols.some(c => c.name === 'sort_order')) {
+    db.exec(`ALTER TABLE dm_notes_pages ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
+    // Use id as initial sort order to preserve creation order
+    db.exec(`UPDATE dm_notes_pages SET sort_order = id`)
+  }
+
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_unique
     ON sessions(campaign_id, session_number, session_sub)
@@ -179,7 +206,7 @@ function initDatabase() {
   return { userDataPath, imagesPath }
 }
 
-// ── Image Processing ────────────────────────────────────────────────────────────
+// ── Image Processing ───────────────────────────────────────────────────────────
 
 function processAndSaveImage(
   srcPath: string,
@@ -202,7 +229,7 @@ function processAndSaveImage(
   return outName
 }
 
-// ── Inline Image Cleanup ────────────────────────────────────────────────────────
+// ── Inline Image Cleanup ───────────────────────────────────────────────────────
 
 function extractInlineImagePaths(contentJson: string, userDataPath: string): string[] {
   try {
@@ -355,7 +382,6 @@ function registerIPC(imagesPath: string) {
     let arcs = db.prepare(
       'SELECT * FROM arcs WHERE campaign_id = ? ORDER BY name ASC'
     ).all(campaignId) as any[]
-    // Auto-create default arc if campaign has none
     if (arcs.length === 0) {
       const result = db.prepare(`
         INSERT INTO arcs (campaign_id, name, color, is_default)
@@ -386,7 +412,6 @@ function registerIPC(imagesPath: string) {
     const arc = db.prepare('SELECT * FROM arcs WHERE id = ?').get(id) as any
     if (!arc) return { success: false, error: 'Arc not found' }
     if (arc.is_default) return { success: false, error: 'Cannot delete the default arc' }
-    // Reassign sessions to default arc
     const defaultArc = db.prepare(
       'SELECT id FROM arcs WHERE campaign_id = ? AND is_default = 1'
     ).get(arc.campaign_id) as any
@@ -492,7 +517,6 @@ function registerIPC(imagesPath: string) {
     return db.prepare(query).all(...params)
   })
 
-  // Lean SELECT — no content, portrait_image, or statblock blobs
   ipcMain.handle('articles:get-list', (_e, filter?: any) => {
     let query = `
       SELECT id, campaign_id, title, article_type, tags, cover_image, tracks, loot_table, created_at, updated_at
@@ -596,7 +620,6 @@ function registerIPC(imagesPath: string) {
 
   // ── Combat ────────────────────────────────────────────────────────────────────
 
-  // Get or create the encounter for a combat POI
   ipcMain.handle('combat:get-encounter', (_e, poiId: number) => {
     let enc = db.prepare('SELECT * FROM combat_encounters WHERE poi_id = ?').get(poiId)
     if (!enc) {
@@ -606,7 +629,6 @@ function registerIPC(imagesPath: string) {
     return enc
   })
 
-  // Get all creatures for an encounter, joined with article title, statblock and loot_table
   ipcMain.handle('combat:get-creatures', (_e, encounterId: number) => {
     const rows = db.prepare(`
       SELECT cc.*, a.title, a.statblock, a.loot_table
@@ -621,21 +643,15 @@ function registerIPC(imagesPath: string) {
     return rows.map(r => ({ ...r, is_dead: r.is_dead === 1 }))
   })
 
-  // Add a new creature instance to an encounter
   ipcMain.handle('combat:add-creature', (_e, encounterId: number, articleId: number, maxHp: number) => {
-    // Count all existing instances of this article in this encounter (including dead)
-    // so instance numbers never reuse
     const { cnt } = db.prepare(
       'SELECT COUNT(*) as cnt FROM combat_creatures WHERE encounter_id = ? AND article_id = ?'
     ).get(encounterId, articleId) as { cnt: number }
-
     const instanceNumber = cnt + 1
-
     const result = db.prepare(`
       INSERT INTO combat_creatures (encounter_id, article_id, instance_number, max_hp, current_hp)
       VALUES (?, ?, ?, ?, ?)
     `).run(encounterId, articleId, instanceNumber, maxHp, maxHp)
-
     const row = db.prepare(`
       SELECT cc.*, a.title, a.statblock, a.loot_table
       FROM combat_creatures cc
@@ -645,7 +661,6 @@ function registerIPC(imagesPath: string) {
     return { ...row, is_dead: row.is_dead === 1 }
   })
 
-  // Bulk-save creature combat state (HP, AC override, dead flag, initiative)
   ipcMain.handle('combat:save-creatures', (_e, creatures: any[]) => {
     const stmt = db.prepare(`
       UPDATE combat_creatures
@@ -655,20 +670,16 @@ function registerIPC(imagesPath: string) {
       WHERE id = @id
     `)
     const transaction = db.transaction((list: any[]) => {
-      for (const c of list) {
-        stmt.run({ ...c, is_dead: c.is_dead ? 1 : 0 })
-      }
+      for (const c of list) stmt.run({ ...c, is_dead: c.is_dead ? 1 : 0 })
     })
     transaction(creatures)
   })
 
-  // Save generated loot result for a creature instance (permanent)
   ipcMain.handle('combat:save-loot-result', (_e, creatureId: number, lootResult: any[]) => {
     db.prepare('UPDATE combat_creatures SET loot_result = ? WHERE id = ?')
       .run(JSON.stringify(lootResult), creatureId)
   })
 
-  // Get loot_result for all creatures in an encounter (for rehydrating on reopen)
   ipcMain.handle('combat:get-loot-results', (_e, encounterId: number) => {
     return db.prepare(
       'SELECT id, loot_result FROM combat_creatures WHERE encounter_id = ?'
@@ -678,7 +689,6 @@ function registerIPC(imagesPath: string) {
   // ── Stat Block Window ─────────────────────────────────────────────────────────
 
   ipcMain.handle('statblock:open-window', async (_e, articleId: number) => {
-    // Deduplicate — focus existing window if already open for this article
     const existing = BrowserWindow.getAllWindows().find(w => {
       try {
         const url = w.webContents.getURL()
@@ -688,17 +698,11 @@ function registerIPC(imagesPath: string) {
     if (existing) { existing.focus(); return }
 
     const win = new BrowserWindow({
-      width: 420,
-      height: 650,
-      minWidth: 360,
-      minHeight: 400,
-      title: 'Stat Block',
-      alwaysOnTop: true,
+      width: 420, height: 650, minWidth: 360, minHeight: 400,
+      title: 'Stat Block', alwaysOnTop: true,
       webPreferences: {
         preload: path.join(__dirname, '../preload/index.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        webSecurity: false,
+        contextIsolation: true, nodeIntegration: false, webSecurity: false,
       },
     })
 
@@ -794,6 +798,89 @@ function registerIPC(imagesPath: string) {
     } catch (err: any) {
       return { success: false, error: err.message }
     }
+  })
+
+  // ── DM Notes — Pages ──────────────────────────────────────────────────────────
+
+  ipcMain.handle('dm-notes:get-all', (_e, campaignId: number) => {
+    return db.prepare(`
+      SELECT id, campaign_id, title, group_id, sort_order, created_at, updated_at
+      FROM dm_notes_pages
+      WHERE campaign_id = ?
+      ORDER BY sort_order ASC
+    `).all(campaignId)
+  })
+
+  ipcMain.handle('dm-notes:get', (_e, id: number) => {
+    return db.prepare('SELECT * FROM dm_notes_pages WHERE id = ?').get(id) ?? null
+  })
+
+  ipcMain.handle('dm-notes:create', (_e, campaignId: number, groupId: number | null) => {
+    // Calculate next sort_order within this group
+    const maxRow = groupId != null
+      ? db.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM dm_notes_pages WHERE campaign_id = ? AND group_id = ?').get(campaignId, groupId) as { m: number }
+      : db.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM dm_notes_pages WHERE campaign_id = ? AND group_id IS NULL').get(campaignId) as { m: number }
+    const sortOrder = maxRow.m + 1
+
+    const result = db.prepare(`
+      INSERT INTO dm_notes_pages (campaign_id, title, content, group_id, sort_order)
+      VALUES (?, 'Untitled', '{"type":"doc","content":[]}', ?, ?)
+    `).run(campaignId, groupId ?? null, sortOrder)
+    return db.prepare('SELECT * FROM dm_notes_pages WHERE id = ?').get(result.lastInsertRowid)
+  })
+
+  ipcMain.handle('dm-notes:update', (_e, id: number, data: { title?: string; content?: string; group_id?: number | null; sort_order?: number }) => {
+    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
+    db.prepare(`UPDATE dm_notes_pages SET ${fields}, updated_at = datetime('now') WHERE id = @id`)
+      .run({ ...data, id })
+    return db.prepare('SELECT * FROM dm_notes_pages WHERE id = ?').get(id)
+  })
+
+  ipcMain.handle('dm-notes:delete', (_e, id: number) => {
+    db.prepare('DELETE FROM dm_notes_pages WHERE id = ?').run(id)
+  })
+
+  ipcMain.handle('dm-notes:reorder-pages', (_e, orders: { id: number; sort_order: number; group_id: number | null }[]) => {
+    const stmt = db.prepare('UPDATE dm_notes_pages SET sort_order = @sort_order, group_id = @group_id WHERE id = @id')
+    const transaction = db.transaction((list: any[]) => {
+      for (const o of list) stmt.run({ id: o.id, sort_order: o.sort_order, group_id: o.group_id ?? null })
+    })
+    transaction(orders)
+  })
+
+  // ── DM Notes — Groups ─────────────────────────────────────────────────────────
+
+  ipcMain.handle('dm-notes:get-groups', (_e, campaignId: number) => {
+    return db.prepare('SELECT * FROM dm_notes_groups WHERE campaign_id = ? ORDER BY sort_order ASC').all(campaignId)
+  })
+
+  ipcMain.handle('dm-notes:create-group', (_e, campaignId: number, name: string, color: string) => {
+    const { m } = db.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM dm_notes_groups WHERE campaign_id = ?').get(campaignId) as { m: number }
+    const result = db.prepare(`
+      INSERT INTO dm_notes_groups (campaign_id, name, color, sort_order)
+      VALUES (?, ?, ?, ?)
+    `).run(campaignId, name, color, m + 1)
+    return db.prepare('SELECT * FROM dm_notes_groups WHERE id = ?').get(result.lastInsertRowid)
+  })
+
+  ipcMain.handle('dm-notes:update-group', (_e, id: number, data: { name?: string; color?: string; sort_order?: number }) => {
+    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
+    db.prepare(`UPDATE dm_notes_groups SET ${fields} WHERE id = @id`).run({ ...data, id })
+    return db.prepare('SELECT * FROM dm_notes_groups WHERE id = ?').get(id)
+  })
+
+  ipcMain.handle('dm-notes:delete-group', (_e, id: number) => {
+    // Pages in this group become ungrouped
+    db.prepare('UPDATE dm_notes_pages SET group_id = NULL WHERE group_id = ?').run(id)
+    db.prepare('DELETE FROM dm_notes_groups WHERE id = ?').run(id)
+  })
+
+  ipcMain.handle('dm-notes:reorder-groups', (_e, orders: { id: number; sort_order: number }[]) => {
+    const stmt = db.prepare('UPDATE dm_notes_groups SET sort_order = @sort_order WHERE id = @id')
+    const transaction = db.transaction((list: any[]) => {
+      for (const o of list) stmt.run(o)
+    })
+    transaction(orders)
   })
 }
 

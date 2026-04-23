@@ -4,7 +4,7 @@ import { useStore } from '../store/store'
 import {
   ChevronLeft, Map, Scroll, Download, Upload, Check,
   AlertCircle, BookOpen, Clock, ArrowLeft,
-  FileText, Layers
+  FileText, Layers, Sparkles,
 } from 'lucide-react'
 import POIList from './POIList'
 import type { HistoryEntry } from '../store/store'
@@ -22,18 +22,17 @@ export default function Sidebar() {
   const {
     view, setView, currentCampaign, selectCampaign,
     navigationHistory, navigateBack, navigateToHistoryEntry,
+    setCampaignSubView,
   } = useStore()
 
-  const inCampaignContext = view === 'campaign' || view === 'session' || view === 'wiki'
+  const inCampaignContext = view === 'campaign' || view === 'session' || view === 'wiki' || view === 'dm-notes'
   const canGoBack = navigationHistory.length >= 2
   const [version, setVersion] = useState('')
 
   useEffect(() => {
     window.api.getAppVersion().then(setVersion)
   }, [])
-  
 
-  // History to show — all entries except the current (last) one, reversed so newest is first
   const historyToShow = navigationHistory.slice(0, -1).reverse()
 
   return (
@@ -62,7 +61,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Breadcrumb — shown when inside a campaign */}
+      {/* Breadcrumb */}
       {inCampaignContext && (
         <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
           <button
@@ -81,7 +80,7 @@ export default function Sidebar() {
                   width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12,
                   color: view === 'campaign' ? 'var(--gold)' : 'var(--text-secondary)',
                 }}
-                onClick={() => selectCampaign(currentCampaign)}
+                onClick={() => { setView('campaign'); setCampaignSubView('sessions') }}
               >
                 <Map size={13} />
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -93,11 +92,22 @@ export default function Sidebar() {
                 className="btn btn-ghost btn-sm"
                 style={{
                   width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
-                  color: view === 'wiki' ? 'var(--gold)' : 'var(--text-secondary)',
+                  color: view === 'wiki' ? '#5b9fe8' : 'var(--text-secondary)',
                 }}
                 onClick={() => setView('wiki')}
               >
                 <BookOpen size={13} /> Wiki
+              </button>
+
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{
+                  width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
+                  color: view === 'dm-notes' ? '#9b7de8' : 'var(--text-secondary)',
+                }}
+                onClick={() => setView('dm-notes')}
+              >
+                <Sparkles size={13} /> DM Notes
               </button>
             </div>
           )}
@@ -107,7 +117,6 @@ export default function Sidebar() {
       {/* Navigation history */}
       {historyToShow.length > 0 && (
         <div style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          {/* Header row with back button */}
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '8px 12px 4px',
@@ -133,10 +142,8 @@ export default function Sidebar() {
             )}
           </div>
 
-          {/* History entries */}
           <div style={{ paddingBottom: 6 }}>
             {historyToShow.map((entry, i) => {
-              // Index in the original array (reversed, so i=0 is last-1)
               const originalIndex = navigationHistory.length - 2 - i
               return (
                 <button

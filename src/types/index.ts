@@ -114,8 +114,8 @@ export interface StatBlock {
   bonusActions: StatBlockEntry[]
   reactions: StatBlockEntry[]
   legendaryActions: StatBlockEntry[]
-  cantrips: string[]        // spell names from spells_2014.json
-  preparedSpells: string[]  // spell names from spells_2014.json
+  cantrips: string[]
+  preparedSpells: string[]
 }
 
 export const DEFAULT_STATBLOCK: StatBlock = {
@@ -210,10 +210,30 @@ export interface CombatCreature {
   is_dead: boolean
   initiative: number | null
   loot_result: string | null
-  resources: string    // JSON CombatResource[]
+  resources: string
   title: string
   statblock: string
   loot_table: string
+}
+
+export interface DMNoteGroup {
+  id: number
+  campaign_id: number
+  name: string
+  color: string
+  sort_order: number
+  created_at: string
+}
+
+export interface DMNotePage {
+  id: number
+  campaign_id: number
+  title: string
+  content: string
+  group_id: number | null
+  sort_order: number
+  created_at: string
+  updated_at: string
 }
 
 export interface CreateCampaignInput {
@@ -322,13 +342,26 @@ export interface ElectronAPI {
   exportBackup:    () => Promise<{ success: boolean; path?: string; error?: string; canceled?: boolean }>
   importBackup:    () => Promise<{ success: boolean; error?: string; canceled?: boolean }>
 
-  // Updates
   checkForUpdates:    () => Promise<void>
   installUpdate:      () => Promise<void>
   onUpdateAvailable:  (cb: (info: { version: string }) => void) => void
   onUpdateDownloaded: (cb: (info: { version: string }) => void) => void
+  getAppVersion:      () => Promise<string>
 
-  getAppVersion: () => Promise<string>
+  // DM Notes — pages
+  getDMNotesPages:     (campaignId: number) => Promise<Omit<DMNotePage, 'content'>[]>
+  getDMNotePage:       (id: number) => Promise<DMNotePage | null>
+  createDMNotePage:    (campaignId: number, groupId?: number | null) => Promise<DMNotePage>
+  updateDMNotePage:    (id: number, data: { title?: string; content?: string; group_id?: number | null; sort_order?: number }) => Promise<DMNotePage>
+  deleteDMNotePage:    (id: number) => Promise<void>
+  reorderDMNotePages:  (orders: { id: number; sort_order: number; group_id: number | null }[]) => Promise<void>
+
+  // DM Notes — groups
+  getDMNoteGroups:     (campaignId: number) => Promise<DMNoteGroup[]>
+  createDMNoteGroup:   (campaignId: number, name: string, color: string) => Promise<DMNoteGroup>
+  updateDMNoteGroup:   (id: number, data: { name?: string; color?: string; sort_order?: number }) => Promise<DMNoteGroup>
+  deleteDMNoteGroup:   (id: number) => Promise<void>
+  reorderDMNoteGroups: (orders: { id: number; sort_order: number }[]) => Promise<void>
 }
 
 declare global {
