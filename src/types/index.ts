@@ -327,6 +327,8 @@ export interface ElectronAPI {
   installUpdate:      () => Promise<void>
   onUpdateAvailable:  (cb: (info: { version: string }) => void) => void
   onUpdateDownloaded: (cb: (info: { version: string }) => void) => void
+
+  getAppVersion: () => Promise<string>
 }
 
 declare global {

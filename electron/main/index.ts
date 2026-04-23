@@ -253,7 +253,7 @@ function createWindow() {
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../../index.html'))
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
 
   mainWindow.on('closed', () => { mainWindow = null })
@@ -277,6 +277,8 @@ function registerIPC(imagesPath: string) {
   ipcMain.handle('campaigns:get', (_e, id: number) => {
     return db.prepare('SELECT * FROM campaigns WHERE id = ?').get(id) ?? null
   })
+
+  ipcMain.handle('app:get-version', () => app.getVersion())
 
   ipcMain.handle('campaigns:create', (_e, data: any) => {
     const result = db.prepare(`
@@ -703,7 +705,7 @@ function registerIPC(imagesPath: string) {
     if (process.env.ELECTRON_RENDERER_URL) {
       win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?mode=statblock&articleId=${articleId}`)
     } else {
-      win.loadFile(path.join(__dirname, '../../index.html'), {
+      win.loadFile(path.join(__dirname, '../renderer/index.html'), {
         query: { mode: 'statblock', articleId: String(articleId) },
       })
     }

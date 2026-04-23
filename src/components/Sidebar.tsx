@@ -1,5 +1,5 @@
 // path: src/components/Sidebar.tsx
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '../store/store'
 import {
   ChevronLeft, Map, Scroll, Download, Upload, Check,
@@ -26,6 +26,12 @@ export default function Sidebar() {
 
   const inCampaignContext = view === 'campaign' || view === 'session' || view === 'wiki'
   const canGoBack = navigationHistory.length >= 2
+  const [version, setVersion] = useState('')
+
+  useEffect(() => {
+    window.api.getAppVersion().then(setVersion)
+  }, [])
+  
 
   // History to show — all entries except the current (last) one, reversed so newest is first
   const historyToShow = navigationHistory.slice(0, -1).reverse()
@@ -176,7 +182,7 @@ export default function Sidebar() {
       <div style={{ padding: '12px 12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <BackupButton />
         <ImportButton />
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.05em', paddingLeft: 4 }}>v0.1.0</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.05em', paddingLeft: 4 }}>v{version}</div>
       </div>
     </aside>
   )

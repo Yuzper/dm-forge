@@ -72,4 +72,7 @@ contextBridge.exposeInMainWorld('api', {
                         ipcRenderer.on('updater:available', (_e, info) => cb(info)),
   onUpdateDownloaded: (cb: (info: { version: string }) => void) =>
                         ipcRenderer.on('updater:downloaded', (_e, info) => cb(info)),
+
+  getAppVersion: () => ipcRenderer.invoke('app:get-version'),
+
 })
