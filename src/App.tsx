@@ -7,6 +7,7 @@ import CampaignDetailPage from './pages/CampaignDetailPage'
 import SessionPage from './pages/SessionPage'
 import WikiPage from './pages/WikiPage'
 import StatBlockPage from './pages/StatBlockPage'
+import { UpdateBanner } from './components/UpdateBanner'
 
 const params = new URLSearchParams(window.location.search)
 const statblockMode = params.get('mode') === 'statblock'
@@ -24,6 +25,7 @@ export default function App() {
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg-base)' }}>
       <Sidebar />
+      <UpdateBanner />
       <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {view === 'campaigns' && <CampaignsPage />}
         {view === 'campaign'  && <CampaignDetailPage />}

@@ -321,6 +321,12 @@ export interface ElectronAPI {
   getImagePath:    (relativePath: string) => Promise<string>
   exportBackup:    () => Promise<{ success: boolean; path?: string; error?: string; canceled?: boolean }>
   importBackup:    () => Promise<{ success: boolean; error?: string; canceled?: boolean }>
+
+  // Updates
+  checkForUpdates:    () => Promise<void>
+  installUpdate:      () => Promise<void>
+  onUpdateAvailable:  (cb: (info: { version: string }) => void) => void
+  onUpdateDownloaded: (cb: (info: { version: string }) => void) => void
 }
 
 declare global {

@@ -7,25 +7,27 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "package": "electron-vite build && electron-builder",
+    "package": "electron-vite build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "better-sqlite3": "^9.4.3",
-    "@tiptap/react": "^2.3.0",
-    "@tiptap/pm": "^2.3.0",
-    "@tiptap/starter-kit": "^2.3.0",
+    "@tiptap/extension-color": "^2.3.0",
+    "@tiptap/extension-highlight": "^2.3.0",
     "@tiptap/extension-image": "^2.3.0",
     "@tiptap/extension-placeholder": "^2.3.0",
     "@tiptap/extension-text-align": "^2.3.0",
-    "@tiptap/extension-underline": "^2.3.0",
-    "@tiptap/extension-color": "^2.3.0",
     "@tiptap/extension-text-style": "^2.3.0",
-    "@tiptap/extension-highlight": "^2.3.0",
+    "@tiptap/extension-underline": "^2.3.0",
+    "@tiptap/pm": "^2.3.0",
+    "@tiptap/react": "^2.3.0",
+    "@tiptap/starter-kit": "^2.3.0",
+    "better-sqlite3": "^9.4.3",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.1.7",
+    "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "zustand": "^5.0.0",
-    "lucide-react": "^0.468.0"
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^1.0.1",
@@ -34,6 +36,7 @@
     "@types/react": "^18.2.67",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
+    "cross-env": "^10.1.0",
     "electron": "^29.1.4",
     "electron-builder": "^24.13.3",
     "electron-vite": "^2.0.0",
@@ -43,10 +46,28 @@
   "build": {
     "appId": "com.dmforge.app",
     "productName": "DM Forge",
-    "directories": { "output": "dist" },
-    "files": ["out/**/*"],
-    "mac": { "category": "public.app-category.games" },
-    "win": { "target": "nsis" },
-    "linux": { "target": "AppImage" }
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "Yuzper",
+      "repo": "dm-forge"
+    },
+    "mac": {
+      "category": "public.app-category.games",
+      "icon": "src/assets/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "src/assets/icon.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "src/assets/icon.png"
+    }
   }
 }

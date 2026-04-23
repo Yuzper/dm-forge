@@ -3,6 +3,36 @@ import { app, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import Database from 'better-sqlite3'
+import { autoUpdater } from 'electron-updater'
+import log from 'electron-log'
+
+function initUpdater(mainWindow: BrowserWindow) {
+  // Logs go to ~/Library/Logs/DM Forge/main.log (Mac)
+  // or %AppData%\DM Forge\logs\main.log (Windows)
+  autoUpdater.logger = log
+  autoUpdater.autoDownload = true       // download silently in background
+  autoUpdater.autoInstallOnAppQuit = false  // we control when to install
+
+  autoUpdater.on('update-available', (info) => {
+    mainWindow.webContents.send('updater:available', { version: info.version })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    mainWindow.webContents.send('updater:downloaded', { version: info.version })
+  })
+
+  autoUpdater.on('error', (err) => {
+    log.error('Updater error:', err)
+    // Silently swallow — user is probably offline, no need to surface this
+  })
+
+  // Check on launch, then every 4 hours
+  autoUpdater.checkForUpdates()
+  setInterval(() => autoUpdater.checkForUpdates(), 1000 * 60 * 60 * 4)
+
+  ipcMain.handle('updater:check',   () => autoUpdater.checkForUpdates())
+  ipcMain.handle('updater:install', () => autoUpdater.quitAndInstall())
+}
 
 let db!: InstanceType<typeof Database>
 
@@ -227,6 +257,7 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => { mainWindow = null })
+  return mainWindow
 }
 
 function registerIPC(imagesPath: string) {
@@ -765,9 +796,10 @@ function registerIPC(imagesPath: string) {
 }
 
 app.whenReady().then(() => {
+  createWindow()
+  if (mainWindow) initUpdater(mainWindow)
   const { imagesPath } = initDatabase()
   registerIPC(imagesPath)
-  createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

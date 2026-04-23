@@ -64,4 +64,12 @@ contextBridge.exposeInMainWorld('api', {
   // Backup
   exportBackup: () => ipcRenderer.invoke('backup:export'),
   importBackup: () => ipcRenderer.invoke('backup:import'),
+
+  // Updates
+  checkForUpdates:    ()         => ipcRenderer.invoke('updater:check'),
+  installUpdate:      ()         => ipcRenderer.invoke('updater:install'),
+  onUpdateAvailable:  (cb: (info: { version: string }) => void) =>
+                        ipcRenderer.on('updater:available', (_e, info) => cb(info)),
+  onUpdateDownloaded: (cb: (info: { version: string }) => void) =>
+                        ipcRenderer.on('updater:downloaded', (_e, info) => cb(info)),
 })

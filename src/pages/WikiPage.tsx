@@ -38,7 +38,7 @@ const ARTICLE_TYPES: { value: ArticleType; label: string; icon: any; color: stri
 const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   character: {
     Vitality:    ['Alive', 'Dead', 'Unknown', 'Missing', 'Immortal'],
-    Disposition: ['Friendly', 'Neutral', 'Hostile'],
+    Attitude: ['Friendly', 'Neutral', 'Hostile'],
     Attitude_Towards_Party: ['Friendly', 'Neutral', 'Hostile', 'Unknown'],
     Age:         [],
     Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned'],
@@ -51,7 +51,7 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   playerCharacter: {
     Vitality:    ['Alive', 'Dead', 'Unknown', 'Retired', 'Immortal'],
     Disposition: ['Friendly', 'Neutral', 'Hostile'],
-    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned'],
+    Royalty:     ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
     Title:       ['Professor','Captain' ,'General', 'Admiral', 'Archmage', 'High Priest'],
     Age:         [],
     Location:    [],
