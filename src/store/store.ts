@@ -2,7 +2,7 @@
 import { create } from 'zustand'
 import type { Campaign, Session, Arc, GameMap, POI, Article, ArticleSummary, ArticleType } from '../types'
 
-type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes'
+type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables'
 
 // ── Navigation History ────────────────────────────────────────────────────────
 
@@ -501,13 +501,14 @@ export const useStore = create<AppStore>((set, get) => ({
     set(s => ({
       articles: s.articles.map(a => a.id === id ? {
         ...a,
-        title:        updated.title,
-        article_type: updated.article_type,
-        tags:         updated.tags,
-        cover_image:  updated.cover_image,
-        tracks:       updated.tracks,
-        loot_table:   updated.loot_table,
-        updated_at:   updated.updated_at,
+        title:          updated.title,
+        article_type:   updated.article_type,
+        tags:           updated.tags,
+        cover_image:    updated.cover_image,
+        tracks:         updated.tracks,
+        loot_table:     updated.loot_table,
+        loot_table_id:  updated.loot_table_id,
+        updated_at:     updated.updated_at,
       } : a),
       currentArticle: s.currentArticle?.id === id ? updated : s.currentArticle,
       navigationHistory: s.navigationHistory.map(e =>

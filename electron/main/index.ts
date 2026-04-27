@@ -32,6 +32,60 @@ function initUpdater(mainWindow: BrowserWindow) {
 
 let db!: InstanceType<typeof Database>
 
+// Load default loot tables from bundled JSON
+function loadDefaultLootTables(): any[] {
+  try {
+    // In dev: relative to project root. In prod: next to the main bundle.
+    const candidates = [
+      path.join(__dirname, '../../src/data/loot_tables_default.json'),
+      path.join(__dirname, '../renderer/loot_tables_default.json'),
+      path.join(process.resourcesPath ?? '', 'loot_tables_default.json'),
+    ]
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
+    }
+    log.warn('loot_tables_default.json not found in any candidate path')
+    return []
+  } catch (e) {
+    log.error('Failed to load default loot tables:', e)
+    return []
+  }
+}
+
+function seedDefaultTables(campaignId: number): any[] {
+  const defaults = loadDefaultLootTables()
+  if (defaults.length === 0) return []
+
+  const insert = db.prepare(`
+    INSERT INTO loot_tables (campaign_id, name, description, category, items, is_default)
+    VALUES (@campaign_id, @name, @description, @category, @items, 1)
+  `)
+
+  const results: any[] = []
+  const tx = db.transaction(() => {
+    for (const t of defaults) {
+      const result = insert.run({
+        campaign_id: campaignId,
+        name: t.name,
+        description: t.description ?? '',
+        category: t.category ?? 'custom',
+        items: JSON.stringify(
+          (t.items ?? []).map((item: any, idx: number) => ({
+            id: `default_${Date.now()}_${idx}`,
+            name: item.name,
+            description: item.description ?? '',
+            quantity: item.quantity ?? '1',
+            chance: item.chance ?? 100,
+          }))
+        ),
+      })
+      results.push(db.prepare('SELECT * FROM loot_tables WHERE id = ?').get(result.lastInsertRowid))
+    }
+  })
+  tx()
+  return results.map(r => ({ ...r, is_default: r.is_default === 1 }))
+}
+
 function initDatabase() {
   const userDataPath = app.getPath('userData')
   const dbPath = path.join(userDataPath, 'dmforge.db')
@@ -152,6 +206,18 @@ function initDatabase() {
       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS loot_tables (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      name        TEXT    NOT NULL,
+      description TEXT    NOT NULL DEFAULT '',
+      category    TEXT    NOT NULL DEFAULT 'custom',
+      items       TEXT    NOT NULL DEFAULT '[]',
+      is_default  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
   `)
 
   // ── Migrations for existing databases ────────────────────────────────────────
@@ -165,10 +231,16 @@ function initDatabase() {
   if (!articleCols.some(c => c.name === 'loot_table')) {
     db.exec(`ALTER TABLE articles ADD COLUMN loot_table TEXT NOT NULL DEFAULT '{"name":"Loot","items":[]}'`)
   }
+  if (!articleCols.some(c => c.name === 'loot_table_id')) {
+    db.exec(`ALTER TABLE articles ADD COLUMN loot_table_id INTEGER REFERENCES loot_tables(id) ON DELETE SET NULL`)
+  }
 
   const poiCols = db.pragma('table_info(pois)') as { name: string }[]
   if (!poiCols.some(c => c.name === 'loot_table')) {
     db.exec(`ALTER TABLE pois ADD COLUMN loot_table TEXT NOT NULL DEFAULT '{"name":"Loot","items":[]}'`)
+  }
+  if (!poiCols.some(c => c.name === 'loot_table_id')) {
+    db.exec(`ALTER TABLE pois ADD COLUMN loot_table_id INTEGER REFERENCES loot_tables(id) ON DELETE SET NULL`)
   }
 
   const creatureCols = db.pragma('table_info(combat_creatures)') as { name: string }[]
@@ -187,14 +259,12 @@ function initDatabase() {
     db.exec(`ALTER TABLE sessions ADD COLUMN arc_id INTEGER`)
   }
 
-  // DM Notes page migrations (for DBs created before groups/ordering feature)
   const dmNotesPageCols = db.pragma('table_info(dm_notes_pages)') as { name: string }[]
   if (!dmNotesPageCols.some(c => c.name === 'group_id')) {
     db.exec(`ALTER TABLE dm_notes_pages ADD COLUMN group_id INTEGER REFERENCES dm_notes_groups(id) ON DELETE SET NULL`)
   }
   if (!dmNotesPageCols.some(c => c.name === 'sort_order')) {
     db.exec(`ALTER TABLE dm_notes_pages ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
-    // Use id as initial sort order to preserve creation order
     db.exec(`UPDATE dm_notes_pages SET sort_order = id`)
   }
 
@@ -519,7 +589,8 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('articles:get-list', (_e, filter?: any) => {
     let query = `
-      SELECT id, campaign_id, title, article_type, tags, cover_image, tracks, loot_table, created_at, updated_at
+      SELECT id, campaign_id, title, article_type, tags, cover_image, tracks,
+             loot_table, loot_table_id, created_at, updated_at
       FROM articles WHERE 1=1
     `
     const params: any[] = []
@@ -563,8 +634,8 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('articles:create', (_e, data: any) => {
     const result = db.prepare(`
-      INSERT INTO articles (campaign_id, title, content, article_type, tags, tracks, statblock, loot_table)
-      VALUES (@campaign_id, @title, @content, @article_type, @tags, @tracks, @statblock, @loot_table)
+      INSERT INTO articles (campaign_id, title, content, article_type, tags, tracks, statblock, loot_table, loot_table_id)
+      VALUES (@campaign_id, @title, @content, @article_type, @tags, @tracks, @statblock, @loot_table, @loot_table_id)
     `).run({
       content: '{"type":"doc","content":[]}',
       article_type: 'location',
@@ -572,6 +643,7 @@ function registerIPC(imagesPath: string) {
       tracks: '{}',
       statblock: '{}',
       loot_table: '{"name":"Loot","items":[]}',
+      loot_table_id: null,
       ...data,
     })
     return db.prepare('SELECT * FROM articles WHERE id = ?').get(result.lastInsertRowid)
@@ -631,7 +703,7 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('combat:get-creatures', (_e, encounterId: number) => {
     const rows = db.prepare(`
-      SELECT cc.*, a.title, a.statblock, a.loot_table
+      SELECT cc.*, a.title, a.statblock, a.loot_table, a.loot_table_id
       FROM combat_creatures cc
       JOIN articles a ON a.id = cc.article_id
       WHERE cc.encounter_id = ?
@@ -653,7 +725,7 @@ function registerIPC(imagesPath: string) {
       VALUES (?, ?, ?, ?, ?)
     `).run(encounterId, articleId, instanceNumber, maxHp, maxHp)
     const row = db.prepare(`
-      SELECT cc.*, a.title, a.statblock, a.loot_table
+      SELECT cc.*, a.title, a.statblock, a.loot_table, a.loot_table_id
       FROM combat_creatures cc
       JOIN articles a ON a.id = cc.article_id
       WHERE cc.id = ?
@@ -816,12 +888,10 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('dm-notes:create', (_e, campaignId: number, groupId: number | null) => {
-    // Calculate next sort_order within this group
     const maxRow = groupId != null
       ? db.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM dm_notes_pages WHERE campaign_id = ? AND group_id = ?').get(campaignId, groupId) as { m: number }
       : db.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM dm_notes_pages WHERE campaign_id = ? AND group_id IS NULL').get(campaignId) as { m: number }
     const sortOrder = maxRow.m + 1
-
     const result = db.prepare(`
       INSERT INTO dm_notes_pages (campaign_id, title, content, group_id, sort_order)
       VALUES (?, 'Untitled', '{"type":"doc","content":[]}', ?, ?)
@@ -829,7 +899,7 @@ function registerIPC(imagesPath: string) {
     return db.prepare('SELECT * FROM dm_notes_pages WHERE id = ?').get(result.lastInsertRowid)
   })
 
-  ipcMain.handle('dm-notes:update', (_e, id: number, data: { title?: string; content?: string; group_id?: number | null; sort_order?: number }) => {
+  ipcMain.handle('dm-notes:update', (_e, id: number, data: any) => {
     const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE dm_notes_pages SET ${fields}, updated_at = datetime('now') WHERE id = @id`)
       .run({ ...data, id })
@@ -863,14 +933,13 @@ function registerIPC(imagesPath: string) {
     return db.prepare('SELECT * FROM dm_notes_groups WHERE id = ?').get(result.lastInsertRowid)
   })
 
-  ipcMain.handle('dm-notes:update-group', (_e, id: number, data: { name?: string; color?: string; sort_order?: number }) => {
+  ipcMain.handle('dm-notes:update-group', (_e, id: number, data: any) => {
     const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE dm_notes_groups SET ${fields} WHERE id = @id`).run({ ...data, id })
     return db.prepare('SELECT * FROM dm_notes_groups WHERE id = ?').get(id)
   })
 
   ipcMain.handle('dm-notes:delete-group', (_e, id: number) => {
-    // Pages in this group become ungrouped
     db.prepare('UPDATE dm_notes_pages SET group_id = NULL WHERE group_id = ?').run(id)
     db.prepare('DELETE FROM dm_notes_groups WHERE id = ?').run(id)
   })
@@ -881,6 +950,87 @@ function registerIPC(imagesPath: string) {
       for (const o of list) stmt.run(o)
     })
     transaction(orders)
+  })
+
+  // ── Master Loot Tables ────────────────────────────────────────────────────────
+
+  ipcMain.handle('loot-tables:get-all', (_e, campaignId: number) => {
+    let tables = db.prepare(
+      'SELECT * FROM loot_tables WHERE campaign_id = ? ORDER BY category ASC, name ASC'
+    ).all(campaignId) as any[]
+
+    // Auto-seed defaults if campaign has no tables at all
+    if (tables.length === 0) {
+      tables = seedDefaultTables(campaignId)
+    }
+
+    return tables.map(t => ({ ...t, is_default: t.is_default === 1 }))
+  })
+
+  ipcMain.handle('loot-tables:get', (_e, id: number) => {
+    const t = db.prepare('SELECT * FROM loot_tables WHERE id = ?').get(id) as any
+    if (!t) return null
+    return { ...t, is_default: t.is_default === 1 }
+  })
+
+  ipcMain.handle('loot-tables:create', (_e, data: any) => {
+    const result = db.prepare(`
+      INSERT INTO loot_tables (campaign_id, name, description, category, items, is_default)
+      VALUES (@campaign_id, @name, @description, @category, @items, 0)
+    `).run({
+      description: '',
+      category: 'custom',
+      items: '[]',
+      ...data,
+    })
+    const t = db.prepare('SELECT * FROM loot_tables WHERE id = ?').get(result.lastInsertRowid) as any
+    return { ...t, is_default: t.is_default === 1 }
+  })
+
+  ipcMain.handle('loot-tables:update', (_e, id: number, data: any) => {
+    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
+    db.prepare(`UPDATE loot_tables SET ${fields}, updated_at = datetime('now') WHERE id = @id`).run({ ...data, id })
+    const t = db.prepare('SELECT * FROM loot_tables WHERE id = ?').get(id) as any
+    return { ...t, is_default: t.is_default === 1 }
+  })
+
+  ipcMain.handle('loot-tables:delete', (_e, id: number) => {
+    // Null out references before deleting — articles and POIs keep their inline loot_table JSON
+    db.prepare('UPDATE articles SET loot_table_id = NULL WHERE loot_table_id = ?').run(id)
+    db.prepare('UPDATE pois SET loot_table_id = NULL WHERE loot_table_id = ?').run(id)
+    const { affected } = db.prepare('SELECT COUNT(*) as affected FROM articles WHERE loot_table_id = ?').get(id) as { affected: number }
+    db.prepare('DELETE FROM loot_tables WHERE id = ?').run(id)
+    return { success: true, affected }
+  })
+
+  ipcMain.handle('loot-tables:roll', (_e, tableId: number | null, extraItemsJson: string) => {
+    // Merge master table items + vendor-specific extras, then roll
+    let masterItems: any[] = []
+    if (tableId) {
+      const table = db.prepare('SELECT items FROM loot_tables WHERE id = ?').get(tableId) as { items: string } | undefined
+      if (table) {
+        try { masterItems = JSON.parse(table.items) } catch {}
+      }
+    }
+
+    let extraItems: any[] = []
+    try { extraItems = JSON.parse(extraItemsJson || '[]') } catch {}
+
+    const allItems = [...masterItems, ...extraItems]
+
+    // Roll — 100% always drops, others roll against their chance
+    const result = allItems.filter(item => {
+      if (item.chance >= 100) return true
+      return Math.random() * 100 <= item.chance
+    })
+
+    return result
+  })
+
+  ipcMain.handle('loot-tables:reset-defaults', (_e, campaignId: number) => {
+    // Delete existing default-seeded tables and re-seed from JSON
+    db.prepare('DELETE FROM loot_tables WHERE campaign_id = ? AND is_default = 1').run(campaignId)
+    return seedDefaultTables(campaignId)
   })
 }
 

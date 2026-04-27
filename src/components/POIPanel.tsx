@@ -2,16 +2,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../store/store'
 import { X, PackageOpen } from 'lucide-react'
+import LootTableView from './LootTableView'
 import { POI_TYPE_LIST } from '../constants/POITypes'
 import RichEditor from './RichEditor'
 import LootTableEditor from './LootTableEditor'
 import LootResultModal from './LootResultModal'
-import type { POIType, LootItem } from '../types'
+import type { POIType, LootItem, MasterLootTable } from '../types'
 import { parseLootTable, generateLoot } from '../types'
 import CombatPanel from './CombatPanel'
 import SectionDivider from './SectionDivider'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
-
 
 export default function POIPanel({ readMode }: { readMode?: boolean }) {
   const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI, articles, navigateToArticleByTitle, currentCampaign } = useStore()
@@ -19,6 +19,8 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
   const [poiType, setPoiType] = useState<POIType>('location')
   const [content, setContent] = useState('')
   const [lootTableJson, setLootTableJson] = useState('')
+  const [lootTableId, setLootTableId] = useState<number | null>(null)
+  const [masterTables, setMasterTables] = useState<MasterLootTable[]>([])
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
@@ -34,8 +36,8 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
     ]).then(([items, artifacts, notes]) =>
       setLootSuggestions([...items, ...artifacts, ...notes].map(a => a.title).sort())
     )
+    window.api.getLootTables(currentCampaign.id).then(setMasterTables)
   }, [currentCampaign?.id])
-  
 
   useEffect(() => {
     if (selectedPOI) {
@@ -43,6 +45,7 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
       setPoiType(selectedPOI.poi_type)
       setContent(selectedPOI.content)
       setLootTableJson(selectedPOI.loot_table || '{"name":"Loot","items":[]}')
+      setLootTableId(selectedPOI.loot_table_id ?? null)
       setDirty(false)
       setLootResult(null)
     }
@@ -51,21 +54,21 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
   const save = useCallback(async () => {
     if (!selectedPOI || !dirty) return
     setSaving(true)
-    await updatePOI(selectedPOI.id, { label, poi_type: poiType, content, loot_table: lootTableJson })
+    await updatePOI(selectedPOI.id, { label, poi_type: poiType, content, loot_table: lootTableJson, loot_table_id: lootTableId })
     setDirty(false)
     setSaving(false)
-  }, [selectedPOI, dirty, label, poiType, content, lootTableJson, updatePOI])
+  }, [selectedPOI, dirty, label, poiType, content, lootTableJson, lootTableId, updatePOI])
 
   useEffect(() => {
     if (!dirty) return
     const timer = setTimeout(save, 1500)
     return () => clearTimeout(timer)
-  }, [dirty, label, poiType, content, lootTableJson])
+  }, [dirty, label, poiType, content, lootTableJson, lootTableId])
 
   const handleClose = async () => {
     if (dirty && selectedPOI) {
       setSaving(true)
-      await updatePOI(selectedPOI.id, { label, poi_type: poiType, content, loot_table: lootTableJson })
+      await updatePOI(selectedPOI.id, { label, poi_type: poiType, content, loot_table: lootTableJson, loot_table_id: lootTableId })
       setSaving(false)
     }
     selectPOI(null)
@@ -73,7 +76,10 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
 
   const handleGenerateLoot = () => {
     const table = parseLootTable(lootTableJson)
-    const result = generateLoot(table.items)
+    const masterTable = masterTables.find(t => t.id === lootTableId)
+    let masterItems: LootItem[] = []
+    if (masterTable) { try { masterItems = JSON.parse(masterTable.items) } catch {} }
+    const result = generateLoot([...masterItems, ...table.items])
     setLootResult(result)
   }
 
@@ -87,7 +93,8 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
   }
 
   const lootTable = parseLootTable(lootTableJson)
-  const hasLootItems = lootTable.items.length > 0
+  const masterTable = masterTables.find(t => t.id === lootTableId)
+  const hasLootItems = lootTable.items.length > 0 || !!masterTable
 
   return (
     <div style={{
@@ -187,111 +194,84 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
 
         {/* ── Loot section ── */}
         <div style={{ padding: '0 14px 20px' }}>
-          {/* Divider + heading */}
           <SectionDivider label={lootTable.name || 'Loot'} margin="8px 0 14px" />
 
           {readMode ? (
-            hasLootItems ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {lootTable.items.filter(i => i.chance === 100).length > 0 && (
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
-                    Guaranteed
-                  </div>
-                )}
-                {lootTable.items.filter(i => i.chance === 100).map(item => {
-                  const isLink = articles.some(a => a.title.toLowerCase() === item.name.toLowerCase())
-                  return (
-                  <div key={item.id} style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '6px 10px', borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-gold)', background: 'var(--gold-glow)',
-                    fontSize: 12,
-                  }}>
-                    <span
-                      onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined}
-                      style={{
-                        color: 'var(--gold)', fontWeight: 500, flex: 1,
-                        cursor: isLink ? 'pointer' : 'default',
-                        borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none',
-                        width: 'fit-content',
-                      }}
-                    >{item.name}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Quantity: </span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{item.quantity}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, marginLeft: 4,
-                        color: '#3dbf7f',
-                        background: 'var(--bg-surface)',
-                        padding: '2px 8px',
-                        borderRadius: 99,
-                        border: '1px solid var(--border-light)'}}>
-                        {item.chance}%</span>
-                    </div>
-                  </div>
-                  )
-                })}
-                {lootTable.items.filter(i => i.chance < 100).length > 0 && (
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '8px 0 4px' }}>
-                    Random
-                  </div>
-                )}
-                {lootTable.items.filter(i => i.chance < 100).map(item => {
-                  const isLink = articles.some(a => a.title.toLowerCase() === item.name.toLowerCase())
-                  return (
-                  <div key={item.id} style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '6px 10px', borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-light)', background: 'var(--bg-elevated)',
-                    fontSize: 12,
-                  }}>
-                    <span
-                      onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined}
-                      style={{
-                        color: isLink ? 'var(--gold)' : 'var(--text-secondary)', flex: 1,
-                        cursor: isLink ? 'pointer' : 'default',
-                        borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none',
-                        width: 'fit-content',
-                      }}
-                    >{item.name}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Quantity: </span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{item.quantity}</span>
-                      <span style={{
-                        fontSize: 12, fontWeight: 700, marginLeft: 4,
-                        color: item.chance >= 75 ? '#3dbf7f' : item.chance >= 40 ? '#c8a84b' : '#e88c3a',
-                        background: 'var(--bg-surface)', padding: '2px 8px',
-                        borderRadius: 99, border: '1px solid var(--border-light)',
-                      }}>
-                        {item.chance}%
-                      </span>
-                    </div>
-                  </div>
-                  )
-                })}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Master table items */}
+              {(() => {
+                if (!masterTable) return null
+                let masterItems: LootItem[] = []
+                try { masterItems = JSON.parse(masterTable.items) } catch {}
+                if (masterItems.length === 0) return null
+                return (
+                  <LootTableView
+                    label={`From ${masterTable.name}`}
+                    items={masterItems}
+                    tableBadge={masterTable.name}
+                    wikiTitles={articles.map(a => a.title)}
+                    onItemClick={name => {
+                      if (articles.some(a => a.title.toLowerCase() === name.toLowerCase()))
+                        navigateToArticleByTitle(name)
+                    }}
+                  />
+                )
+              })()}
+
+              {/* Inline items */}
+              <LootTableView
+                label={masterTable ? 'Extra drops' : (lootTable.name || 'Loot')}
+                items={lootTable.items}
+                wikiTitles={articles.map(a => a.title)}
+                onItemClick={name => {
+                  if (articles.some(a => a.title.toLowerCase() === name.toLowerCase()))
+                    navigateToArticleByTitle(name)
+                }}
+                emptyMessage="No loot table — switch to Edit to add items"
+              />
+
+              {hasLootItems && (
                 <button
                   className="btn btn-sm"
                   onClick={handleGenerateLoot}
-                  style={{ alignSelf: 'flex-start', gap: 6, marginTop: 8 }}
+                  style={{ alignSelf: 'flex-start', gap: 6 }}
                 >
                   <PackageOpen size={12} /> Generate Loot
                 </button>
-              </div>
-            ) : (
-              <div style={{
-                padding: '16px', textAlign: 'center',
-                border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)',
-                color: 'var(--text-muted)', fontSize: 12,
-              }}>
-                No loot table — switch to Edit to add items
-              </div>
-            )
+              )}
+            </div>
           ) : (
-            <LootTableEditor
-              value={lootTable}
-              onChange={t => { setLootTableJson(JSON.stringify(t)); setDirty(true) }}
-              defaultName="Loot"
-              suggestions={lootSuggestions}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Base table selector */}
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Base table</div>
+                <select
+                  className="input"
+                  style={{ fontSize: 12, width: '100%' }}
+                  value={lootTableId ?? ''}
+                  onChange={e => { setLootTableId(e.target.value ? parseInt(e.target.value) : null); setDirty(true) }}
+                >
+                  <option value="">— None (inline items only) —</option>
+                  {masterTables.filter(t => t.category === 'location').map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                  {masterTables.filter(t => t.category !== 'location').length > 0 && (
+                    <>
+                      <option disabled>── Other tables ──</option>
+                      {masterTables.filter(t => t.category !== 'location').map(t => (
+                        <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <LootTableEditor
+                value={lootTable}
+                onChange={t => { setLootTableJson(JSON.stringify(t)); setDirty(true) }}
+                suggestions={lootSuggestions}
+              />
+            </div>
           )}
         </div>
       </div>

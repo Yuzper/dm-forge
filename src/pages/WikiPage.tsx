@@ -5,43 +5,48 @@ import {
   BookOpen, Plus, Search, Trash2, Check, MapPin, User, Package,
   ScrollText, Users, Landmark, FileText, X, ChevronLeft, Calendar,
   MoreHorizontal, Tag, Image as ImageIcon, Link, PawPrint, StickyNote,
-  ArrowLeft,
+  ArrowLeft, ShoppingBag,
 } from 'lucide-react'
 import RichEditor from '../components/RichEditor'
-import type { Article, ArticleSummary, ArticleType } from '../types'
+import type { Article, ArticleSummary, ArticleType, MasterLootTable, LootItem } from '../types'
 import StatBlockEditor from '../components/StatBlockEditor'
 import { parseStatBlock, DEFAULT_STATBLOCK } from '../types'
 import StatBlockView from '../components/StatBlockView'
 import LootTableEditor from '../components/LootTableEditor'
+import LootTableView from '../components/LootTableView'
 import { parseLootTable } from '../types'
 import SectionDivider from '../components/SectionDivider'
 
+// ── Article type definitions ───────────────────────────────────────────────────
+
 const ARTICLE_TYPES: { value: ArticleType; label: string; icon: any; color: string }[] = [
-  { value: 'character',       label: 'Character',    icon: User,       color: '#5bbfb0' },
-  { value: 'playerCharacter', label: 'Player Char',  icon: User,       color: '#49c185' },
-  { value: 'creature',        label: 'Creature',     icon: PawPrint,   color: '#36a502' },
-  { value: 'location',        label: 'Location',     icon: MapPin,     color: '#c8a84b' },
-  { value: 'faction',         label: 'Faction',      icon: Users,      color: '#e88c3a' },
-  { value: 'organization',    label: 'Organization', icon: Users,      color: '#e8a23a' },
-  { value: 'culture',         label: 'Culture',      icon: Landmark,   color: '#4da6ff' },
-  { value: 'religion',        label: 'Religion',     icon: Landmark,   color: '#b07de8' },
-  { value: 'item',            label: 'Item',         icon: Package,    color: '#9b7de8' },
-  { value: 'note',            label: 'Note',         icon: StickyNote, color: '#776d92' },
-  { value: 'quest',           label: 'Quest',        icon: ScrollText, color: '#5b9fe8' },
-  { value: 'event',           label: 'Event',        icon: ScrollText, color: '#e05555' },
-  { value: 'lore',            label: 'Lore',         icon: Landmark,   color: '#e05555' },
-  { value: 'other',           label: 'Other',        icon: FileText,   color: '#8a8a8a' },
+  { value: 'character',       label: 'Character',    icon: User,        color: '#5bbfb0' },
+  { value: 'playerCharacter', label: 'Player Char',  icon: User,        color: '#49c185' },
+  { value: 'creature',        label: 'Creature',     icon: PawPrint,    color: '#36a502' },
+  { value: 'location',        label: 'Location',     icon: MapPin,      color: '#c8a84b' },
+  { value: 'faction',         label: 'Faction',      icon: Users,       color: '#e88c3a' },
+  { value: 'organization',    label: 'Organization', icon: Users,       color: '#e8a23a' },
+  { value: 'culture',         label: 'Culture',      icon: Landmark,    color: '#4da6ff' },
+  { value: 'religion',        label: 'Religion',     icon: Landmark,    color: '#b07de8' },
+  { value: 'item',            label: 'Item',         icon: Package,     color: '#9b7de8' },
+  { value: 'vendor',          label: 'Vendor',       icon: ShoppingBag, color: '#49c185' },
+  { value: 'note',            label: 'Note',         icon: StickyNote,  color: '#776d92' },
+  { value: 'quest',           label: 'Quest',        icon: ScrollText,  color: '#5b9fe8' },
+  { value: 'event',           label: 'Event',        icon: ScrollText,  color: '#e05555' },
+  { value: 'lore',            label: 'Lore',         icon: Landmark,    color: '#e05555' },
+  { value: 'other',           label: 'Other',        icon: FileText,    color: '#8a8a8a' },
 ]
 
 // ── Track definitions ──────────────────────────────────────────────────────────
+
 const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   character: {
     Vitality:    ['Alive', 'Dead', 'Unknown', 'Missing', 'Immortal'],
-    Attitude: ['Friendly', 'Neutral', 'Hostile'],
+    Attitude:    ['Friendly', 'Neutral', 'Hostile'],
     Attitude_Towards_Party: ['Friendly', 'Neutral', 'Hostile', 'Unknown'],
     Age:         [],
     Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned'],
-    Title:       ['Professor','Captain' ,'General', 'Admiral', 'Archmage', 'High Priest'],
+    Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Location:    [],
     Faction:     [],
     Religion:    [],
@@ -51,7 +56,7 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Vitality:    ['Alive', 'Dead', 'Unknown', 'Retired', 'Immortal'],
     Disposition: ['Friendly', 'Neutral', 'Hostile'],
     Royalty:     ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
-    Title:       ['Professor','Captain' ,'General', 'Admiral', 'Archmage', 'High Priest'],
+    Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Age:         [],
     Location:    [],
     Faction:     [],
@@ -59,17 +64,23 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Culture:     [],
   },
   creature: {
-    Vitality:    ['Living', 'Extinct', 'Endangered', 'Unknown'],
-    Disposition: ['Hostile', 'Neutral', 'Friendly'],
+    Vitality:      ['Living', 'Extinct', 'Endangered', 'Unknown'],
+    Disposition:   ['Hostile', 'Neutral', 'Friendly'],
     Creature_Type: ['Beast', 'Dragon', 'Fiend', 'Celestial', 'Fey', 'Undead', 'Aberration', 'Humanoid', 'Construct', 'Elemental', 'Giant', 'Monstrosity', 'Ooze', 'Plant'],
-    Size:        ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'],
-    Habitat:    ['Forest', 'Desert', 'Mountain', 'Swamp', 'Ocean', 'Underdark', 'Urban', 'Arctic', 'Plains'],
+    Size:          ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'],
+    Habitat:       ['Forest', 'Desert', 'Mountain', 'Swamp', 'Ocean', 'Underdark', 'Urban', 'Arctic', 'Plains'],
   },
   location: {
-    State:  ['Discovered', 'Undiscovered','Destroyed', 'Abandoned'],
+    State:  ['Discovered', 'Undiscovered', 'Destroyed', 'Abandoned'],
     Size:   ['Room', 'Building', 'Village', 'Town', 'City', 'Metropolis', 'Ruins', 'Dungeon', 'Wilderness'],
     Plane:  ['Material Plane', 'The Nine Hells', 'The Abyss', 'Ethereal Plane', 'Shadowfell', 'Feywild', 'Elemental Plane', 'Astral Plane'],
     Region: [],
+  },
+  vendor: {
+    Shop_Type: ['General Store', 'Blacksmith', 'Alchemist', 'Magic Items', 'Black Market', 'Fence', 'Tavern', 'Herbalist'],
+    Status:    ['Open', 'Closed', 'Burned Down', 'Under New Management', 'Abandoned'],
+    Location:  [],
+    Owner:     [],
   },
   faction: {
     Status: ['Active', 'Disbanded', 'Unknown'],
@@ -100,34 +111,35 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Status: ['Upcoming', 'Ongoing', 'Past'],
     Scale:  ['Personal', 'Local', 'Regional', 'World-shaking'],
   },
-  culture:  { Status: ['Active','Undercover', 'Extinct', 'Unknown'] },
+  culture:  { Status: ['Active', 'Undercover', 'Extinct', 'Unknown'] },
   religion: {
-    Status: ['Active','Undercover', 'Extinct', 'Unknown'],
-    Leader: [],
-    Holy_Symbol: [],
+    Status:         ['Active', 'Undercover', 'Extinct', 'Unknown'],
+    Leader:         [],
+    Holy_Symbol:    [],
     Follower_Count: [],
-    Allies: [],
-    Rivals: [],
-    Sacred_Sites: [],
+    Allies:         [],
+    Rivals:         [],
+    Sacred_Sites:   [],
   },
-  lore:     { Status: ['Active', 'Extinct', 'Unknown'] },
+  lore:  { Status: ['Active', 'Extinct', 'Unknown'] },
   note: {
     Sender:             [],
     Intended_Recipient: [],
     Language:           [],
     Date:               [],
-    Location:           []
+    Location:           [],
   },
-  other:    { Status: ['Active', 'Inactive', 'Unknown'] },
+  other: { Status: ['Active', 'Inactive', 'Unknown'] },
 }
 
 const TRACK_VALUE_COLORS: Record<string, string> = {
-  Alive: '#3dbf7f', Active: '#3dbf7f', Found: '#3dbf7f', Discovered: '#3dbf7f',
+  Alive: '#3dbf7f', Active: '#3dbf7f', Found: '#3dbf7f', Discovered: '#3dbf7f', Open: '#3dbf7f',
   Dead: '#e05555', Destroyed: '#e05555', Disbanded: '#e05555', Failed: '#e05555', Extinct: '#e05555',
+  'Burned Down': '#e05555',
   Unknown: '#8a8a8a', Missing: '#8a8a8a', Lost: '#8a8a8a', Abandoned: '#8a8a8a',
-  Inactive: '#8a8a8a', Undiscovered: '#8a8a8a',
+  Inactive: '#8a8a8a', Undiscovered: '#8a8a8a', Closed: '#8a8a8a',
+  'Under New Management': '#c8a84b',
   Friendly: '#3dbf7f', Neutral: '#bab637', Hostile: '#e05555',
-  Unaware: '#8a8a8a', Alerted: '#e88c3a', Hunting: '#e05555',
   Completed: '#5b9fe8', Past: '#5b9fe8', Retired: '#5b9fe8',
   Upcoming: '#c8a84b', Ongoing: '#e88c3a',
   Trivial: '#8a8a8a', Easy: '#3dbf7f', Medium: '#c8a84b', Hard: '#e88c3a', Deadly: '#e05555',
@@ -136,8 +148,6 @@ const TRACK_VALUE_COLORS: Record<string, string> = {
   Personal: '#8a8a8a', Local: '#5bbfb0', Regional: '#5b9fe8',
   National: '#b07de8', Global: '#e88c3a', Secret: '#e05555', 'World-shaking': '#e05555',
   Tiny: '#8a8a8a', Small: '#5bbfb0', Large: '#e88c3a', Huge: '#e05555', Gargantuan: '#8b2533',
-  Hamlet: '#8a8a8a', Village: '#5bbfb0', Town: '#c8a84b', City: '#e88c3a',
-  Metropolis: '#e05555', Ruins: '#5a5040', Dungeon: '#8b2533', Wilderness: '#3dbf7f',
 }
 
 function getTrackTags(tracks: Record<string, string>): string[] {
@@ -181,12 +191,8 @@ const sidebarSectionLabel: React.CSSProperties = {
 // ─── Track Row ─────────────────────────────────────────────────────────────────
 
 function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions }: {
-  trackKey: string
-  name: string
-  options: string[]
-  value: string
-  onChange: (v: string) => void
-  dynamicOptions?: string[]
+  trackKey: string; name: string; options: string[]; value: string
+  onChange: (v: string) => void; dynamicOptions?: string[]
 }) {
   const resolvedOptions = dynamicOptions ?? options
   const isCustomOnly = dynamicOptions === undefined && options.length === 0
@@ -206,34 +212,19 @@ function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions }: 
       <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>{name}</span>
       {customMode ? (
         <div style={{ display: 'flex', gap: 4, flex: 1 }}>
-          <input
-            ref={inputRef}
-            className="input"
-            style={{ height: 28, fontSize: 12, flex: 1 }}
-            value={value}
-            placeholder={isCustomOnly ? `${name}…` : 'Custom…'}
-            onChange={e => onChange(e.target.value)}
-          />
+          <input ref={inputRef} className="input" style={{ height: 28, fontSize: 12, flex: 1 }}
+            value={value} placeholder={isCustomOnly ? `${name}…` : 'Custom…'}
+            onChange={e => onChange(e.target.value)} />
           {!isCustomOnly && (
-            <button
-              onClick={() => { setCustomMode(false); onChange('') }}
-              title="Back to list"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 4px', display: 'flex', alignItems: 'center' }}
-            >
+            <button onClick={() => { setCustomMode(false); onChange('') }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 4px', display: 'flex', alignItems: 'center' }}>
               <X size={11} />
             </button>
           )}
         </div>
       ) : (
-        <select
-          className="input"
-          style={{ height: 28, fontSize: 12, flex: 1 }}
-          value={value}
-          onChange={e => {
-            if (e.target.value === '__custom__') { setCustomMode(true); onChange('') }
-            else onChange(e.target.value)
-          }}
-        >
+        <select className="input" style={{ height: 28, fontSize: 12, flex: 1 }} value={value}
+          onChange={e => { if (e.target.value === '__custom__') { setCustomMode(true); onChange('') } else onChange(e.target.value) }}>
           <option value="">— none —</option>
           {resolvedOptions.map(o => <option key={o} value={o}>{o}</option>)}
           <option value="__custom__">Custom…</option>
@@ -254,22 +245,14 @@ function CreateArticleModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = async () => {
     if (!title.trim()) return
-    setSaving(true)
-    setError('')
+    setSaving(true); setError('')
     try {
       await createArticle({ title: title.trim(), article_type: type })
       onClose()
-    } catch {
-      setSaving(false)
-      setError('Failed — title may already exist.')
-    }
+    } catch { setSaving(false); setError('Failed — title may already exist.') }
   }
 
-  const PLACEHOLDERS = [
-    'Neverwinter…', 'Waterdeep…', 'Icewind Dale…',
-    'Gandalf the Grey…', 'Gerome the Gnome…', 'Magic Stick of Doom…',
-    'Stormwind City…', 'Orgrimmar…',
-  ]
+  const PLACEHOLDERS = ['Neverwinter…', 'Waterdeep…', 'Gandalf the Grey…', 'Gerome the Gnome…']
   const randomPlaceholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)]
 
   return (
@@ -279,14 +262,9 @@ function CreateArticleModal({ onClose }: { onClose: () => void }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="input-group">
             <label className="input-label">Title</label>
-            <input
-              className="input"
-              placeholder={randomPlaceholder}
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            />
+            <input className="input" placeholder={randomPlaceholder} value={title}
+              onChange={e => setTitle(e.target.value)} autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
             {error && <div style={{ fontSize: 12, color: '#e05555', marginTop: 4 }}>{error}</div>}
           </div>
           <div className="input-group">
@@ -297,8 +275,7 @@ function CreateArticleModal({ onClose }: { onClose: () => void }) {
                 const active = t.value === type
                 return (
                   <button key={t.value} onClick={() => setType(t.value)} style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '5px 12px', borderRadius: 99,
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 99,
                     border: `1px solid ${active ? t.color : 'var(--border-light)'}`,
                     background: active ? `${t.color}18` : 'transparent',
                     color: active ? t.color : 'var(--text-muted)',
@@ -331,60 +308,33 @@ function ArticleCard({ article, onOpen }: { article: ArticleSummary; onOpen: () 
   const { wikiSearchFields } = useStore()
 
   return (
-    <div
-      className="card card-clickable"
-      style={{ padding: 0, cursor: 'pointer', overflow: 'hidden' }}
-      onClick={onOpen}
-    >
+    <div className="card card-clickable" style={{ padding: 0, cursor: 'pointer', overflow: 'hidden' }} onClick={onOpen}>
       {article.cover_image ? (
         <div style={{ height: 100, overflow: 'hidden', flexShrink: 0 }}>
-          <img
-            src={`file://${article.cover_image}`}
-            loading="lazy"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
+          <img src={`file://${article.cover_image}`} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
       ) : (
         <div style={{ height: 6, background: `${typeInfo.color}44`, flexShrink: 0 }} />
       )}
-
       <div style={{ padding: '14px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            padding: '2px 8px', borderRadius: 99,
-            border: `1px solid ${typeInfo.color}55`,
-            background: `${typeInfo.color}12`,
-            fontSize: 10, color: typeInfo.color, fontWeight: 600,
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 99, border: `1px solid ${typeInfo.color}55`, background: `${typeInfo.color}12`, fontSize: 10, color: typeInfo.color, fontWeight: 600 }}>
             <Icon size={9} /> {typeInfo.label}
           </div>
         </div>
-
-        <h3 style={{
-          fontFamily: 'var(--font-display)', fontSize: 15,
-          color: 'var(--text-primary)', marginBottom: 8,
-          letterSpacing: '0.02em',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
+        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--text-primary)', marginBottom: 8, letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {article.title}
         </h3>
-
         {tags.length > 0 && wikiSearchFields.tags && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
             {tags.slice(0, 3).map(tag => (
-              <span key={tag} style={{
-                fontSize: 10, padding: '1px 6px', borderRadius: 99,
-                background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
-                color: 'var(--text-muted)',
-              }}>
+              <span key={tag} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 99, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', color: 'var(--text-muted)' }}>
                 #{tag}
               </span>
             ))}
             {tags.length > 3 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>+{tags.length - 3}</span>}
           </div>
         )}
-
         <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
           <Calendar size={10} />
           Updated {new Date(article.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -404,10 +354,7 @@ function ArticleMenu({ onDelete }: { onDelete: () => void }) {
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setConfirmDelete(false)
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) { setOpen(false); setConfirmDelete(false) }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -415,24 +362,14 @@ function ArticleMenu({ onDelete }: { onDelete: () => void }) {
 
   return (
     <div ref={menuRef} style={{ position: 'relative' }}>
-      <button
-        className="btn btn-ghost btn-icon btn-sm"
-        onClick={() => { setOpen(o => !o); setConfirmDelete(false) }}
-        style={{ color: 'var(--text-muted)' }}
-      >
+      <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setOpen(o => !o); setConfirmDelete(false) }} style={{ color: 'var(--text-muted)' }}>
         <MoreHorizontal size={15} />
       </button>
       {open && (
-        <div style={{
-          position: 'absolute', right: 0, top: '100%', marginTop: 4,
-          background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
-          borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)',
-          minWidth: 140, zIndex: 50, overflow: 'hidden',
-        }}>
+        <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 140, zIndex: 50, overflow: 'hidden' }}>
           <button
             onClick={e => { e.stopPropagation(); if (!confirmDelete) { setConfirmDelete(true); return } onDelete(); setOpen(false) }}
-            style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}
-          >
+            style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}>
             <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
           </button>
         </div>
@@ -441,71 +378,72 @@ function ArticleMenu({ onDelete }: { onDelete: () => void }) {
   )
 }
 
+// ─── Loot section shared renderer — uses LootTableView ────────────────────────
+
 // ─── Article Editor ────────────────────────────────────────────────────────────
 
 const STATBLOCK_TYPES: ArticleType[] = ['creature', 'character', 'playerCharacter']
+const LOOT_TYPES: ArticleType[] = ['creature', 'character', 'playerCharacter', 'vendor']
 
 function ArticleEditor({ article, onBack }: { article: Article; onBack: () => void }) {
-  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks } = useStore()
-  const { currentCampaign, articles } = useStore()
-  const [factionNames, setFactionNames] = useState<string[]>([])
-  const [organizationNames, setOrganizationNames] = useState<string[]>([])
-  const [religionNames, setReligionNames] = useState<string[]>([])
-  const [cultureNames, setCultureNames] = useState<string[]>([])
-  const [locationNames, setLocationNames] = useState<string[]>([])
-  const [creatureNames, setCreatureNames] = useState<string[]>([])
-  const [characterNames, setCharacterNames] = useState<string[]>([])
-  const [title, setTitle] = useState(article.title)
-  const [content, setContent] = useState(article.content)
+  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles } = useStore()
+
+  const [factionNames, setFactionNames]       = useState<string[]>([])
+  const [organizationNames, setOrgNames]      = useState<string[]>([])
+  const [religionNames, setReligionNames]     = useState<string[]>([])
+  const [cultureNames, setCultureNames]       = useState<string[]>([])
+  const [locationNames, setLocationNames]     = useState<string[]>([])
+  const [creatureNames, setCreatureNames]     = useState<string[]>([])
+  const [characterNames, setCharacterNames]   = useState<string[]>([])
+  const [masterTables, setMasterTables]       = useState<MasterLootTable[]>([])
+
+  const [title, setTitle]             = useState(article.title)
+  const [content, setContent]         = useState(article.content)
   const [articleType, setArticleType] = useState<ArticleType>(article.article_type as ArticleType)
-  const [tracks, setTracks] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(article.tracks) } catch { return {} }
-  })
-  const [statblock, setStatblock] = useState(() => parseStatBlock(article.statblock))
-  const [tags, setTags] = useState<string[]>(() => { try { return JSON.parse(article.tags) } catch { return [] } })
-  const [tagInput, setTagInput] = useState('')
-  const [coverImage, setCoverImage] = useState<string | null>(article.cover_image || null)
+  const [tracks, setTracks]           = useState<Record<string, string>>(() => { try { return JSON.parse(article.tracks) } catch { return {} } })
+  const [statblock, setStatblock]     = useState(() => parseStatBlock(article.statblock))
+  const [tags, setTags]               = useState<string[]>(() => { try { return JSON.parse(article.tags) } catch { return [] } })
+  const [tagInput, setTagInput]       = useState('')
+  const [coverImage, setCoverImage]   = useState<string | null>(article.cover_image || null)
   const [portraitImage, setPortraitImage] = useState<string | null>(article.portrait_image || null)
-  const [backlinks, setBacklinks] = useState<ArticleSummary[]>([])
-  const [dirty, setDirty] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [readMode, setReadMode] = useState(true)
+  const [backlinks, setBacklinks]     = useState<ArticleSummary[]>([])
+  const [dirty, setDirty]             = useState(false)
+  const [saving, setSaving]           = useState(false)
+  const [readMode, setReadMode]       = useState(true)
+
+  // Loot — inline extras JSON (used for all loot types; for vendors this is extra items on top of master)
   const [lootTableJson, setLootTableJson] = useState(article.loot_table || '{"name":"Loot","items":[]}')
+  // Master table FK
+  const [lootTableId, setLootTableId] = useState<number | null>(article.loot_table_id ?? null)
 
   const hasStatblock = STATBLOCK_TYPES.includes(articleType)
+  const hasLoot      = LOOT_TYPES.includes(articleType)
+  const isVendor     = articleType === 'vendor'
 
-  const pendingRef = useRef({
-    title, content, articleType, tracks, statblock, lootTableJson,
-    tags, coverImage, portraitImage, dirty, id: article.id,
-  })
-  pendingRef.current = {
-    title, content, articleType, tracks, statblock, lootTableJson,
-    tags, coverImage, portraitImage, dirty, id: article.id,
-  }
+  const pendingRef = useRef({ title, content, articleType, tracks, statblock, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id })
+  pendingRef.current = { title, content, articleType, tracks, statblock, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id }
 
   useEffect(() => {
     return () => {
       const p = pendingRef.current
       if (p.dirty) window.api.updateArticle(p.id, {
         title: p.title, content: p.content, article_type: p.articleType,
-        tracks: JSON.stringify(p.tracks),
-        statblock: JSON.stringify(p.statblock),
-        loot_table: p.lootTableJson,
-        tags: JSON.stringify(p.tags),
-        cover_image: p.coverImage, portrait_image: p.portraitImage,
+        tracks: JSON.stringify(p.tracks), statblock: JSON.stringify(p.statblock),
+        loot_table: p.lootTableJson, loot_table_id: p.lootTableId,
+        tags: JSON.stringify(p.tags), cover_image: p.coverImage, portrait_image: p.portraitImage,
       })
     }
   }, [])
 
   useEffect(() => {
-    setTitle(article.title)
-    setContent(article.content)
+    setTitle(article.title); setContent(article.content)
     setArticleType(article.article_type as ArticleType)
     setTracks(() => { try { return JSON.parse(article.tracks) } catch { return {} } })
     setStatblock(parseStatBlock(article.statblock))
     setTags(() => { try { return JSON.parse(article.tags) } catch { return [] } })
-    setCoverImage(article.cover_image || null)
-    setPortraitImage(article.portrait_image || null)
+    setCoverImage(article.cover_image || null); setPortraitImage(article.portrait_image || null)
+    setLootTableJson(article.loot_table || '{"name":"Loot","items":[]}')
+    setLootTableId(article.loot_table_id ?? null)
     setDirty(false)
   }, [article.id])
 
@@ -513,30 +451,17 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
 
   useEffect(() => {
     if (!currentCampaign) return
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'faction' }).then(f =>
-      setFactionNames(f.map(a => a.title).sort())
-    )
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'organization' }).then(o =>
-      setOrganizationNames(o.map(a => a.title).sort())
-    )
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'religion' }).then(r =>
-      setReligionNames(r.map(a => a.title).sort())
-    )
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'culture' }).then(c =>
-      setCultureNames(c.map(a => a.title).sort())
-    )
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'creature' }).then(c =>
-      setCreatureNames(c.map(a => a.title).sort())
-    )
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'location' }).then(l =>
-      setLocationNames(l.map(a => a.title).sort())
-    )
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'faction' }).then(f => setFactionNames(f.map(a => a.title).sort()))
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'organization' }).then(o => setOrgNames(o.map(a => a.title).sort()))
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'religion' }).then(r => setReligionNames(r.map(a => a.title).sort()))
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'culture' }).then(c => setCultureNames(c.map(a => a.title).sort()))
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'creature' }).then(c => setCreatureNames(c.map(a => a.title).sort()))
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'location' }).then(l => setLocationNames(l.map(a => a.title).sort()))
     Promise.all([
       window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'character' }),
       window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'playerCharacter' }),
-    ]).then(([chars, pcs]) =>
-      setCharacterNames([...chars, ...pcs].map(a => a.title).sort())
-    )
+    ]).then(([chars, pcs]) => setCharacterNames([...chars, ...pcs].map(a => a.title).sort()))
+    window.api.getLootTables(currentCampaign.id).then(setMasterTables)
   }, [currentCampaign?.id])
 
   const save = useCallback(async () => {
@@ -544,89 +469,74 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
     setSaving(true)
     await updateArticle(article.id, {
       title, content, article_type: articleType,
-      tracks: JSON.stringify(tracks),
-      statblock: JSON.stringify(statblock),
-      loot_table: lootTableJson,
-      tags: JSON.stringify(tags),
-      cover_image: coverImage, portrait_image: portraitImage,
+      tracks: JSON.stringify(tracks), statblock: JSON.stringify(statblock),
+      loot_table: lootTableJson, loot_table_id: lootTableId,
+      tags: JSON.stringify(tags), cover_image: coverImage, portrait_image: portraitImage,
     })
-    setDirty(false)
-    setSaving(false)
-  }, [article.id, dirty, title, content, articleType, tracks, statblock, lootTableJson, tags, coverImage, portraitImage, updateArticle])
+    setDirty(false); setSaving(false)
+  }, [article.id, dirty, title, content, articleType, tracks, statblock, lootTableJson, lootTableId, tags, coverImage, portraitImage, updateArticle])
 
   useEffect(() => {
     if (!dirty) return
     const t = setTimeout(save, 1500)
     return () => clearTimeout(t)
-  }, [dirty, title, content, articleType, tracks, statblock, lootTableJson, tags, coverImage, portraitImage])
+  }, [dirty, title, content, articleType, tracks, statblock, lootTableJson, lootTableId, tags, coverImage, portraitImage])
 
   const pickImage = async (setter: (v: string | null) => void) => {
     const path = await window.api.selectImageFile()
     if (!path) return
     const full = await window.api.getImagePath(path)
-    setter(full.replace('file://', ''))
-    setDirty(true)
+    setter(full.replace('file://', '')); setDirty(true)
   }
 
   const addTag = () => {
     const t = tagInput.trim().toLowerCase().replace(/\s+/g, '-')
     if (!t || tags.includes(t)) return
-    setTags(prev => [...prev, t])
-    setTagInput('')
-    setDirty(true)
+    setTags(prev => [...prev, t]); setTagInput(''); setDirty(true)
   }
-
   const removeTag = (tag: string) => { setTags(prev => prev.filter(t => t !== tag)); setDirty(true) }
 
   const currentTypeTracks = Object.entries(ARTICLE_TRACKS[articleType] || {})
+  const statblockHasData = statblock.ac > 0 || statblock.hp > 0 || statblock.traits.length > 0 || statblock.actions.length > 0
 
-  const statblockHasData = statblock.ac > 0 || statblock.hp > 0 ||
-    statblock.traits.length > 0 || statblock.actions.length > 0
+  const lootSuggestions = articles.filter(a => ['item', 'artifact', 'note'].includes(a.article_type)).map(a => a.title)
+
+  // For read-mode loot display — delegates to LootTableView
+  const renderLootReadMode = (items: LootItem[], label: string, tableBadge?: string) => (
+    <LootTableView
+      label={label}
+      items={items}
+      tableBadge={tableBadge}
+      wikiTitles={articles.map(a => a.title)}
+      onItemClick={name => {
+        if (articles.some(a => a.title.toLowerCase() === name.toLowerCase()))
+          navigateToArticleByTitle(name)
+      }}
+      emptyMessage="No items — switch to Edit to add"
+    />
+  )
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{
-        borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)',
-        flexShrink: 0, display: 'flex', alignItems: 'stretch', minHeight: 48,
-      }}>
-        <button
-          onClick={onBack}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5, padding: '0 16px',
-            background: 'transparent', border: 'none', borderRight: '1px solid var(--border)',
-            color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-            transition: 'color var(--transition)',
-          }}
+      {/* Header bar */}
+      <div style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)', flexShrink: 0, display: 'flex', alignItems: 'stretch', minHeight: 48 }}>
+        <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 16px', background: 'transparent', border: 'none', borderRight: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color var(--transition)' }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}
-        >
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}>
           <ChevronLeft size={14} /> Back to Wiki
         </button>
-
         <div style={{ display: 'flex', alignItems: 'center', padding: '0 20px', flex: 1, minWidth: 0 }}>
-          <input
-            value={title}
-            onChange={e => { setTitle(e.target.value); setDirty(true) }}
-            readOnly={readMode}
-            style={{
-              background: 'transparent', border: 'none', outline: 'none',
-              fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500,
-              color: 'var(--text-primary)', letterSpacing: '0.03em', width: '100%',
-              cursor: readMode ? 'default' : 'text',
-            }}
-            placeholder="Article title…"
-          />
+          <input value={title} onChange={e => { setTitle(e.target.value); setDirty(true) }} readOnly={readMode}
+            style={{ background: 'transparent', border: 'none', outline: 'none', fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '0.03em', width: '100%', cursor: readMode ? 'default' : 'text' }}
+            placeholder="Article title…" />
         </div>
-
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', borderLeft: '1px solid var(--border)', flexShrink: 0 }}>
           {readMode ? (
             <button className="btn btn-sm" onClick={() => setReadMode(false)}>Edit</button>
           ) : (
             <>
               {dirty
-                ? <button className="btn btn-sm" onClick={save} disabled={saving}>
-                    {saving ? 'Saving…' : <><Check size={12} /> Save</>}
-                  </button>
+                ? <button className="btn btn-sm" onClick={save} disabled={saving}>{saving ? 'Saving…' : <><Check size={12} /> Save</>}</button>
                 : <span style={{ fontSize: 11, color: 'var(--gold-dim)' }}>Saved</span>
               }
               <button className="btn btn-sm btn-ghost" onClick={() => setReadMode(true)}>Done</button>
@@ -637,37 +547,34 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
       </div>
 
       <div style={{ flex: 1, overflow: 'auto' }}>
+        {/* Banner */}
         {coverImage ? (
           <div style={{ height: 200, position: 'relative', overflow: 'hidden' }}>
             <img src={`file://${coverImage}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)' }} />
             {!readMode && (
               <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6 }}>
-                <button onClick={() => pickImage(setCoverImage)} style={imgBtnStyle}>
-                  <ImageIcon size={11} /> Change banner
-                </button>
-                <button onClick={() => { setCoverImage(null); setDirty(true) }} style={{ ...imgBtnStyle, color: '#e05555', borderColor: 'rgba(224,85,85,0.4)' }}>
-                  <X size={11} /> Remove
-                </button>
+                <button onClick={() => pickImage(setCoverImage)} style={imgBtnStyle}><ImageIcon size={11} /> Change banner</button>
+                <button onClick={() => { setCoverImage(null); setDirty(true) }} style={{ ...imgBtnStyle, color: '#e05555', borderColor: 'rgba(224,85,85,0.4)' }}><X size={11} /> Remove</button>
               </div>
             )}
           </div>
         ) : !readMode ? (
           <button onClick={() => pickImage(setCoverImage)} style={addBannerStyle}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
-          >
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}>
             <ImageIcon size={13} /> Add banner image
           </button>
         ) : null}
 
         <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+          {/* Main content */}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {/* Type picker */}
             {!readMode && (
               <div style={{ padding: '10px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 {ARTICLE_TYPES.map(t => {
-                  const Icon = t.icon
-                  const active = t.value === articleType
+                  const Icon = t.icon; const active = t.value === articleType
                   return (
                     <button key={t.value} onClick={() => { setArticleType(t.value); setDirty(true) }} style={{
                       display: 'flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 99,
@@ -683,105 +590,144 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               </div>
             )}
 
+            {/* Editor */}
             <div style={{ padding: '0 8px' }}>
-              <RichEditor
-                key={article.id}
-                content={content}
-                onChange={v => { setContent(v); setDirty(true) }}
-                placeholder="Start writing… Use [[Article Title]] to link to wiki articles, (( to link to sessions and @ to link spells."
-                onWikiLinkClick={navigateToArticleByTitle}
-                expandable
-                readOnly={readMode}
-              />
+              <RichEditor key={article.id} content={content} onChange={v => { setContent(v); setDirty(true) }}
+                placeholder="Start writing… Use [[Article Title]] to link wiki articles, (( for sessions, @ for spells."
+                onWikiLinkClick={navigateToArticleByTitle} expandable readOnly={readMode} />
             </div>
 
+            {/* Stat block */}
             {hasStatblock && (
               <div style={{ padding: '0 24px 32px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0 20px' }}>
                   <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, var(--border-light), transparent)' }} />
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase', flexShrink: 0 }}>
-                    Stat Block
-                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase', flexShrink: 0 }}>Stat Block</div>
                   <div style={{ flex: 1, height: 1, background: 'linear-gradient(270deg, var(--border-light), transparent)' }} />
                 </div>
-
                 {readMode ? (
-                  statblockHasData ? (
-                    <StatBlockView statblock={statblock} name={title} articleType={articleType} />
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '24px 16px', textAlign: 'center', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-md)', color: 'var(--text-muted)' }}>
-                      <span style={{ fontSize: 13 }}>No stat block yet</span>
-                      <span style={{ fontSize: 11 }}>Switch to Edit mode to add combat stats</span>
-                    </div>
-                  )
-                ) : (
-                  <StatBlockEditor value={statblock} onChange={sb => { setStatblock(sb); setDirty(true) }} />
-                )}
+                  statblockHasData
+                    ? <StatBlockView statblock={statblock} name={title} articleType={articleType} />
+                    : <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '24px 16px', textAlign: 'center', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-md)', color: 'var(--text-muted)' }}>
+                        <span style={{ fontSize: 13 }}>No stat block yet</span>
+                        <span style={{ fontSize: 11 }}>Switch to Edit mode to add combat stats</span>
+                      </div>
+                ) : <StatBlockEditor value={statblock} onChange={sb => { setStatblock(sb); setDirty(true) }} />}
               </div>
             )}
 
-            {hasStatblock && (() => {
-              const lootTable = parseLootTable(lootTableJson)
-              const lootSuggestions = articles
-                .filter(a => ['item', 'artifact', 'note'].includes(a.article_type))
-                .map(a => a.title)
+            {/* Loot / Inventory section */}
+            {hasLoot && (() => {
+              const extrasTable = parseLootTable(lootTableJson)
+              const masterTable = masterTables.find(t => t.id === lootTableId)
+
               return (
                 <div style={{ padding: '0 24px 32px' }}>
-                  <SectionDivider label={lootTable.name || 'Loot'} />
-                  {readMode ? (
-                    lootTable.items.length > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {lootTable.items.filter(i => i.chance === 100).length > 0 && (
-                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Guaranteed</div>
-                        )}
-                        {lootTable.items.filter(i => i.chance === 100).map(item => {
-                          const isLink = articles.some(a => a.title.toLowerCase() === item.name.toLowerCase())
-                          return (
-                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-gold)', background: 'var(--gold-glow)', fontSize: 12 }}>
-                              <span onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined} style={{ color: 'var(--gold)', fontWeight: 500, flex: 1, cursor: isLink ? 'pointer' : 'default', borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none', width: 'fit-content' }}>{item.name}</span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Quantity: </span>
-                                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{item.quantity}</span>
-                                <span style={{ fontSize: 12, fontWeight: 700, marginLeft: 4, color: '#3dbf7f', background: 'var(--bg-surface)', padding: '2px 8px', borderRadius: 99, border: '1px solid var(--border-light)' }}>{item.chance}%</span>
-                              </div>
-                            </div>
-                          )
-                        })}
-                        {lootTable.items.filter(i => i.chance < 100).length > 0 && (
-                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '8px 0 4px' }}>Random</div>
-                        )}
-                        {lootTable.items.filter(i => i.chance < 100).map(item => {
-                          const isLink = articles.some(a => a.title.toLowerCase() === item.name.toLowerCase())
-                          return (
-                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', fontSize: 12 }}>
-                              <span onClick={isLink ? () => navigateToArticleByTitle(item.name) : undefined} style={{ color: isLink ? 'var(--gold)' : 'var(--text-secondary)', flex: 1, cursor: isLink ? 'pointer' : 'default', borderBottom: isLink ? '1px solid var(--gold-dim)' : 'none', width: 'fit-content' }}>{item.name}</span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Quantity: </span>
-                                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{item.quantity}</span>
-                                <span style={{ fontSize: 12, fontWeight: 700, marginLeft: 4, color: item.chance >= 75 ? '#3dbf7f' : item.chance >= 40 ? '#c8a84b' : '#e88c3a', background: 'var(--bg-surface)', padding: '2px 8px', borderRadius: 99, border: '1px solid var(--border-light)' }}>{item.chance}%</span>
-                              </div>
-                            </div>
-                          )
-                        })}
+                  <SectionDivider label={isVendor ? 'Inventory' : (extrasTable.name || 'Loot')} />
+
+                  {/* Vendor: master table picker */}
+                  {isVendor && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+                        Master table (base stock)
                       </div>
-                    ) : (
-                      <div style={{ padding: '16px', textAlign: 'center', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: 12 }}>
-                        No loot table — switch to Edit to add items
+                      {readMode ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {masterTable ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99, background: '#49c18518', border: '1px solid #49c18540', fontSize: 12, color: '#49c185' }}>
+                              <ShoppingBag size={11} /> {masterTable.name}
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No master table — using custom items only</span>
+                          )}
+                        </div>
+                      ) : (
+                        <select className="input" style={{ fontSize: 12 }} value={lootTableId ?? ''} onChange={e => { setLootTableId(e.target.value ? parseInt(e.target.value) : null); setDirty(true) }}>
+                          <option value="">— None (custom items only) —</option>
+                          {masterTables.filter(t => t.category === 'vendor').map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                          {masterTables.filter(t => t.category !== 'vendor').length > 0 && (
+                            <>
+                              <option disabled>── Other tables ──</option>
+                              {masterTables.filter(t => t.category !== 'vendor').map(t => (
+                                <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
+                              ))}
+                            </>
+                          )}
+                        </select>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Non-vendor: master table picker */}
+                  {!isVendor && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+                        Master loot table
+                      </div>
+                      {readMode ? (
+                        masterTable ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99, background: '#49c18518', border: '1px solid #49c18540', fontSize: 12, color: '#49c185', width: 'fit-content' }}>
+                            <ShoppingBag size={11} /> {masterTable.name}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No master table — using inline items only</span>
+                        )
+                      ) : (
+                        <select className="input" style={{ fontSize: 12 }} value={lootTableId ?? ''} onChange={e => { setLootTableId(e.target.value ? parseInt(e.target.value) : null); setDirty(true) }}>
+                          <option value="">— None (inline items only) —</option>
+                          {masterTables.filter(t => t.category === 'creature').map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                          {masterTables.filter(t => t.category !== 'creature').length > 0 && (
+                            <>
+                              <option disabled>── Other tables ──</option>
+                              {masterTables.filter(t => t.category !== 'creature').map(t => (
+                                <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
+                              ))}
+                            </>
+                          )}
+                        </select>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Show master table items preview in read mode */}
+                  {readMode && masterTable && (() => {
+                    let masterItems: LootItem[] = []
+                    try { masterItems = JSON.parse(masterTable.items) } catch {}
+                    if (masterItems.length === 0) return null
+                    return (
+                      <div style={{ marginBottom: 12 }}>
+                        {renderLootReadMode(masterItems, `From ${masterTable.name}`, masterTable.name)}
                       </div>
                     )
-                  ) : (
-                    <LootTableEditor
-                      value={lootTable}
-                      onChange={t => { setLootTableJson(JSON.stringify(t)); setDirty(true) }}
-                      defaultName="Loot"
-                      suggestions={lootSuggestions}
-                    />
-                  )}
+                  })()}
+
+                  {/* Extras / inline items */}
+                  <div>
+                    {readMode ? (
+                      renderLootReadMode(
+                        extrasTable.items,
+                        (masterTable || isVendor)
+                          ? (isVendor ? 'Unique inventory' : 'Extra drops')
+                          : (isVendor ? 'Inventory' : 'Loot'),
+                      )
+                    ) : (
+                      <LootTableEditor
+                        value={extrasTable}
+                        onChange={t => { setLootTableJson(JSON.stringify(t)); setDirty(true) }}
+                        suggestions={lootSuggestions}
+                      />
+                    )}
+                  </div>
                 </div>
               )
             })()}
           </div>
 
+          {/* Right sidebar */}
           <div style={{ width: 260, flexShrink: 0, borderLeft: '1px solid var(--border)', position: 'sticky', top: 0, display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
               <div style={sidebarSectionLabel}>{article.title}</div>
@@ -789,25 +735,19 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                 <div style={{ position: 'relative', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
                   <img src={`file://${portraitImage}`} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', display: 'block' }} />
                   {!readMode && (
-                    <div
-                      style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: 0, transition: 'all 200ms ease' }}
+                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: 0, transition: 'all 200ms ease' }}
                       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.5)' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '0'; (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0)' }}
-                    >
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '0'; (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0)' }}>
                       <button onClick={() => pickImage(setPortraitImage)} style={imgBtnStyle}><ImageIcon size={11} /> Change</button>
                       <button onClick={() => { setPortraitImage(null); setDirty(true) }} style={{ ...imgBtnStyle, color: '#e05555', borderColor: 'rgba(224,85,85,0.4)' }}><X size={11} /> Remove</button>
                     </div>
                   )}
                 </div>
               ) : !readMode ? (
-                <button
-                  onClick={() => pickImage(setPortraitImage)}
-                  style={{ width: '100%', aspectRatio: '3/4', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--bg-elevated)', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, transition: 'all 120ms ease' }}
+                <button onClick={() => pickImage(setPortraitImage)} style={{ width: '100%', aspectRatio: '3/4', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--bg-elevated)', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, transition: 'all 120ms ease' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--gold)'; (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
-                >
-                  <ImageIcon size={22} strokeWidth={1} />
-                  Add portrait
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}>
+                  <ImageIcon size={22} strokeWidth={1} /> Add portrait
                 </button>
               ) : null}
             </div>
@@ -827,9 +767,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                         </div>
                       )
                     })}
-                    {currentTypeTracks.every(([n]) => !tracks[n]) && (
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>— none set —</span>
-                    )}
+                    {currentTypeTracks.every(([n]) => !tracks[n]) && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>— none set —</span>}
                   </div>
                 ) : (
                   currentTypeTracks.map(([trackName, options]) => (
@@ -853,18 +791,19 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                         setDirty(true)
                       }}
                       dynamicOptions={
-                        trackName === 'Faction'             ? factionNames :
-                        trackName === 'Organization'        ? organizationNames :
-                        trackName === 'Religion'            ? religionNames :
-                        trackName === 'Culture'             ? cultureNames :
-                        trackName === 'Species'             ? creatureNames :
-                        trackName === 'Location'            ? locationNames :
-                        trackName === 'HQ'                  ? locationNames :
-                        trackName === 'Sender'              ? characterNames :
-                        trackName === 'Intended_Recipient'  ? characterNames :
-                        trackName === 'Leader'              ? characterNames :
-                        trackName === 'Allies'              ? [characterNames, organizationNames, factionNames, religionNames].flat() :
-                        trackName === 'Rivals'              ? [characterNames, organizationNames, factionNames, religionNames].flat() :
+                        trackName === 'Faction'            ? factionNames :
+                        trackName === 'Organization'       ? organizationNames :
+                        trackName === 'Religion'           ? religionNames :
+                        trackName === 'Culture'            ? cultureNames :
+                        trackName === 'Species'            ? creatureNames :
+                        trackName === 'Location'           ? locationNames :
+                        trackName === 'HQ'                 ? locationNames :
+                        trackName === 'Owner'              ? characterNames :
+                        trackName === 'Sender'             ? characterNames :
+                        trackName === 'Intended_Recipient' ? characterNames :
+                        trackName === 'Leader'             ? characterNames :
+                        trackName === 'Allies'             ? [...characterNames, ...organizationNames, ...factionNames, ...religionNames] :
+                        trackName === 'Rivals'             ? [...characterNames, ...organizationNames, ...factionNames, ...religionNames] :
                         undefined
                       }
                     />
@@ -879,41 +818,29 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                 {tags.map(tag => (
                   <span key={tag} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 11, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     #{tag}
-                    {!readMode && (
-                      <button onClick={() => removeTag(tag)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--text-muted)' }}>
-                        <X size={10} />
-                      </button>
-                    )}
+                    {!readMode && <button onClick={() => removeTag(tag)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--text-muted)' }}><X size={10} /></button>}
                   </span>
                 ))}
                 {!readMode && (
-                  <input
-                    value={tagInput}
-                    onChange={e => setTagInput(e.target.value)}
+                  <input value={tagInput} onChange={e => setTagInput(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag() } }}
                     placeholder="Add tag…"
-                    style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 11, color: 'var(--text-secondary)', width: 80 }}
-                  />
+                    style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 11, color: 'var(--text-secondary)', width: 80 }} />
                 )}
               </div>
             </div>
 
             {backlinks.length > 0 && (
               <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
-                <div style={{ ...sidebarSectionLabel, display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <Link size={11} /> Linked from
-                </div>
+                <div style={{ ...sidebarSectionLabel, display: 'flex', alignItems: 'center', gap: 5 }}><Link size={11} /> Linked from</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {backlinks.map(a => {
                     const t = ARTICLE_TYPES.find(x => x.value === a.article_type) || ARTICLE_TYPES[ARTICLE_TYPES.length - 1]
                     return (
-                      <button
-                        key={a.id}
-                        onClick={() => navigateToArticleByTitle(a.title)}
+                      <button key={a.id} onClick={() => navigateToArticleByTitle(a.title)}
                         style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 'var(--radius-sm)', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease' }}
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = t.color; (e.currentTarget as HTMLElement).style.color = t.color }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}
-                      >
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}>
                         <t.icon size={11} color={t.color} />
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</span>
                       </button>
@@ -948,17 +875,10 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
 
   const allTags = useMemo(() => {
     const tagSet = new Set<string>()
-    articles.forEach(a => {
-      try { (JSON.parse(a.tags) as string[]).forEach(t => tagSet.add(t)) } catch {}
-    })
+    articles.forEach(a => { try { (JSON.parse(a.tags) as string[]).forEach(t => tagSet.add(t)) } catch {} })
     if (wikiTagFilter) tagSet.add(wikiTagFilter)
     return [...tagSet].sort()
   }, [articles, wikiTagFilter])
-
-  const handleBack = () => {
-    setView('campaign')
-    setCampaignSubView('hub')
-  }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -966,46 +886,26 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
-              onClick={handleBack}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                background: 'transparent', border: 'none',
-                borderRight: '1px solid var(--border)',
-                paddingRight: 12, marginRight: 4,
-                color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
-                transition: 'color var(--transition)',
-              }}
+              onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', borderRight: '1px solid var(--border)', paddingRight: 12, marginRight: 4, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', transition: 'color var(--transition)' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
-            >
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}>
               <ArrowLeft size={14} /> Back
             </button>
             <BookOpen size={22} color="var(--gold)" />
             <h1 style={{ fontSize: 22, letterSpacing: '0.05em' }}>Campaign Wiki</h1>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {articles.length} article{articles.length !== 1 ? 's' : ''}
-            </span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{articles.length} article{articles.length !== 1 ? 's' : ''}</span>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-            <Plus size={15} /> New Article
-          </button>
+          <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> New Article</button>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, paddingBottom: 14 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ position: 'relative', width: 260 }}>
               <Search size={13} color="var(--text-muted)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-              <input
-                className="input"
-                style={{ paddingLeft: 30, paddingRight: wikiSearch ? 28 : 10, fontSize: 13, height: 34 }}
-                placeholder={
-                  wikiSearchFields.title && wikiSearchFields.tags ? 'Search by title or tag…'
-                  : wikiSearchFields.tags ? 'Search by tag…'
-                  : 'Search by title…'
-                }
-                value={wikiSearch}
-                onChange={e => setWikiSearch(e.target.value)}
-              />
+              <input className="input" style={{ paddingLeft: 30, paddingRight: wikiSearch ? 28 : 10, fontSize: 13, height: 34 }}
+                placeholder={wikiSearchFields.title && wikiSearchFields.tags ? 'Search by title or tag…' : wikiSearchFields.tags ? 'Search by tag…' : 'Search by title…'}
+                value={wikiSearch} onChange={e => setWikiSearch(e.target.value)} />
               {wikiSearch && (
                 <button onClick={() => setWikiSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 0 }}>
                   <X size={12} />
@@ -1018,26 +918,22 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
                 const isLast = active && !wikiSearchFields[field === 'title' ? 'tags' : 'title']
                 return (
                   <label key={field} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', userSelect: 'none' }}>
-                    <input
-                      type="checkbox"
-                      checked={active}
-                      disabled={isLast}
+                    <input type="checkbox" checked={active} disabled={isLast}
                       onChange={() => setWikiSearchFields({ ...wikiSearchFields, [field]: !active })}
-                      style={{ accentColor: 'var(--gold)', cursor: isLast ? 'default' : 'pointer', width: 11, height: 11 }}/>
+                      style={{ accentColor: 'var(--gold)', cursor: isLast ? 'default' : 'pointer', width: 11, height: 11 }} />
                     {field}
                   </label>
-                )})}
+                )
+              })}
             </div>
           </div>
           <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border-light)', flexShrink: 0 }} />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {ALL_FILTERS.map(f => {
-              const Icon = f.icon
-              const active = wikiFilter === f.value
+              const Icon = f.icon; const active = wikiFilter === f.value
               return (
                 <button key={f.value} onClick={() => setWikiFilter(f.value as any)} style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '4px 12px', borderRadius: 99,
+                  display: 'flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 99,
                   border: `1px solid ${active ? 'var(--border-gold)' : 'var(--border-light)'}`,
                   background: active ? 'var(--bg-active)' : 'transparent',
                   color: active ? 'var(--gold)' : 'var(--text-muted)',
@@ -1051,10 +947,8 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-start', paddingBottom: 8 }}>
-          <button
-            onClick={() => setWikiShowTags(!wikiShowTags)}
-            style={{ fontSize: 11, padding: '2px 10px', borderRadius: 99, border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}
-          >
+          <button onClick={() => setWikiShowTags(!wikiShowTags)}
+            style={{ fontSize: 11, padding: '2px 10px', borderRadius: 99, border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}>
             {wikiShowTags ? 'Hide tags' : 'Show tags'}
           </button>
         </div>
@@ -1066,20 +960,15 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
             {allTags.map(tag => {
               const active = wikiTagFilter === tag
               return (
-                <button
-                  key={tag}
-                  onClick={() => setWikiTagFilter(active ? null : tag)}
-                  style={{ padding: '2px 10px', borderRadius: 99, fontSize: 11, border: `1px solid ${active ? 'var(--gold-dim)' : 'var(--border-light)'}`, background: active ? 'var(--gold-glow)' : 'transparent', color: active ? 'var(--gold)' : 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}
-                >
+                <button key={tag} onClick={() => setWikiTagFilter(active ? null : tag)}
+                  style={{ padding: '2px 10px', borderRadius: 99, fontSize: 11, border: `1px solid ${active ? 'var(--gold-dim)' : 'var(--border-light)'}`, background: active ? 'var(--gold-glow)' : 'transparent', color: active ? 'var(--gold)' : 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}>
                   #{tag}
                 </button>
               )
             })}
             {wikiTagFilter && (
-              <button
-                onClick={() => setWikiTagFilter(null)}
-                style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 11, border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', transition: 'all 120ms ease', marginLeft: 2 }}
-              >
+              <button onClick={() => setWikiTagFilter(null)}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 11, border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', transition: 'all 120ms ease', marginLeft: 2 }}>
                 <X size={10} /> Clear
               </button>
             )}
@@ -1096,20 +985,14 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
                 {wikiSearch ? 'No articles match your search' : 'No articles yet'}
               </div>
               <div style={{ fontSize: 13 }}>
-                {wikiSearch ? 'Try a different search term or filter' : 'Create your first article to start building your campaign wiki'}
+                {wikiSearch ? 'Try a different search term or filter' : 'Create your first article to start building your wiki'}
               </div>
             </div>
-            {!wikiSearch && (
-              <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-                <Plus size={14} /> Create Article
-              </button>
-            )}
+            {!wikiSearch && <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={14} /> Create Article</button>}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14, alignContent: 'start' }}>
-            {articles.map(a => (
-              <ArticleCard key={a.id} article={a} onOpen={() => onOpen(a)} />
-            ))}
+            {articles.map(a => <ArticleCard key={a.id} article={a} onOpen={() => onOpen(a)} />)}
           </div>
         )}
       </div>

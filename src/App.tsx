@@ -7,6 +7,7 @@ import CampaignDetailPage from './pages/CampaignDetailPage'
 import SessionPage from './pages/SessionPage'
 import WikiPage from './pages/WikiPage'
 import DMNotesPage from './pages/DMNotesPage'
+import LootTablesPage from './pages/LootTablesPage'
 import StatBlockPage from './pages/StatBlockPage'
 import { UpdateBanner } from './components/UpdateBanner'
 
@@ -28,11 +29,12 @@ export default function App() {
       <Sidebar />
       <UpdateBanner />
       <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {view === 'campaigns' && <CampaignsPage />}
-        {view === 'campaign'  && <CampaignDetailPage />}
-        {view === 'session'   && <SessionPage />}
-        {view === 'wiki'      && <WikiPage />}
-        {view === 'dm-notes'  && <DMNotesPage />}
+        {view === 'campaigns'    && <CampaignsPage />}
+        {view === 'campaign'     && <CampaignDetailPage />}
+        {view === 'session'      && <SessionPage />}
+        {view === 'wiki'         && <WikiPage />}
+        {view === 'dm-notes'     && <DMNotesPage />}
+        {view === 'loot-tables'  && <LootTablesPage />}
       </main>
     </div>
   )

@@ -4,12 +4,10 @@ import { useStore } from '../store/store'
 import {
   Plus, Calendar, Map, BookOpen, MoreHorizontal, Trash2, Pencil,
   ChevronRight, ArrowUpDown, ChevronDown, ChevronUp, Layers,
-  Scroll, Sparkles, ArrowLeft,
+  Scroll, Sparkles, ArrowLeft, ShoppingBag,
 } from 'lucide-react'
 import type { Session, Arc } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
-
-// ── Arc colour options ─────────────────────────────────────────────────────────
 
 const ARC_COLORS = [
   '#c8a84b', '#7aeada', '#2eb370', '#5b9fe8', '#1323cf',
@@ -23,41 +21,31 @@ const menuItemStyle: React.CSSProperties = {
   cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease',
 }
 
-// ── Arc colour picker ──────────────────────────────────────────────────────────
-
 function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
       {ARC_COLORS.map(c => (
-        <button
-          key={c}
-          onClick={() => onChange(c)}
-          style={{
-            width: 22, height: 22, borderRadius: '50%',
-            background: c, border: `2px solid ${value === c ? 'var(--text-primary)' : 'transparent'}`,
-            cursor: 'pointer', transition: 'border 120ms ease', padding: 0,
-          }}
-        />
+        <button key={c} onClick={() => onChange(c)} style={{
+          width: 22, height: 22, borderRadius: '50%', background: c, padding: 0,
+          border: `2px solid ${value === c ? 'var(--text-primary)' : 'transparent'}`,
+          cursor: 'pointer', transition: 'border 120ms ease',
+        }} />
       ))}
     </div>
   )
 }
-
-// ── Modals ─────────────────────────────────────────────────────────────────────
 
 function CreateArcModal({ onClose }: { onClose: () => void }) {
   const { createArc } = useStore()
   const [name, setName] = useState('')
   const [color, setColor] = useState(ARC_COLORS[0])
   const [saving, setSaving] = useState(false)
-
   const handleSubmit = async () => {
     if (!name.trim()) return
     setSaving(true)
     await createArc({ name: name.trim(), color })
     onClose()
   }
-
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
@@ -90,14 +78,12 @@ function EditArcModal({ arc, onClose }: { arc: Arc; onClose: () => void }) {
   const [name, setName] = useState(arc.name)
   const [color, setColor] = useState(arc.color)
   const [saving, setSaving] = useState(false)
-
   const handleSubmit = async () => {
     if (!name.trim()) return
     setSaving(true)
     await updateArc(arc.id, { name: name.trim(), color })
     onClose()
   }
-
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
@@ -129,7 +115,6 @@ function CreateSessionModal({ defaultArcId, onClose }: { defaultArcId: number | 
   const [name, setName] = useState('')
   const [sessionSub, setSessionSub] = useState('')
   const [saving, setSaving] = useState(false)
-
   const [arcId, setArcId] = useState<number | null>(() => {
     if (defaultArcId !== null) return defaultArcId
     if (currentCampaign) {
@@ -138,19 +123,12 @@ function CreateSessionModal({ defaultArcId, onClose }: { defaultArcId: number | 
     }
     return arcs.find(a => a.is_default)?.id ?? null
   })
-
   const nextNumber = (sessions.length > 0 ? Math.max(...sessions.map(s => s.session_number)) : 0) + 1
   const today = new Date().toISOString().slice(0, 10)
   const subClean = sessionSub.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 3)
   const isDuplicate = sessions.some(s => s.session_number === nextNumber && s.session_sub === subClean)
-
-  const PLACEHOLDERS = [
-    'The Road to Neverwinter…', 'The Battle of Helm\'s Deep…',
-    'The Goblin King\'s Lair…', 'Descent into the Underdark…',
-    'The Siege of Waterdeep…', 'Curse of the Ancient Tomb…',
-  ]
+  const PLACEHOLDERS = ['The Road to Neverwinter…', 'The Battle of Helm\'s Deep…', 'The Goblin King\'s Lair…', 'Descent into the Underdark…']
   const randomPlaceholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)]
-
   const handleSubmit = async () => {
     if (!name.trim() || isDuplicate) return
     setSaving(true)
@@ -158,7 +136,6 @@ function CreateSessionModal({ defaultArcId, onClose }: { defaultArcId: number | 
     await createSession({ name: name.trim(), session_number: nextNumber, session_sub: subClean, arc_id: arcId, date: today })
     onClose()
   }
-
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
@@ -167,8 +144,7 @@ function CreateSessionModal({ defaultArcId, onClose }: { defaultArcId: number | 
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
             <div className="input-group" style={{ flex: '0 0 80px' }}>
               <label className="input-label">Session #</label>
-              <input className="input" type="number" value={nextNumber} readOnly
-                style={{ textAlign: 'center', color: 'var(--gold)', fontWeight: 600 }} />
+              <input className="input" type="number" value={nextNumber} readOnly style={{ textAlign: 'center', color: 'var(--gold)', fontWeight: 600 }} />
             </div>
             <div className="input-group" style={{ flex: '0 0 72px' }}>
               <label className="input-label">Sub (opt.)</label>
@@ -212,22 +188,16 @@ function EditSessionModal({ session, onClose }: { session: Session; onClose: () 
   const [arcId, setArcId] = useState<number | null>(session.arc_id)
   const [date, setDate] = useState(session.date ?? '')
   const [saving, setSaving] = useState(false)
-
   const subClean = sessionSub.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 3)
   const isDuplicate = sessions.some(s => s.id !== session.id && s.session_number === sessionNumber && s.session_sub === subClean)
-
   const handleSubmit = async () => {
     if (!name.trim() || isDuplicate) return
     setSaving(true)
     try {
       await updateSession(session.id, { name: name.trim(), session_number: sessionNumber, session_sub: subClean, arc_id: arcId, date: date || null })
       onClose()
-    } catch (e) {
-      console.error('Failed to update session:', e)
-      setSaving(false)
-    }
+    } catch (e) { setSaving(false) }
   }
-
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
@@ -280,23 +250,17 @@ function EditSessionModal({ session, onClose }: { session: Session; onClose: () 
   )
 }
 
-// ── Session Menu ───────────────────────────────────────────────────────────────
-
 function SessionMenu({ session, onEdit }: { session: Session; onEdit: () => void }) {
   const { selectSession, deleteSession } = useStore()
   const [open, setOpen] = useState(false)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
   const menuRef = useRef<HTMLDivElement>(null)
-
   useEffect(() => {
     if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
-    }
+    const handler = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
-
   return (
     <div ref={menuRef} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
       <button className="btn btn-ghost btn-icon btn-sm" onClick={e => { e.stopPropagation(); setOpen(o => !o) }} style={{ color: 'var(--text-muted)' }}>
@@ -317,23 +281,17 @@ function SessionMenu({ session, onEdit }: { session: Session; onEdit: () => void
   )
 }
 
-// ── Arc Menu ───────────────────────────────────────────────────────────────────
-
 function ArcMenu({ arc, onEdit }: { arc: Arc; onEdit: () => void }) {
   const { deleteArc } = useStore()
   const [open, setOpen] = useState(false)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
   const menuRef = useRef<HTMLDivElement>(null)
-
   useEffect(() => {
     if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
-    }
+    const handler = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
-
   return (
     <div ref={menuRef} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
       <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setOpen(o => !o)} style={{ color: 'var(--text-muted)' }}>
@@ -357,17 +315,12 @@ function ArcMenu({ arc, onEdit }: { arc: Arc; onEdit: () => void }) {
   )
 }
 
-// ── Session Card ───────────────────────────────────────────────────────────────
-
 function SessionCard({ session }: { session: Session }) {
   const { selectSession } = useStore()
   const [editOpen, setEditOpen] = useState(false)
-
   return (
     <>
-      <div className="card card-clickable"
-        style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 16 }}
-        onClick={() => selectSession(session)}>
+      <div className="card card-clickable" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 16 }} onClick={() => selectSession(session)}>
         <div style={{ width: 44, height: 44, background: 'var(--bg-active)', border: '1px solid var(--border-gold)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'var(--font-display)', fontSize: session.session_sub ? 12 : 14, color: 'var(--gold)' }}>
           {session.session_number}{session.session_sub}
         </div>
@@ -392,19 +345,14 @@ function SessionCard({ session }: { session: Session }) {
   )
 }
 
-// ── Arc Section ────────────────────────────────────────────────────────────────
-
 function ArcSection({ arc, sessions, sortAsc, onAddSession }: { arc: Arc; sessions: Session[]; sortAsc: boolean; onAddSession: (arcId: number) => void }) {
   const [collapsed, setCollapsed] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
-
   const sorted = [...sessions].sort((a, b) => {
     const numDiff = a.session_number - b.session_number
     if (numDiff !== 0) return sortAsc ? numDiff : -numDiff
-    const subDiff = (a.session_sub ?? '').localeCompare(b.session_sub ?? '')
-    return sortAsc ? subDiff : -subDiff
+    return sortAsc ? (a.session_sub ?? '').localeCompare(b.session_sub ?? '') : (b.session_sub ?? '').localeCompare(a.session_sub ?? '')
   })
-
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px' }}>
@@ -439,55 +387,38 @@ function ArcSection({ arc, sessions, sortAsc, onAddSession }: { arc: Arc; sessio
   )
 }
 
-// ── Hub Card ───────────────────────────────────────────────────────────────────
-
 function HubCard({ icon, title, description, stat, onClick, accent = 'var(--gold)' }: {
-  icon: React.ReactNode
-  title: string
-  description: string
-  stat?: string
-  onClick: () => void
-  accent?: string
+  icon: React.ReactNode; title: string; description: string; stat?: string; onClick: () => void; accent?: string
 }) {
   const [hovered, setHovered] = useState(false)
-
   return (
     <button
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: 16,
-        padding: '32px 28px',
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 16,
+        padding: '28px 24px',
         background: hovered ? 'var(--bg-elevated)' : 'var(--bg-surface)',
         border: `1px solid ${hovered ? accent : 'var(--border)'}`,
-        borderRadius: 'var(--radius-lg)',
-        cursor: 'pointer',
-        textAlign: 'left',
+        borderRadius: 'var(--radius-lg)', cursor: 'pointer', textAlign: 'left',
         transition: 'all 180ms ease',
         boxShadow: hovered ? `0 0 24px ${accent}18` : 'none',
-        minWidth: 0,
       }}
     >
       <div style={{
-        width: 48, height: 48, borderRadius: 'var(--radius-md)',
-        background: `${accent}18`,
-        border: `1px solid ${accent}40`,
+        width: 44, height: 44, borderRadius: 'var(--radius-md)',
+        background: `${accent}18`, border: `1px solid ${accent}40`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: accent, flexShrink: 0,
-        transition: 'all 180ms ease',
+        color: accent, flexShrink: 0, transition: 'all 180ms ease',
       }}>
         {icon}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, color: hovered ? accent : 'var(--text-primary)', letterSpacing: '0.04em', marginBottom: 6, transition: 'color 180ms ease' }}>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, color: hovered ? accent : 'var(--text-primary)', letterSpacing: '0.04em', marginBottom: 5, transition: 'color 180ms ease' }}>
           {title}
         </div>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', fontFamily: 'var(--font-ui)', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-ui)', lineHeight: 1.5 }}>
           {description}
         </div>
       </div>
@@ -500,36 +431,24 @@ function HubCard({ icon, title, description, stat, onClick, accent = 'var(--gold
   )
 }
 
-// ── Sessions List View ─────────────────────────────────────────────────────────
-
 function SessionsView({ onBack }: { onBack: () => void }) {
   const { currentCampaign, sessions, arcs } = useStore()
   const [showCreate, setShowCreate] = useState(false)
   const [createArcOpen, setCreateArcOpen] = useState(false)
   const [preselectedArcId, setPreselectedArcId] = useState<number | null>(null)
-
   const [sortAsc, setSortAsc] = useState<boolean>(() => {
     try { return localStorage.getItem('dmforge:session-sort') !== 'desc' } catch { return true }
   })
-
   const toggleSort = () => {
-    const next = !sortAsc
-    setSortAsc(next)
+    const next = !sortAsc; setSortAsc(next)
     try { localStorage.setItem('dmforge:session-sort', next ? 'asc' : 'desc') } catch {}
   }
-
-  const handleAddSession = (arcId: number) => {
-    setPreselectedArcId(arcId)
-    setShowCreate(true)
-  }
-
+  const handleAddSession = (arcId: number) => { setPreselectedArcId(arcId); setShowCreate(true) }
   if (!currentCampaign) return null
-
   const defaultArc = arcs.find(a => a.is_default)
   const sortedArcs = [...arcs].sort((a, b) => a.name.localeCompare(b.name))
   const sessionsForArc = (arcId: number) =>
     sessions.filter(s => s.arc_id === arcId || (s.arc_id === null && arcId === defaultArc?.id))
-
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ padding: '20px 32px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -542,16 +461,13 @@ function SessionsView({ onBack }: { onBack: () => void }) {
             <h2 style={{ fontSize: 20, letterSpacing: '0.04em' }}>Sessions</h2>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn" onClick={() => setCreateArcOpen(true)}>
-              <Layers size={15} /> New Arc
-            </button>
+            <button className="btn" onClick={() => setCreateArcOpen(true)}><Layers size={15} /> New Arc</button>
             <button className="btn btn-primary" onClick={() => { setPreselectedArcId(null); setShowCreate(true) }}>
               <Plus size={15} /> New Session
             </button>
           </div>
         </div>
       </div>
-
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
           <BookOpen size={16} color="var(--text-muted)" />
@@ -565,7 +481,6 @@ function SessionsView({ onBack }: { onBack: () => void }) {
             <ArrowUpDown size={11} /> Sessions {sortAsc ? '↑' : '↓'}
           </button>
         </div>
-
         {sessions.length === 0 && arcs.length <= 1 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 300, gap: 12, color: 'var(--text-muted)' }}>
             <BookOpen size={40} strokeWidth={1} color="var(--border-light)" />
@@ -583,7 +498,6 @@ function SessionsView({ onBack }: { onBack: () => void }) {
           </div>
         )}
       </div>
-
       {showCreate && <CreateSessionModal defaultArcId={preselectedArcId} onClose={() => { setShowCreate(false); setPreselectedArcId(null) }} />}
       {createArcOpen && <CreateArcModal onClose={() => setCreateArcOpen(false)} />}
     </div>
@@ -593,24 +507,18 @@ function SessionsView({ onBack }: { onBack: () => void }) {
 // ── Campaign Detail Page ───────────────────────────────────────────────────────
 
 export default function CampaignDetailPage() {
-  const { currentCampaign, sessions, articles, setView } = useStore()
+  const { currentCampaign, sessions, setView } = useStore()
   const { campaignSubView: subView, setCampaignSubView: setSubView } = useStore()
   const [noteCount, setNoteCount] = useState(0)
   const [articleCount, setArticleCount] = useState(0)
+  const [lootCount, setLootCount] = useState(0)
 
   useEffect(() => {
-    if (currentCampaign) {
-      window.api.getDMNotesPages(currentCampaign.id).then(pages => setNoteCount(pages.length))
-    }
+    if (!currentCampaign) return
+    window.api.getDMNotesPages(currentCampaign.id).then(p => setNoteCount(p.length))
+    window.api.getArticlesList({ campaignId: currentCampaign.id }).then(a => setArticleCount(a.length))
+    window.api.getLootTables(currentCampaign.id).then(t => setLootCount(t.length))
   }, [currentCampaign?.id])
-
-  useEffect(() => {
-    if (currentCampaign) {
-      window.api.getArticlesList({ campaignId: currentCampaign.id })
-        .then(a => setArticleCount(a.length))
-    }
-  }, [currentCampaign?.id])
-
 
   if (!currentCampaign) return null
 
@@ -636,9 +544,9 @@ export default function CampaignDetailPage() {
         <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: 20 }}>
           Where to?
         </div>
-        <div style={{ display: 'flex', gap: 16, maxWidth: 900 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 780 }}>
           <HubCard
-            icon={<Scroll size={22} />}
+            icon={<Scroll size={20} />}
             title="Sessions"
             description="Plan and run your sessions, manage maps, points of interest, and combat encounters."
             stat={sessions.length > 0 ? `${sessions.length} session${sessions.length !== 1 ? 's' : ''}` : undefined}
@@ -646,7 +554,7 @@ export default function CampaignDetailPage() {
             accent="var(--gold)"
           />
           <HubCard
-            icon={<BookOpen size={22} />}
+            icon={<BookOpen size={20} />}
             title="Wiki"
             description="Browse and edit your campaign compendium — characters, locations, factions, lore, and more."
             stat={articleCount > 0 ? `${articleCount} article${articleCount !== 1 ? 's' : ''}` : undefined}
@@ -654,12 +562,20 @@ export default function CampaignDetailPage() {
             accent="#5b9fe8"
           />
           <HubCard
-            icon={<Sparkles size={22} />}
+            icon={<Sparkles size={20} />}
             title="DM Notes"
             description="A freeform scratchpad with wiki, session, and spell links for planning on the fly."
             stat={noteCount > 0 ? `${noteCount} note${noteCount !== 1 ? 's' : ''}` : undefined}
             onClick={() => setView('dm-notes')}
             accent="#9b7de8"
+          />
+          <HubCard
+            icon={<ShoppingBag size={20} />}
+            title="Loot Tables"
+            description="Manage reusable loot tables for creatures and vendors. Edit master tables that update all references live."
+            stat={lootCount > 0 ? `${lootCount} table${lootCount !== 1 ? 's' : ''}` : undefined}
+            onClick={() => setView('loot-tables')}
+            accent="#49c185"
           />
         </div>
       </div>

@@ -4,7 +4,7 @@ import { useStore } from '../store/store'
 import {
   ChevronLeft, Map, Scroll, Download, Upload, Check,
   AlertCircle, BookOpen, Clock, ArrowLeft,
-  FileText, Layers, Sparkles,
+  FileText, Layers, Sparkles, ShoppingBag,
 } from 'lucide-react'
 import POIList from './POIList'
 import type { HistoryEntry } from '../store/store'
@@ -20,12 +20,14 @@ function historyIcon(entry: HistoryEntry) {
 
 export default function Sidebar() {
   const {
-    view, setView, currentCampaign, selectCampaign,
+    view, setView, currentCampaign,
     navigationHistory, navigateBack, navigateToHistoryEntry,
     setCampaignSubView,
   } = useStore()
 
-  const inCampaignContext = view === 'campaign' || view === 'session' || view === 'wiki' || view === 'dm-notes'
+  const inCampaignContext =
+    view === 'campaign' || view === 'session' || view === 'wiki' ||
+    view === 'dm-notes' || view === 'loot-tables'
   const canGoBack = navigationHistory.length >= 2
   const [version, setVersion] = useState('')
 
@@ -108,6 +110,17 @@ export default function Sidebar() {
                 onClick={() => setView('dm-notes')}
               >
                 <Sparkles size={13} /> DM Notes
+              </button>
+
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{
+                  width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
+                  color: view === 'loot-tables' ? '#49c185' : 'var(--text-secondary)',
+                }}
+                onClick={() => setView('loot-tables')}
+              >
+                <ShoppingBag size={13} /> Loot Tables
               </button>
             </div>
           )}

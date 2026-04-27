@@ -2,32 +2,30 @@
 import { useState, useCallback } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import type { LootItem, LootTable } from '../types'
-import SectionDivider from './SectionDivider'
+import { chanceColor } from './LootTableView'
 
 interface Props {
   value: LootTable
   onChange: (table: LootTable) => void
-  defaultName?: string
-  suggestions?: string[]   // article titles for item/artifact/note autocomplete
+  suggestions?: string[]
 }
 
-function newItem(chance: number): LootItem {
+function newItem(): LootItem {
   return {
     id: Math.random().toString(36).slice(2),
     name: '',
     description: '',
     quantity: '1',
-    chance,
+    chance: 100,
   }
 }
 
 function ItemRow({
-  item, onChange, onRemove, showChance, suggestions,
+  item, onChange, onRemove, suggestions,
 }: {
   item: LootItem
   onChange: (item: LootItem) => void
   onRemove: () => void
-  showChance: boolean
   suggestions?: string[]
 }) {
   const set = <K extends keyof LootItem>(key: K, val: LootItem[K]) =>
@@ -38,17 +36,21 @@ function ItemRow({
     item.name.length >= 2 && s.toLowerCase().includes(item.name.toLowerCase())
   )
 
+  const color = chanceColor(item.chance)
+
   return (
     <div style={{
+      display: 'flex', flexDirection: 'column', gap: 4,
+      padding: '8px 10px 8px 0',
+      background: 'var(--bg-surface)',
       border: '1px solid var(--border-light)',
       borderRadius: 'var(--radius-sm)',
-      padding: '10px 12px',
-      marginBottom: 8,
-      background: 'var(--bg-elevated)',
-      display: 'flex', flexDirection: 'column', gap: 6,
+      borderLeft: `3px solid ${color}`,
     }}>
-      {/* Row 1: name + quantity + chance + remove */}
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      {/* Main row */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingLeft: 10 }}>
+
+        {/* Name */}
         <div style={{ flex: 1, position: 'relative' }}>
           <input
             className="input"
@@ -74,7 +76,6 @@ function ItemRow({
                     width: '100%', textAlign: 'left', padding: '6px 10px',
                     background: 'none', border: 'none', cursor: 'pointer',
                     fontSize: 12, color: 'var(--text-secondary)',
-                    transition: 'background 120ms ease',
                   }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
@@ -85,36 +86,40 @@ function ItemRow({
             </div>
           )}
         </div>
+
+        {/* Qty */}
         <input
           className="input"
-          style={{ width: 72, height: 28, fontSize: 12, textAlign: 'center' }}
+          style={{ width: 52, height: 28, fontSize: 12, textAlign: 'center', flexShrink: 0 }}
           placeholder="qty"
-          title="Quantity"
+          title="Quantity (e.g. 1, 1d4, 2d6)"
           value={item.quantity}
           onChange={e => set('quantity', e.target.value)}
         />
-        {showChance && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-            <input
-              className="input"
-              type="number"
-              min={1}
-              max={99}
-              style={{ width: 52, height: 28, fontSize: 12, textAlign: 'center' }}
-              title="Drop chance %"
-              value={item.chance}
-              onChange={e => set('chance', Math.min(99, Math.max(1, parseInt(e.target.value) || 1)))}
-            />
-            <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>%</span>
-          </div>
-        )}
+
+        {/* Chance */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={100}
+            style={{ width: 52, height: 28, fontSize: 12, textAlign: 'center' }}
+            title="Drop chance %"
+            value={item.chance}
+            onChange={e => set('chance', Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}
+          />
+          <span style={{ fontSize: 11, color, fontWeight: 500, flexShrink: 0 }}>%</span>
+        </div>
+
+        {/* Delete */}
         <button
           onClick={onRemove}
+          title="Remove item"
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--text-muted)', padding: 4,
-            display: 'flex', alignItems: 'center', flexShrink: 0,
-            transition: 'color 120ms ease',
+            color: 'var(--text-muted)', padding: 4, flexShrink: 0,
+            display: 'flex', alignItems: 'center',
           }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#e05555'}
           onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
@@ -122,30 +127,22 @@ function ItemRow({
           <Trash2 size={12} />
         </button>
       </div>
-      {!showChance && (
-        <button
-            onClick={() => onChange({ ...item, chance: 50 })}
-            title="Make random"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, fontSize: 10, flexShrink: 0 }}
-        >~
-        </button>
-      )}
-      {/* Row 2: description */}
-      <input
-        className="input"
-        style={{ height: 26, fontSize: 11 }}
-        placeholder="Description (optional)…"
-        value={item.description}
-        onChange={e => set('description', e.target.value)}
-      />
+
+      {/* Description */}
+      <div style={{ paddingLeft: 10, paddingRight: 30 }}>
+        <input
+          className="input"
+          style={{ height: 24, fontSize: 11, width: '100%' }}
+          placeholder="Description (optional)…"
+          value={item.description}
+          onChange={e => set('description', e.target.value)}
+        />
+      </div>
     </div>
   )
 }
 
-export default function LootTableEditor({ value, onChange, defaultName, suggestions }: Props) {
-  const guaranteed = value.items.filter(i => i.chance === 100)
-  const random = value.items.filter(i => i.chance < 100)
-
+export default function LootTableEditor({ value, onChange, suggestions }: Props) {
   const updateItem = useCallback((id: string, updated: LootItem) => {
     onChange({ ...value, items: value.items.map(i => i.id === id ? updated : i) })
   }, [value, onChange])
@@ -154,75 +151,66 @@ export default function LootTableEditor({ value, onChange, defaultName, suggesti
     onChange({ ...value, items: value.items.filter(i => i.id !== id) })
   }, [value, onChange])
 
-  const addGuaranteed = () => onChange({ ...value, items: [...value.items, newItem(100)] })
-  const addRandom = () => onChange({ ...value, items: [...value.items, newItem(50)] })
+  const addItem = () => onChange({ ...value, items: [...value.items, newItem()] })
 
   return (
     <div style={{ fontFamily: 'var(--font-ui)', fontSize: 13 }}>
 
-      {/* Table name */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Table name</div>
-        <input
-          className="input"
-          style={{ height: 32, fontSize: 13 }}
-          placeholder={defaultName ?? 'Loot'}
-          value={value.name}
-          onChange={e => onChange({ ...value, name: e.target.value })}
-        />
-      </div>
-
-      {/* Guaranteed section */}
-      <SectionDivider label={`Guaranteed${guaranteed.length > 0 ? ` (${guaranteed.length})` : ''}`} margin="0 0 8px" />
-      <div style={{ marginBottom: 14 }}>
-        {guaranteed.map(item => (
-          <ItemRow
-            key={item.id}
-            item={item}
-            onChange={updated => updateItem(item.id, updated)}
-            onRemove={() => removeItem(item.id)}
-            showChance={false}
-            suggestions={suggestions}
-          />
-        ))}
-        <button
-          onClick={addGuaranteed}
-          className="btn btn-ghost btn-sm"
-          style={{ fontSize: 11, color: 'var(--text-muted)', width: '100%', justifyContent: 'center' }}
-        >
-          <Plus size={11} /> Add guaranteed item
-        </button>
-      </div>
-
-      {/* Divider */}
-      <div style={{ height: 1, background: 'var(--border-light)', margin: '12px 0' }} />
-
-      {/* Random section */}
-      <SectionDivider label={`Random${random.length > 0 ? ` (${random.length})` : ''}`} margin="0 0 8px" />
-      {random.length > 0 && (
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
-          Each item rolls independently against its drop chance.
+      {/* Column headers */}
+      {value.items.length > 0 && (
+        <div style={{
+          display: 'flex', gap: 6, alignItems: 'center',
+          padding: '0 4px 4px 16px',
+        }}>
+          <span style={{ flex: 1, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+            Item
+          </span>
+          <span style={{ width: 52, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: 'center', flexShrink: 0 }}>
+            Qty
+          </span>
+          <span style={{ width: 72, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: 'center', flexShrink: 0 }}>
+            Chance
+          </span>
+          <span style={{ width: 20, flexShrink: 0 }} />
         </div>
       )}
-      <div style={{ marginBottom: 14 }}>
-        {random.map(item => (
+
+      {/* Item list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+        {value.items.map(item => (
           <ItemRow
             key={item.id}
             item={item}
             onChange={updated => updateItem(item.id, updated)}
             onRemove={() => removeItem(item.id)}
-            showChance={true}
             suggestions={suggestions}
           />
         ))}
-        <button
-          onClick={addRandom}
-          className="btn btn-ghost btn-sm"
-          style={{ fontSize: 11, color: 'var(--text-muted)', width: '100%', justifyContent: 'center' }}
-        >
-          <Plus size={11} /> Add random item
-        </button>
       </div>
+
+      {/* Add item */}
+      <button
+        onClick={addItem}
+        style={{
+          fontSize: 11, color: 'var(--text-muted)', width: '100%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+          background: 'transparent', cursor: 'pointer',
+          border: '1px dashed var(--border-light)',
+          borderRadius: 'var(--radius-sm)',
+          padding: '7px 0',
+          transition: 'border-color 150ms ease, color 150ms ease',
+        }}
+        onMouseEnter={e => {
+          (e.currentTarget as HTMLElement).style.borderColor = '#49c185'
+          ;(e.currentTarget as HTMLElement).style.color = '#49c185'
+        }}
+        onMouseLeave={e => {
+          (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'
+          ;(e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'
+        }}
+      >
+        <Plus size={11} /> Add item
+      </button>
     </div>
   )
 }

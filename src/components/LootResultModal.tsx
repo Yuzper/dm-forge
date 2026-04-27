@@ -1,5 +1,5 @@
 // path: src/components/LootResultModal.tsx
-import { X, Lock, Dices } from 'lucide-react'
+import { X, Dices } from 'lucide-react'
 import type { LootItem } from '../types'
 
 interface Props {
@@ -10,9 +10,14 @@ interface Props {
   onRegenerate?: () => void
 }
 
+function chanceColor(chance: number): string {
+  if (chance >= 100) return '#49c185'
+  if (chance >= 60)  return '#6ab87a'
+  if (chance >= 30)  return '#c8a84b'
+  return '#e05555'
+}
+
 export default function LootResultModal({ creatureName, items, onClose, onRegenerate }: Props) {
-  const guaranteed = items.filter(i => i.chance === 100)
-  const random = items.filter(i => i.chance < 100)
   const isEmpty = items.length === 0
 
   return (
@@ -25,7 +30,7 @@ export default function LootResultModal({ creatureName, items, onClose, onRegene
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div style={{
-        width: 380,
+        width: 400,
         background: 'var(--bg-elevated)',
         border: '1px solid var(--border-light)',
         borderRadius: 'var(--radius-lg)',
@@ -34,6 +39,7 @@ export default function LootResultModal({ creatureName, items, onClose, onRegene
         maxHeight: '80vh',
         display: 'flex', flexDirection: 'column',
       }}>
+
         {/* Header */}
         <div style={{
           padding: '14px 16px',
@@ -50,7 +56,10 @@ export default function LootResultModal({ creatureName, items, onClose, onRegene
               {creatureName}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-              Loot result
+              {isEmpty
+                ? 'Nothing dropped'
+                : `${items.length} item${items.length !== 1 ? 's' : ''} dropped`
+              }
             </div>
           </div>
           {onRegenerate && (
@@ -67,8 +76,12 @@ export default function LootResultModal({ creatureName, items, onClose, onRegene
             onClick={onClose}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--text-muted)', padding: 4, display: 'flex', alignItems: 'center',
+              color: 'var(--text-muted)', padding: 4,
+              display: 'flex', alignItems: 'center',
+              transition: 'color 120ms ease',
             }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
           >
             <X size={16} />
           </button>
@@ -79,47 +92,29 @@ export default function LootResultModal({ creatureName, items, onClose, onRegene
           {isEmpty ? (
             <div style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center',
-              gap: 8, padding: '24px 0', color: 'var(--text-muted)', textAlign: 'center',
+              gap: 10, padding: '32px 0', textAlign: 'center',
             }}>
-              <span style={{ fontSize: 24 }}>🎲</span>
-              <span style={{ fontSize: 13 }}>Nothing dropped</span>
-              <span style={{ fontSize: 11 }}>The dice weren't in your favour.</span>
+              <span style={{ fontSize: 32, lineHeight: 1 }}>🎲</span>
+              <div>
+                <div style={{ fontSize: 14, color: 'var(--text-secondary)', fontFamily: 'var(--font-display)', marginBottom: 4 }}>
+                  Nothing dropped
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  The dice weren't in your favour.
+                </div>
+              </div>
+              {onRegenerate && (
+                <button onClick={onRegenerate} className="btn btn-sm" style={{ marginTop: 4, gap: 5 }}>
+                  <Dices size={12} /> Try again
+                </button>
+              )}
             </div>
           ) : (
-            <>
-              {guaranteed.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{
-                    fontSize: 10, fontWeight: 700, color: 'var(--text-muted)',
-                    textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8,
-                    display: 'flex', alignItems: 'center', gap: 5,
-                  }}>
-                    <Lock size={9} /> Guaranteed
-                  </div>
-                  {guaranteed.map(item => (
-                    <LootItemRow key={item.id} item={item} isGuaranteed />
-                  ))}
-                </div>
-              )}
-
-              {random.length > 0 && (
-                <div>
-                  {guaranteed.length > 0 && (
-                    <div style={{ height: 1, background: 'var(--border-light)', margin: '8px 0 12px' }} />
-                  )}
-                  <div style={{
-                    fontSize: 10, fontWeight: 700, color: 'var(--text-muted)',
-                    textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8,
-                    display: 'flex', alignItems: 'center', gap: 5,
-                  }}>
-                    <Dices size={9} /> Rolled
-                  </div>
-                  {random.map(item => (
-                    <LootItemRow key={item.id} item={item} isGuaranteed={false} />
-                  ))}
-                </div>
-              )}
-            </>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {items.map(item => (
+                <LootItemRow key={item.id} item={item} />
+              ))}
+            </div>
           )}
         </div>
 
@@ -138,35 +133,62 @@ export default function LootResultModal({ creatureName, items, onClose, onRegene
   )
 }
 
-function LootItemRow({ item, isGuaranteed }: { item: LootItem; isGuaranteed: boolean }) {
+function LootItemRow({ item }: { item: LootItem }) {
+  const isAlways = item.chance >= 100
+  const color = chanceColor(item.chance)
+
   return (
     <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: 10,
-      padding: '8px 10px', marginBottom: 4,
+      display: 'flex', alignItems: 'stretch', gap: 0,
       background: 'var(--bg-surface)',
-      border: `1px solid ${isGuaranteed ? 'var(--border-gold)' : 'var(--border-light)'}`,
+      border: '1px solid var(--border-light)',
       borderRadius: 'var(--radius-sm)',
+      overflow: 'hidden',
     }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 13, fontWeight: 500,
-          color: isGuaranteed ? 'var(--gold)' : 'var(--text-primary)',
-          marginBottom: item.description ? 2 : 0,
-        }}>
-          {item.name}
-        </div>
-        {item.description && (
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
-            {item.description}
-          </div>
-        )}
-      </div>
+      {/* Left accent bar */}
       <div style={{
-        fontSize: 12, fontWeight: 600,
-        color: 'var(--text-secondary)',
-        flexShrink: 0, whiteSpace: 'nowrap',
+        width: 3, flexShrink: 0,
+        background: color,
+        transition: 'background 150ms ease',
+      }} />
+
+      {/* Main content */}
+      <div style={{
+        flex: 1, minWidth: 0,
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '9px 12px',
       }}>
-        {item.quantity}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 13, fontWeight: 500,
+            color: 'var(--text-primary)',
+            marginBottom: item.description ? 2 : 0,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {item.name}
+          </div>
+          {item.description && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+              {item.description}
+            </div>
+          )}
+        </div>
+
+        {/* Right: qty + chance badge */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
+            ×{item.quantity}
+          </span>
+          <span style={{
+            fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
+            padding: '1px 5px', borderRadius: 99,
+            color,
+            background: `${color}18`,
+            border: `1px solid ${color}40`,
+          }}>
+            {isAlways ? 'ALWAYS' : `${item.chance}%`}
+          </span>
+        </div>
       </div>
     </div>
   )

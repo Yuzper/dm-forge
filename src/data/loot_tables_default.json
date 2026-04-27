@@ -1,0 +1,221 @@
+[
+  {
+    "name": "Civilian",
+    "description": "Common folk — labourers, farmers, townsfolk",
+    "category": "creature",
+    "items": [
+      { "name": "Copper pieces",    "description": "A handful of copper",              "quantity": "1d10", "chance": 90 },
+      { "name": "Silver pieces",    "description": "",                                 "quantity": "1d4",  "chance": 40 },
+      { "name": "Bread or rations", "description": "Simple food for the road",         "quantity": "1d3",  "chance": 35 },
+      { "name": "Pocket knife",     "description": "A simple tool, not a weapon",      "quantity": "1",    "chance": 20 },
+      { "name": "Personal letter",  "description": "Private correspondence",           "quantity": "1",    "chance": 15 },
+      { "name": "Wooden trinket",   "description": "A carved figure or keepsake",      "quantity": "1",    "chance": 10 }
+    ]
+  },
+  {
+    "name": "Bandit",
+    "description": "Highway robbers and common brigands",
+    "category": "creature",
+    "items": [
+      { "name": "Gold pieces",       "description": "",                                "quantity": "2d6",  "chance": 80 },
+      { "name": "Silver pieces",     "description": "",                                "quantity": "3d6",  "chance": 90 },
+      { "name": "Stolen jewellery",  "description": "A ring, necklace, or brooch",    "quantity": "1",    "chance": 30 },
+      { "name": "Dagger",            "description": "A spare blade",                  "quantity": "1",    "chance": 40 },
+      { "name": "Rope (50 ft)",      "description": "",                               "quantity": "1",    "chance": 25 },
+      { "name": "Flask of spirits",  "description": "",                               "quantity": "1",    "chance": 35 },
+      { "name": "Wanted poster",     "description": "Someone is after this person",   "quantity": "1",    "chance": 10 },
+      { "name": "Lockpicks",         "description": "Well-used set",                  "quantity": "1",    "chance": 15 }
+    ]
+  },
+  {
+    "name": "Goblinoid",
+    "description": "Goblins, kobolds, hobgoblins, bugbears",
+    "category": "creature",
+    "items": [
+      { "name": "Copper pieces",      "description": "",                              "quantity": "2d8",  "chance": 85 },
+      { "name": "Silver pieces",      "description": "",                              "quantity": "1d6",  "chance": 40 },
+      { "name": "Crude weapon",       "description": "Rusty knife, chipped spear",   "quantity": "1",    "chance": 50 },
+      { "name": "Trophy ear or claw", "description": "From a previous victim",       "quantity": "1d3",  "chance": 30 },
+      { "name": "Stolen rations",     "description": "Pilfered food, barely edible", "quantity": "1d4",  "chance": 40 },
+      { "name": "Shiny bauble",       "description": "A worthless item they prized", "quantity": "1",    "chance": 25 },
+      { "name": "Crude map",          "description": "Scratched on hide or bark",    "quantity": "1",    "chance": 10 }
+    ]
+  },
+  {
+    "name": "Undead",
+    "description": "Skeletons, zombies, wights, ghouls",
+    "category": "creature",
+    "items": [
+      { "name": "Corroded coins",     "description": "Mixed copper and silver",       "quantity": "1d12", "chance": 60 },
+      { "name": "Tattered clothing",  "description": "Rotted but once fine",         "quantity": "1",    "chance": 40 },
+      { "name": "Old signet ring",    "description": "Identity of their former life","quantity": "1",    "chance": 20 },
+      { "name": "Bone fragment",      "description": "Possibly has ritual use",      "quantity": "1d4",  "chance": 35 },
+      { "name": "Rusted weapon",      "description": "Barely functional",            "quantity": "1",    "chance": 30 },
+      { "name": "Grave token",        "description": "A coin placed on the eyes",    "quantity": "1d2",  "chance": 25 },
+      { "name": "Faded locket",       "description": "Portrait of someone long dead","quantity": "1",    "chance": 10 }
+    ]
+  },
+  {
+    "name": "Soldier / Guard",
+    "description": "City guards, mercenaries, military troops",
+    "category": "creature",
+    "items": [
+      { "name": "Gold pieces",        "description": "A week's pay",                 "quantity": "1d10", "chance": 75 },
+      { "name": "Silver pieces",      "description": "",                             "quantity": "2d6",  "chance": 85 },
+      { "name": "Military insignia",  "description": "Rank badge or unit pin",      "quantity": "1",    "chance": 60 },
+      { "name": "Ration kit",         "description": "Standard issue provisions",   "quantity": "1",    "chance": 50 },
+      { "name": "Whetstone",          "description": "",                             "quantity": "1",    "chance": 40 },
+      { "name": "Torch (x3)",         "description": "",                             "quantity": "1",    "chance": 35 },
+      { "name": "Orders or dispatch", "description": "Official military document",  "quantity": "1",    "chance": 20 },
+      { "name": "Playing cards",      "description": "Well-worn deck",              "quantity": "1",    "chance": 25 }
+    ]
+  },
+  {
+    "name": "Magic User",
+    "description": "Mages, sorcerers, warlocks, witches",
+    "category": "creature",
+    "items": [
+      { "name": "Gold pieces",         "description": "",                             "quantity": "2d10", "chance": 70 },
+      { "name": "Spell components",    "description": "Bat guano, sulphur, wool",    "quantity": "1d4",  "chance": 75 },
+      { "name": "Arcane focus",        "description": "Crystal, rod, or orb shard",  "quantity": "1",    "chance": 40 },
+      { "name": "Spell scroll",        "description": "A single-use scroll, 1st–2nd level","quantity": "1","chance": 25 },
+      { "name": "Ritual notes",        "description": "Partial transcription of a ritual","quantity": "1","chance": 30 },
+      { "name": "Potion of Healing",   "description": "",                             "quantity": "1",    "chance": 20 },
+      { "name": "Strange reagent",     "description": "Unidentified magical material","quantity": "1d3", "chance": 35 },
+      { "name": "Enchanted trinket",   "description": "Minor magical curiosity",     "quantity": "1",    "chance": 15 }
+    ]
+  },
+  {
+    "name": "Noble / Aristocrat",
+    "description": "Lords, ladies, wealthy merchants, courtiers",
+    "category": "creature",
+    "items": [
+      { "name": "Gold pieces",         "description": "",                             "quantity": "4d10", "chance": 90 },
+      { "name": "Platinum pieces",     "description": "",                             "quantity": "1d6",  "chance": 40 },
+      { "name": "Fine jewellery",      "description": "Rings, pendants, bracelets",  "quantity": "1d3",  "chance": 70 },
+      { "name": "Signet ring",         "description": "Family seal, grants authority","quantity": "1",   "chance": 55 },
+      { "name": "Letter of credit",    "description": "Redeemable at a bank",        "quantity": "1",    "chance": 35 },
+      { "name": "Fine wine (bottle)",  "description": "Aged vintage",                "quantity": "1",    "chance": 30 },
+      { "name": "Private correspondence","description":"Potentially scandalous",      "quantity": "1",    "chance": 25 },
+      { "name": "Pocket watch",        "description": "Jewelled, expensive",         "quantity": "1",    "chance": 20 }
+    ]
+  },
+  {
+    "name": "Beast",
+    "description": "Wolves, bears, giant spiders, wyverns",
+    "category": "creature",
+    "items": [
+      { "name": "Pelt",               "description": "Salvageable hide, if intact",  "quantity": "1",    "chance": 60 },
+      { "name": "Hide",               "description": "Useful for crafting",          "quantity": "1d4",  "chance": 50 },
+      { "name": "Meat",               "description": "Fresh or dried, good for food", "quantity": "1d6",  "chance": 70 },
+      { "name": "Teeth",              "description": "Sharp, useful for crafting",   "quantity": "1d4",  "chance": 50 },
+      { "name": "Fang or claw",       "description": "Trophy or crafting material",  "quantity": "1d4",  "chance": 75 },
+      { "name": "Venom sac",          "description": "Intact if carefully harvested","quantity": "1",    "chance": 30 },
+      { "name": "Bone",               "description": "Useful for crafting or ritual","quantity": "2d4",  "chance": 50 },
+      { "name": "Swallowed loot",     "description": "Something the beast ate",      "quantity": "1",    "chance": 20 },
+      { "name": "Egg",                "description": "If the beast was nesting",     "quantity":"1d3",  "chance": 15 }
+    ]
+  },
+  {
+    "name": "Cultist",
+    "description": "Dark cult members, demon worshippers, heretics",
+    "category": "creature",
+    "items": [
+      { "name": "Silver pieces",      "description": "",                             "quantity": "2d6",  "chance": 70 },
+      { "name": "Cult symbol",        "description": "Identifies their allegiance",  "quantity": "1",    "chance": 80 },
+      { "name": "Ritual dagger",      "description": "Dark inscriptions on blade",   "quantity": "1",    "chance": 45 },
+      { "name": "Profane scripture",  "description": "Passages from a dark text",   "quantity": "1",    "chance": 35 },
+      { "name": "Black candles",      "description": "",                             "quantity": "1d4",  "chance": 50 },
+      { "name": "Strange idol",       "description": "Disturbing carved figure",     "quantity": "1",    "chance": 25 },
+      { "name": "List of names",      "description": "Targets or initiates",         "quantity": "1",    "chance": 20 },
+      { "name": "Vial of dark liquid","description": "Unknown purpose",              "quantity": "1",    "chance": 15 }
+    ]
+  },
+  {
+    "name": "General Store",
+    "description": "Everyday supplies, tools, basic adventuring gear",
+    "category": "vendor",
+    "items": [
+      { "name": "Torch (x10)",        "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Rope (50 ft)",       "description": "Hemp rope",                   "quantity": "1",    "chance": 100 },
+      { "name": "Backpack",           "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Rations (1 week)",   "description": "Trail rations",               "quantity": "1",    "chance": 100 },
+      { "name": "Waterskin",          "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Bedroll",            "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Tinderbox",          "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Lantern (hooded)",   "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Oil flask",          "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Spyglass",          "description": "Basic quality",               "quantity": "1",    "chance": 30 }
+    ]
+  },
+  {
+    "name": "Blacksmith",
+    "description": "Weapons, armour, tools, and metal goods",
+    "category": "vendor",
+    "items": [
+      { "name": "Dagger",             "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Short sword",        "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Hand axe",           "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Spear",              "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Shield",             "description": "Wooden with iron boss",       "quantity": "1",    "chance": 100 },
+      { "name": "Leather armour",     "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Chain shirt",        "description": "",                             "quantity": "1",    "chance": 80 },
+      { "name": "Longsword",          "description": "",                             "quantity": "1",    "chance": 70 },
+      { "name": "Battle axe",         "description": "",                             "quantity": "1",    "chance": 60 },
+      { "name": "Chain mail",         "description": "",                             "quantity": "1",    "chance": 50 },
+      { "name": "Warhammer",          "description": "",                             "quantity": "1",    "chance": 40 },
+      { "name": "Half plate",         "description": "Takes time to fit",           "quantity": "1",    "chance": 20 }
+    ]
+  },
+  {
+    "name": "Alchemist",
+    "description": "Potions, reagents, remedies, and alchemical supplies",
+    "category": "vendor",
+    "items": [
+      { "name": "Potion of Healing",          "description": "Restores 2d4+2 HP",      "quantity": "1d4",  "chance": 100 },
+      { "name": "Antitoxin",                  "description": "",                        "quantity": "1d3",  "chance": 100 },
+      { "name": "Acid flask",                 "description": "",                        "quantity": "1d4",  "chance": 100 },
+      { "name": "Alchemist's fire",           "description": "",                        "quantity": "1d3",  "chance": 100 },
+      { "name": "Healer's kit",               "description": "10 uses",                "quantity": "1",    "chance": 100 },
+      { "name": "Potion of Greater Healing",  "description": "Restores 4d4+4 HP",      "quantity": "1",    "chance": 60 },
+      { "name": "Oil of Slipperiness",        "description": "",                        "quantity": "1",    "chance": 40 },
+      { "name": "Potion of Climbing",         "description": "",                        "quantity": "1",    "chance": 35 },
+      { "name": "Smoke bomb",                 "description": "Blocks vision 10 ft",    "quantity": "1d3",  "chance": 50 },
+      { "name": "Potion of Water Breathing",  "description": "",                        "quantity": "1",    "chance": 20 }
+    ]
+  },
+  {
+    "name": "Tavern",
+    "description": "Drinks, food, rumours, and simple lodging supplies",
+    "category": "vendor",
+    "items": [
+      { "name": "Ale (mug)",          "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Wine (bottle)",      "description": "House red or white",          "quantity": "1",    "chance": 100 },
+      { "name": "Meal (hot)",         "description": "Stew, bread, and cheese",     "quantity": "1",    "chance": 100 },
+      { "name": "Lodging (night)",    "description": "Shared room",                 "quantity": "1",    "chance": 100 },
+      { "name": "Lodging (private)",  "description": "Private room, lock on door",  "quantity": "1",    "chance": 80 },
+      { "name": "Spirits (flask)",    "description": "Something stronger",          "quantity": "1",    "chance": 100 },
+      { "name": "Local rumour",       "description": "Information has a price",     "quantity": "1",    "chance": 60 },
+      { "name": "Fine wine (bottle)", "description": "Imported, expensive",         "quantity": "1",    "chance": 40 },
+      { "name": "Gambling game",      "description": "Cards or dice, stakes vary",  "quantity": "1",    "chance": 50 }
+    ]
+  },
+  {
+    "name": "Magic Items Dealer",
+    "description": "Rare curios, scrolls, wands, and minor magic items",
+    "category": "vendor",
+    "items": [
+      { "name": "Spell scroll (1st level)",   "description": "Random 1st-level spell", "quantity": "1d3", "chance": 100 },
+      { "name": "Spell scroll (2nd level)",   "description": "Random 2nd-level spell", "quantity": "1",   "chance": 80 },
+      { "name": "Potion of Healing",          "description": "",                       "quantity": "1d4", "chance": 100 },
+      { "name": "Potion of Greater Healing",  "description": "",                       "quantity": "1d2", "chance": 70 },
+      { "name": "Bag of Holding",             "description": "",                       "quantity": "1",   "chance": 40 },
+      { "name": "Rope of Climbing",           "description": "",                       "quantity": "1",   "chance": 30 },
+      { "name": "Eyes of the Eagle",          "description": "",                       "quantity": "1",   "chance": 20 },
+      { "name": "Wand of Magic Missiles",     "description": "7 charges",             "quantity": "1",   "chance": 25 },
+      { "name": "Cloak of Protection",        "description": "",                       "quantity": "1",   "chance": 15 },
+      { "name": "Ring of Feather Falling",    "description": "",                       "quantity": "1",   "chance": 10 },
+      { "name": "Spell scroll (3rd level)",   "description": "Rare find",             "quantity": "1",   "chance": 20 }
+    ]
+  }
+]

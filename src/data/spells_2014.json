@@ -66,39 +66,6 @@
     "higher_levels": "At Higher Levels. This spell's damage increases by 1d8 when you reach 5th level (2d8), 11th level (3d8), and 17th level (4d8)."
   },
   {
-    "name": "",
-    "level": 0,
-    "school": "",
-    "casting_time": "",
-    "range": "",
-    "components": "",
-    "duration": "",
-    "desc": "",
-    "higher_levels": ""
-  },
-  {
-    "name": "",
-    "level": 0,
-    "school": "",
-    "casting_time": "",
-    "range": "",
-    "components": "",
-    "duration": "",
-    "desc": "",
-    "higher_levels": ""
-  },
-  {
-    "name": "",
-    "level": 0,
-    "school": "",
-    "casting_time": "",
-    "range": "",
-    "components": "",
-    "duration": "",
-    "desc": "",
-    "higher_levels": ""
-  },
-  {
     "name": "Ice Knife",
     "level": 1,
     "school": "Conjuration",
@@ -153,94 +120,6 @@
     "desc": "Choose a humanoid within range. The target must succeed on a Wisdom saving throw or be paralyzed for the duration.",
     "higher_levels": "When you cast this spell using a spell slot of 3rd level or higher, you can target one additional humanoid for each slot level above 2nd."
   },
-    {
-    "name": "",
-    "level": 2,
-    "school": "",
-    "casting_time": "",
-    "range": "",
-    "components": "",
-    "duration": "",
-    "desc": "",
-    "higher_levels": ""
-  },
-  {
-    "name": "",
-    "level": 2,
-    "school": "",
-    "casting_time": "",
-    "range": "",
-    "components": "",
-    "duration": "",
-    "desc": "",
-    "higher_levels": ""
-  },
-  {
-    "name": "",
-    "level": 2,
-    "school": "",
-    "casting_time": "",
-    "range": "",
-    "components": "",
-    "duration": "",
-    "desc": "",
-    "higher_levels": ""
-  },
-  {
-    "name": "",
-    "level": 2,
-    "school": "",
-    "casting_time": "",
-    "range": "",
-    "components": "",
-    "duration": "",
-    "desc": "",
-    "higher_levels": ""
-  },
-    {
-    "name": "",
-    "level": 2,
-    "school": "",
-    "casting_time": "",
-    "range": "",
-    "components": "",
-    "duration": "",
-    "desc": "",
-    "higher_levels": ""
-  },
-  {
-    "name": "",
-    "level": 2,
-    "school": "",
-    "casting_time": "",
-    "range": "",
-    "components": "",
-    "duration": "",
-    "desc": "",
-    "higher_levels": ""
-  },
-  {
-    "name": "",
-    "level": 2,
-    "school": "",
-    "casting_time": "",
-    "range": "",
-    "components": "",
-    "duration": "",
-    "desc": "",
-    "higher_levels": ""
-  },
-  {
-    "name": "",
-    "level": 2,
-    "school": "",
-    "casting_time": "",
-    "range": "",
-    "components": "",
-    "duration": "",
-    "desc": "",
-    "higher_levels": ""
-  },
   {
     "name": "Counterspell",
     "level": 3,
@@ -264,7 +143,7 @@
     "higher_levels": "When you cast this spell using a spell slot of 4th level or higher, the damage increases by 1d6 for each slot level above 3rd."
   },
   {
-    "name": "Firebafll",
+    "name": "Fireball",
     "level": 3,
     "school": "Evocation",
     "casting_time": "1 action",

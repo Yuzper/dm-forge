@@ -218,10 +218,8 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
 
 export default function SessionPage() {
   const {
-    currentSession, currentCampaign, selectCampaign,
-    maps, currentMap, selectMap,
-    importMap, poiPanelOpen,
-    sessionReadMode, setSessionReadMode,
+    currentSession, currentCampaign, setView, setCampaignSubView,
+    maps, currentMap, selectMap, importMap, poiPanelOpen, sessionReadMode, setSessionReadMode,
   } = useStore()
 
   const [importing, setImporting] = useState(false)
@@ -252,7 +250,11 @@ export default function SessionPage() {
       }}>
         {/* Back button */}
         <button
-          onClick={() => currentCampaign && selectCampaign(currentCampaign)}
+          onClick={() => {
+            if (!currentCampaign) return
+            setView('campaign')
+            setCampaignSubView('sessions')
+          }}
           style={{
             display: 'flex', alignItems: 'center', gap: 5,
             padding: '0 16px',

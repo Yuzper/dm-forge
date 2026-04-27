@@ -43,6 +43,7 @@ export interface POI {
   poi_type: POIType
   color: string
   loot_table: string
+  loot_table_id: number | null
   created_at: string
 }
 
@@ -74,6 +75,7 @@ export interface ArticleSummary {
   cover_image: string | null
   tracks: string
   loot_table: string
+  loot_table_id: number | null
   created_at: string
   updated_at: string
 }
@@ -87,7 +89,21 @@ export interface Article extends ArticleSummary {
 export type ArticleType =
   | 'character' | 'playerCharacter' | 'location' | 'faction'
   | 'organization' | 'culture' | 'religion' | 'item' | 'artifact'
-  | 'quest' | 'event' | 'lore' | 'creature' | 'note' | 'other'
+  | 'quest' | 'event' | 'lore' | 'creature' | 'note' | 'vendor' | 'other'
+
+export type LootTableCategory = 'creature' | 'vendor' | 'location' | 'custom'
+
+export interface MasterLootTable {
+  id: number
+  campaign_id: number
+  name: string
+  description: string
+  category: LootTableCategory
+  items: string          // JSON: LootItem[]
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
 
 export interface StatBlockEntry {
   name: string
@@ -214,6 +230,7 @@ export interface CombatCreature {
   title: string
   statblock: string
   loot_table: string
+  loot_table_id: number | null
 }
 
 export interface DMNoteGroup {
@@ -268,6 +285,7 @@ export interface CreatePOIInput {
   poi_type?: POIType
   color?: string
   loot_table?: string
+  loot_table_id?: number | null
 }
 
 export interface ArticleFilter {
@@ -288,8 +306,18 @@ export interface CreateArticleInput {
   tracks?: string
   statblock?: string
   loot_table?: string
+  loot_table_id?: number | null
   cover_image?: string | null
   portrait_image?: string | null
+}
+
+export interface CreateLootTableInput {
+  campaign_id: number
+  name: string
+  description?: string
+  category?: LootTableCategory
+  items?: string    // JSON: LootItem[]
+  is_default?: boolean
 }
 
 export interface ElectronAPI {
@@ -317,7 +345,7 @@ export interface ElectronAPI {
 
   getPOIs:         (mapId: number)                 => Promise<POI[]>
   createPOI:       (data: CreatePOIInput)          => Promise<POI>
-  updatePOI:       (id: number, data: Partial<CreatePOIInput & { content: string; loot_table: string }>) => Promise<POI>
+  updatePOI:       (id: number, data: Partial<CreatePOIInput & { content: string; loot_table: string; loot_table_id: number | null }>) => Promise<POI>
   deletePOI:       (id: number)                    => Promise<void>
 
   getArticles:         (filter?: ArticleFilter)    => Promise<Article[]>
@@ -362,6 +390,15 @@ export interface ElectronAPI {
   updateDMNoteGroup:   (id: number, data: { name?: string; color?: string; sort_order?: number }) => Promise<DMNoteGroup>
   deleteDMNoteGroup:   (id: number) => Promise<void>
   reorderDMNoteGroups: (orders: { id: number; sort_order: number }[]) => Promise<void>
+
+  // Master Loot Tables
+  getLootTables:       (campaignId: number) => Promise<MasterLootTable[]>
+  getLootTable:        (id: number) => Promise<MasterLootTable | null>
+  createLootTable:     (data: CreateLootTableInput) => Promise<MasterLootTable>
+  updateLootTable:     (id: number, data: { name?: string; description?: string; category?: LootTableCategory; items?: string }) => Promise<MasterLootTable>
+  deleteLootTable:     (id: number) => Promise<{ success: boolean; affected: number }>
+  rollLootTable:       (tableId: number, extraItemsJson: string) => Promise<LootItem[]>
+  resetDefaultTables:  (campaignId: number) => Promise<MasterLootTable[]>
 }
 
 declare global {

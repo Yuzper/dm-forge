@@ -100,4 +100,20 @@ contextBridge.exposeInMainWorld('api', {
                          ipcRenderer.invoke('dm-notes:delete-group', id),
   reorderDMNoteGroups: (orders: any[]) =>
                          ipcRenderer.invoke('dm-notes:reorder-groups', orders),
+
+  // Master Loot Tables
+  getLootTables:      (campaignId: number) =>
+                        ipcRenderer.invoke('loot-tables:get-all', campaignId),
+  getLootTable:       (id: number) =>
+                        ipcRenderer.invoke('loot-tables:get', id),
+  createLootTable:    (data: any) =>
+                        ipcRenderer.invoke('loot-tables:create', data),
+  updateLootTable:    (id: number, data: any) =>
+                        ipcRenderer.invoke('loot-tables:update', id, data),
+  deleteLootTable:    (id: number) =>
+                        ipcRenderer.invoke('loot-tables:delete', id),
+  rollLootTable:      (tableId: number, extraItemsJson: string) =>
+                        ipcRenderer.invoke('loot-tables:roll', tableId, extraItemsJson),
+  resetDefaultTables: (campaignId: number) =>
+                        ipcRenderer.invoke('loot-tables:reset-defaults', campaignId),
 })
