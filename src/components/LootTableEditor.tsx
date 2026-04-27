@@ -104,7 +104,7 @@ function ItemRow({
             type="number"
             min={1}
             max={100}
-            style={{ width: 52, height: 28, fontSize: 12, textAlign: 'center' }}
+            style={{ width: 62, height: 28, fontSize: 12, textAlign: 'center' }}
             title="Drop chance %"
             value={item.chance}
             onChange={e => set('chance', Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}

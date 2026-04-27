@@ -12,6 +12,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
   const [description, setDescription] = useState('')
   const [system, setSystem] = useState('D&D 5e 2014')
   const [saving, setSaving] = useState(false)
+  const [seedMonsters, setSeedMonsters] = useState(true)
 
   const PLACEHOLDERS = [
     'The Lost Mines of Phandelver…',
@@ -27,7 +28,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
     if (!name.trim()) return
     setSaving(true)
     try {
-      await createCampaign({ name: name.trim(), description, system })
+      await createCampaign({ name: name.trim(), description, system }, seedMonsters)
       onClose()
     } catch {
       setSaving(false)
@@ -45,7 +46,11 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
           </div>
           <div className="input-group">
             <label className="input-label">System</label>
-            <select className="input" value={system} onChange={e => setSystem(e.target.value)}>
+            <select className="input" value={system} onChange={e => {
+              setSystem(e.target.value)
+              if (e.target.value === 'Other') setSeedMonsters(false)
+              else setSeedMonsters(true)
+            }}>
               {SYSTEMS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
@@ -53,6 +58,33 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
             <label className="input-label">Description</label>
             <textarea className="input" placeholder="A brief overview of this campaign…" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
           </div>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            cursor: 'pointer', userSelect: 'none',
+            padding: '10px 12px',
+            background: seedMonsters ? 'var(--bg-active)' : 'var(--bg-elevated)',
+            border: `1px solid ${seedMonsters ? 'var(--border-gold)' : 'var(--border-light)'}`,
+            borderRadius: 'var(--radius-md)',
+            transition: 'all 120ms ease',
+          }}>
+            <input
+              type="checkbox"
+              checked={seedMonsters}
+              disabled={system === 'Other'}
+              onChange={e => setSeedMonsters(e.target.checked)}
+              style={{ width: 15, height: 15, accentColor: 'var(--gold)', cursor: system === 'Other' ? 'not-allowed' : 'pointer', flexShrink: 0 }}
+            />
+            <div>
+              <div style={{ fontSize: 13, color: 'var(--text-primary)', fontFamily: 'var(--font-ui)' }}>
+                Seed starter monsters
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                {system === 'Other'
+                  ? 'Not available for custom systems'
+                  : `Adds 10 standard ${system} creatures to your wiki`}
+              </div>
+            </div>
+          </label>
         </div>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>

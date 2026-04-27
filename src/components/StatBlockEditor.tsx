@@ -98,8 +98,7 @@ export default function StatBlockEditor({ value, onChange }: Props) {
   return (
     <div style={{ padding: '16px 24px', fontFamily: 'var(--font-ui)', fontSize: 13 }}>
 
-      {/* ── AC ── */}
-      <SectionDivider label="Armour Class" />
+    {/* ── AC ── */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>AC</span>
@@ -112,7 +111,7 @@ export default function StatBlockEditor({ value, onChange }: Props) {
           />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Note (e.g. natural armour)</span>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>AC Note (e.g. natural armour)</span>
           <input
             className="input"
             style={{ height: 34, fontSize: 13 }}
@@ -121,10 +120,19 @@ export default function StatBlockEditor({ value, onChange }: Props) {
             onChange={e => set('acNote', e.target.value)}
           />
         </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Speed</span>
+          <input
+            className="input"
+            style={{ height: 34, fontSize: 13 }}
+            placeholder="30 ft., fly 60 ft.…"
+            value={value.speed}
+            onChange={e => set('speed', e.target.value)}
+          />
+        </div>
       </div>
 
       {/* ── HP ── */}
-      <SectionDivider label="Hit Points" />
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Avg HP</span>
@@ -149,7 +157,7 @@ export default function StatBlockEditor({ value, onChange }: Props) {
           />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Die</span>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Hit Die</span>
           <select
             className="input"
             style={{ width: 80, height: 34, fontSize: 13 }}
@@ -173,16 +181,6 @@ export default function StatBlockEditor({ value, onChange }: Props) {
           = {value.hpDice.count}d{value.hpDice.die}{value.hpDice.bonus >= 0 ? '+' : ''}{value.hpDice.bonus}
         </div>
       </div>
-
-      {/* ── Speed ── */}
-      <SectionDivider label="Speed" />
-      <input
-        className="input"
-        style={{ height: 34, fontSize: 13 }}
-        placeholder="30 ft., fly 60 ft.…"
-        value={value.speed}
-        onChange={e => set('speed', e.target.value)}
-      />
 
       {/* ── Ability Scores ── */}
       <SectionDivider label="Ability Scores" />

@@ -66,7 +66,7 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
   })
 
   const lootTable = parseLootTable(creature.loot_table)
-  const hasLootTable = lootTable.items.length > 0
+  const hasLootTable = lootTable.items.length > 0 || creature.loot_table_id !== null
   const lootGenerated = lootItems !== null
 
   const handleLootClick = async () => {
@@ -74,9 +74,14 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
       setShowLoot(true)
       return
     }
-    const result = generateLoot(lootTable.items)
-    const merged = await onLootGenerated(creature.id, result, creature.article_id)
-    setLootItems(merged)
+    try {
+      const result = generateLoot(lootTable.items)
+      const merged = await onLootGenerated(creature.id, result, creature.article_id)
+      setLootItems(merged)
+    } catch (e) {
+      console.error('Loot generation error:', e)
+      setLootItems([])
+    }
     setShowLoot(true)
   }
 

@@ -1,6 +1,14 @@
 // path: src/store/store.ts
 import { create } from 'zustand'
 import type { Campaign, Session, Arc, GameMap, POI, Article, ArticleSummary, ArticleType } from '../types'
+import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
+import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
+
+function getStarterMonsters(system: string) {
+  if (system === 'D&D 5e 2014') return MONSTERS_2014
+  if (system === 'D&D 5e 2024') return MONSTERS_2024
+  return []
+}
 
 type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables'
 
@@ -29,7 +37,7 @@ interface AppStore {
   currentCampaign: Campaign | null
   loadCampaigns: () => Promise<void>
   selectCampaign: (c: Campaign) => void
-  createCampaign: (data: { name: string; description: string; system: string }) => Promise<void>
+  createCampaign: (data: { name: string; description: string; system: string }, seedMonsters?: boolean) => Promise<void>
   updateCampaign: (id: number, data: Partial<Campaign>) => Promise<void>
   deleteCampaign: (id: number) => Promise<void>
 
@@ -225,8 +233,31 @@ export const useStore = create<AppStore>((set, get) => ({
     get().loadArcs(campaign.id)
   },
 
-  createCampaign: async (data) => {
-    await window.api.createCampaign({ ...data, cover_image: null })
+  createCampaign: async (data, seedMonsters = true) => {
+    const campaign = await window.api.createCampaign({ ...data, cover_image: null })
+    if (seedMonsters) {
+      const starters = getStarterMonsters(data.system)
+      if (starters.length > 0) {
+        // Seed the default loot tables and build a name → id map
+        const lootTables = await window.api.resetDefaultTables(campaign.id)
+        const lootTableByName = Object.fromEntries(lootTables.map(t => [t.name, t.id]))
+
+        await Promise.all(
+          starters.map(m =>
+            window.api.createArticle({
+              campaign_id: campaign.id,
+              title: m.title,
+              article_type: 'creature',
+              tags: m.tags,
+              tracks: JSON.stringify(m.tracks),
+              statblock: JSON.stringify(m.statblock),
+              loot_table_id: lootTableByName[m.loot_table_name] ?? null,
+              content: m.content,
+            })
+          )
+        )
+      }
+    }
     await get().loadCampaigns()
   },
 

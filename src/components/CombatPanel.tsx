@@ -5,7 +5,7 @@ import { X, Trash2, Plus, Search, Save, Dices } from 'lucide-react'
 import RichEditor from './RichEditor'
 import CombatantRow from './CombatantRow'
 import type { CombatEncounter, CombatCreature, ArticleSummary, LootItem } from '../types'
-import { parseStatBlock, calcHpAverage, rollHp, parseLootTable, generateLoot } from '../types'
+import { parseStatBlock, calcHpAverage, rollHp } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
 type Tab = 'general' | 'combatants'
@@ -38,6 +38,9 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
     encounter, creatures, creaturesDirty,
   })
   pendingRef.current = { selectedPOI, label, content, dirty, encounter, creatures, creaturesDirty }
+
+  // Debounce ref for combat auto-save
+  const combatSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Load POI data ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -78,6 +81,24 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
       }
     }
   }, [])
+
+  // ── Debounced combat auto-save (1500ms after last change) ─────────────────
+  useEffect(() => {
+    if (!creaturesDirty || !encounter || !creatures.length) return
+    if (combatSaveRef.current) clearTimeout(combatSaveRef.current)
+    combatSaveRef.current = setTimeout(() => {
+      window.api.saveCombatCreatures(
+        creatures.map(c => ({
+          id: c.id, current_hp: c.current_hp,
+          ac_override: c.ac_override, is_dead: c.is_dead, initiative: c.initiative,
+          resources: c.resources ?? '[]',
+        }))
+      ).then(() => setCreaturesDirty(false))
+    }, 1500)
+    return () => {
+      if (combatSaveRef.current) clearTimeout(combatSaveRef.current)
+    }
+  }, [creatures, creaturesDirty, encounter])
 
   // ── Load picker articles (creature + character) ────────────────────────────
   useEffect(() => {
@@ -143,28 +164,24 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
     window.api.openStatBlockWindow(articleId)
   }, [])
 
-  // ── Loot generation with species chain ─────────────────────────────────────
+  // ── Loot generation ─────────────────────────────────────────────────────────
   const handleLootGenerated = useCallback(async (creatureId: number, result: LootItem[], articleId: number): Promise<LootItem[]> => {
-    const full = await window.api.getArticle(articleId)
-    if (full && (full.article_type === 'character' || full.article_type === 'playerCharacter' || full.article_type === 'creature')) {
-      try {
-        const tracks = JSON.parse(full.tracks) as Record<string, string>
-        const speciesName = tracks['Species']
-        if (speciesName && currentCampaign) {
-          const speciesArticle = await window.api.getArticleByTitle(speciesName, currentCampaign.id)
-          if (speciesArticle) {
-            const speciesTable = parseLootTable(speciesArticle.loot_table)
-            const speciesRoll = generateLoot(speciesTable.items)
-            result = [...result, ...speciesRoll]
-          }
-        }
-      } catch (e) {
-        console.error('Species loot error:', e)
+    try {
+      const full = await window.api.getArticle(articleId)
+      if (full?.loot_table_id) {
+        const masterResult = await window.api.rollLootTable(full.loot_table_id, '[]')
+        result = [...result, ...masterResult]
       }
+    } catch (e) {
+      console.error('Loot generation error:', e)
     }
-    await window.api.saveLootResult(creatureId, result)
+    try {
+      await window.api.saveLootResult(creatureId, result)
+    } catch (e) {
+      console.error('Save loot result error:', e)
+    }
     return result
-  }, [currentCampaign])
+  }, [])
 
   // ── Sort creatures by initiative (desc, nulls last) ────────────────────────
   const sortedCreatures = [...creatures].sort((a, b) => {
