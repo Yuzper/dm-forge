@@ -1,5 +1,6 @@
 // path: src/components/RichEditor.tsx
 import { useEditor, EditorContent } from '@tiptap/react'
+import { Extension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -7,6 +8,11 @@ import TextAlign from '@tiptap/extension-text-align'
 import Underline from '@tiptap/extension-underline'
 import Highlight from '@tiptap/extension-highlight'
 import TextStyle from '@tiptap/extension-text-style'
+import { Color } from '@tiptap/extension-color'
+import Table from '@tiptap/extension-table'
+import TableRow from '@tiptap/extension-table-row'
+import TableCell from '@tiptap/extension-table-cell'
+import TableHeader from '@tiptap/extension-table-header'
 import { WikiLink } from './WikiLinkExtension'
 import { SessionLink } from './SessionLinkExtension'
 import { SpellLink } from './SpellLinkExtension'
@@ -18,20 +24,100 @@ import {
   List, ListOrdered, Quote,
   AlignLeft, AlignCenter, AlignRight,
   Image as ImageIcon, Highlighter, Link2,
-  Undo, Redo, Minus
+  Undo, Redo, Minus, Table2, Palette,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
-interface RichEditorProps {
-  content: string
-  onChange: (json: string) => void
-  placeholder?: string
-  onWikiLinkClick?: (title: string) => void
-  readOnly?: boolean
-  expandable?: boolean
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+const COLOR_PALETTE = [
+  { label: 'Red',    color: '#e05555' },
+  { label: 'Orange', color: '#e88c3a' },
+  { label: 'Gold',   color: '#c8a84b' },
+  { label: 'Green',  color: '#49c185' },
+  { label: 'Teal',   color: '#5bbfb0' },
+  { label: 'Blue',   color: '#4da6ff' },
+  { label: 'Purple', color: '#9b7de8' },
+  { label: 'Grey',   color: '#8a8a8a' },
+  { label: 'White',  color: '#e8e8e8' },
+]
+
+
+// ── Spell types & data ─────────────────────────────────────────────────────────
+
+type Spell = {
+  name: string
+  level: number
+  school: string
+  casting_time: string
+  range: string
+  components: string
+  duration: string
+  desc: string
+  higher_levels?: string
 }
 
-function ToolbarButton({ onClick, active, title, children }: { onClick: () => void; active?: boolean; title: string; children: React.ReactNode }) {
+const spells: Spell[] = spellsData as Spell[]
+
+function levelLabel(level: number): string {
+  if (level === 0) return 'Cantrip'
+  if (level === 1) return '1st-level'
+  if (level === 2) return '2nd-level'
+  if (level === 3) return '3rd-level'
+  return `${level}th-level`
+}
+
+// ── Custom Extensions ──────────────────────────────────────────────────────────
+
+const FontSize = Extension.create({
+  name: 'fontSize',
+  addOptions() { return { types: ['textStyle'] } },
+  addGlobalAttributes() {
+    return [{
+      types: this.options.types,
+      attributes: {
+        fontSize: {
+          default: null,
+          parseHTML: (el: HTMLElement) => el.style.fontSize || null,
+          renderHTML: (attrs: any) => !attrs.fontSize ? {} : { style: `font-size: ${attrs.fontSize}` },
+        },
+      },
+    }]
+  },
+  addCommands() {
+    return {
+      setFontSize: (fontSize: string) => ({ chain }: any) =>
+        chain().setMark('textStyle', { fontSize }).run(),
+      unsetFontSize: () => ({ chain }: any) =>
+        chain().setMark('textStyle', { fontSize: null }).removeEmptyTextStyle().run(),
+    } as any
+  },
+})
+
+const CustomImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: { default: null },
+      float: { default: 'none' },
+    }
+  },
+  renderHTML({ HTMLAttributes }) {
+    const { width, float, ...attrs } = HTMLAttributes
+    const style: string[] = ['max-width: 100%; height: auto']
+    if (width) style.push(`width: ${width}`)
+    if (float === 'left') style.push('float: left; margin: 4px 16px 8px 0')
+    else if (float === 'right') style.push('float: right; margin: 4px 0 8px 16px')
+    else style.push('display: block; margin: 8px auto')
+    return ['img', { ...attrs, style: style.join('; ') }]
+  },
+})
+
+// ── Toolbar Components ─────────────────────────────────────────────────────────
+
+function ToolbarButton({ onClick, active, title, children }: {
+  onClick: () => void; active?: boolean; title: string; children: React.ReactNode
+}) {
   return (
     <button
       onClick={onClick}
@@ -43,9 +129,7 @@ function ToolbarButton({ onClick, active, title, children }: { onClick: () => vo
         border: active ? '1px solid var(--border-gold)' : '1px solid transparent',
         borderRadius: 4,
         color: active ? 'var(--gold)' : 'var(--text-secondary)',
-        cursor: 'pointer',
-        transition: 'all 120ms ease',
-        flexShrink: 0,
+        cursor: 'pointer', transition: 'all 120ms ease', flexShrink: 0,
       }}
       onMouseEnter={e => { if (!active) { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' } }}
       onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' } }}
@@ -59,7 +143,69 @@ function ToolbarDivider() {
   return <div style={{ width: 1, height: 18, background: 'var(--border-light)', margin: '0 2px', flexShrink: 0 }} />
 }
 
-// ── Wiki Link Popover ──────────────────────────────────────────────────────────
+// ── Color Palette Popover ──────────────────────────────────────────────────────
+
+function ColorPalette({ onSelect, onClear, onClose, currentColor }: {
+  onSelect: (color: string) => void
+  onClear: () => void
+  onClose: () => void
+  currentColor?: string
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  return (
+    <div ref={ref} style={{
+      position: 'absolute', top: 36, left: 0, zIndex: 200,
+      background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-light)',
+      borderRadius: 'var(--radius-md)',
+      boxShadow: 'var(--shadow-md)',
+      padding: 10,
+      display: 'flex', flexDirection: 'column', gap: 8,
+    }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', width: 156 }}>
+        {COLOR_PALETTE.map(({ label, color }) => (
+          <button
+            key={color}
+            title={label}
+            onMouseDown={e => { e.preventDefault(); onSelect(color) }}
+            style={{
+              width: 22, height: 22, borderRadius: 4,
+              background: color, cursor: 'pointer',
+              border: currentColor === color
+                ? '2px solid var(--text-primary)'
+                : '2px solid transparent',
+              transition: 'transform 80ms ease',
+            }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.transform = 'scale(1.2)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.transform = 'scale(1)'}
+          />
+        ))}
+      </div>
+      <button
+        onMouseDown={e => { e.preventDefault(); onClear() }}
+        style={{
+          fontSize: 11, color: 'var(--text-muted)',
+          background: 'none', border: '1px solid var(--border-light)',
+          borderRadius: 3, padding: '3px 8px', cursor: 'pointer', width: '100%',
+        }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+      >
+        Clear colour
+      </button>
+    </div>
+  )
+}
+
+// ── Wiki Link Popovers ─────────────────────────────────────────────────────────
 
 function WikiLinkPopover({ query, coords, onSelect, onClose }: {
   query: string
@@ -225,181 +371,6 @@ function WikiLinkToolbarPopover({ onSelect, onClose }: {
   )
 }
 
-// ── Spell types ────────────────────────────────────────────────────────────────
-
-type Spell = {
-  name: string
-  level: number
-  school: string
-  casting_time: string
-  range: string
-  components: string
-  duration: string
-  desc: string
-  higher_levels?: string
-}
-
-const spells: Spell[] = spellsData as Spell[]
-
-function levelLabel(level: number): string {
-  if (level === 0) return 'Cantrip'
-  if (level === 1) return '1st-level'
-  if (level === 2) return '2nd-level'
-  if (level === 3) return '3rd-level'
-  return `${level}th-level`
-}
-
-// ── Spell Search Popover ───────────────────────────────────────────────────────
-
-function SpellLinkPopover({ query, coords, onSelect, onClose }: {
-  query: string
-  coords: { left: number; top: number; bottom: number }
-  onSelect: (spellName: string) => void
-  onClose: () => void
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [selectedIndex, setSelectedIndex] = useState(0)
-
-  const filtered = spells.filter(s =>
-    s.name.toLowerCase().includes(query.toLowerCase())
-  ).slice(0, 8)
-
-  useEffect(() => { setSelectedIndex(0) }, [query])
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filtered.length - 1)) }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
-      else if (e.key === 'Tab') { e.preventDefault(); setSelectedIndex(i => (i + 1) % filtered.length) }
-      else if (e.key === 'Enter' && filtered[selectedIndex]) {
-        e.preventDefault(); e.stopPropagation()
-        onSelect(filtered[selectedIndex].name)
-      } else if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handler, true)
-    return () => document.removeEventListener('keydown', handler, true)
-  }, [filtered, selectedIndex, onSelect, onClose])
-
-  if (filtered.length === 0 && query === '') return null
-
-  return (
-    <div ref={ref} style={{
-      position: 'fixed', left: coords.left, top: coords.bottom + 6,
-      width: 300, background: 'var(--bg-elevated)',
-      border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)',
-      boxShadow: 'var(--shadow-md)', zIndex: 1000, overflow: 'hidden',
-    }}>
-      {filtered.length === 0 ? (
-        <div style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-muted)' }}>
-          No spells match "{query}"
-        </div>
-      ) : (
-        <div style={{ maxHeight: 240, overflowY: 'auto' }}>
-          {filtered.map((s, i) => (
-            <button
-              key={s.name}
-              onMouseDown={e => { e.preventDefault(); onSelect(s.name) }}
-              onMouseEnter={() => setSelectedIndex(i)}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-                padding: '8px 14px',
-                background: i === selectedIndex ? 'var(--bg-hover)' : 'none',
-                border: 'none',
-                color: i === selectedIndex ? 'var(--text-primary)' : 'var(--text-secondary)',
-                fontSize: 13, fontFamily: 'var(--font-ui)', cursor: 'pointer', textAlign: 'left',
-              }}
-            >
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {s.name}
-              </span>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
-                {s.level === 0 ? 'Cantrip' : `Lv ${s.level}`} · {s.school}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Spell Hover Card ───────────────────────────────────────────────────────────
-
-function SpellHoverCard({ spell, x, y }: { spell: Spell; x: number; y: number }) {
-  // Position card above cursor, or below if near top
-  const cardHeight = 280
-  const top = y - cardHeight - 12 < 0 ? y + 16 : y - cardHeight - 12
-
-  return (
-    <div style={{
-      position: 'fixed', left: Math.min(x, window.innerWidth - 340), top,
-      width: 320, zIndex: 2000, pointerEvents: 'none',
-      background: 'var(--bg-elevated)',
-      border: '1px solid var(--border-gold)',
-      borderRadius: 'var(--radius-md)',
-      boxShadow: 'var(--shadow-lg)',
-      overflow: 'hidden',
-    }}>
-      {/* Header */}
-      <div style={{
-        padding: '10px 14px',
-        background: 'var(--bg-surface)',
-        borderBottom: '1px solid var(--border-gold)',
-      }}>
-        <div style={{
-          fontFamily: 'var(--font-display)', fontSize: 15,
-          color: 'var(--gold)', letterSpacing: '0.04em', marginBottom: 2,
-        }}>
-          {spell.name}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-          {levelLabel(spell.level)} {spell.school}
-        </div>
-      </div>
-
-      {/* Stats grid */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 1fr',
-        gap: 0, borderBottom: '1px solid var(--border)',
-      }}>
-        {[
-          ['Casting Time', spell.casting_time],
-          ['Range', spell.range],
-          ['Duration', spell.duration],
-          ['Components', spell.components],
-        ].map(([label, value]) => (
-          <div key={label} style={{ padding: '6px 12px', borderBottom: '1px solid var(--border-light)', borderRight: '1px solid var(--border-light)' }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>
-              {label}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Description */}
-      <div style={{ padding: '10px 14px', maxHeight: 120, overflowY: 'auto' }}>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          {spell.desc}
-        </div>
-        {spell.higher_levels && (
-          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.4 }}>
-            <strong>At Higher Levels. </strong>{spell.higher_levels}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ── Session Link Popover ───────────────────────────────────────────────────────
 
 function SessionLinkPopover({ query, coords, onSelect, onClose }: {
@@ -484,7 +455,159 @@ function SessionLinkPopover({ query, coords, onSelect, onClose }: {
   )
 }
 
+// ── Spell Popovers & Hover Card ────────────────────────────────────────────────
+
+function SpellLinkPopover({ query, coords, onSelect, onClose }: {
+  query: string
+  coords: { left: number; top: number; bottom: number }
+  onSelect: (spellName: string) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [selectedIndex, setSelectedIndex] = useState(0)
+
+  const filtered = spells.filter(s =>
+    s.name.toLowerCase().includes(query.toLowerCase())
+  ).slice(0, 8)
+
+  useEffect(() => { setSelectedIndex(0) }, [query])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filtered.length - 1)) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
+      else if (e.key === 'Tab') { e.preventDefault(); setSelectedIndex(i => (i + 1) % filtered.length) }
+      else if (e.key === 'Enter' && filtered[selectedIndex]) {
+        e.preventDefault(); e.stopPropagation()
+        onSelect(filtered[selectedIndex].name)
+      } else if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [filtered, selectedIndex, onSelect, onClose])
+
+  if (filtered.length === 0 && query === '') return null
+
+  return (
+    <div ref={ref} style={{
+      position: 'fixed', left: coords.left, top: coords.bottom + 6,
+      width: 300, background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)',
+      boxShadow: 'var(--shadow-md)', zIndex: 1000, overflow: 'hidden',
+    }}>
+      {filtered.length === 0 ? (
+        <div style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-muted)' }}>
+          No spells match "{query}"
+        </div>
+      ) : (
+        <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+          {filtered.map((s, i) => (
+            <button
+              key={s.name}
+              onMouseDown={e => { e.preventDefault(); onSelect(s.name) }}
+              onMouseEnter={() => setSelectedIndex(i)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 14px',
+                background: i === selectedIndex ? 'var(--bg-hover)' : 'none',
+                border: 'none',
+                color: i === selectedIndex ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontSize: 13, fontFamily: 'var(--font-ui)', cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {s.name}
+              </span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
+                {s.level === 0 ? 'Cantrip' : `Lv ${s.level}`} · {s.school}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SpellHoverCard({ spell, x, y }: { spell: Spell; x: number; y: number }) {
+  const cardHeight = 280
+  const top = y - cardHeight - 12 < 0 ? y + 16 : y - cardHeight - 12
+
+  return (
+    <div style={{
+      position: 'fixed', left: Math.min(x, window.innerWidth - 340), top,
+      width: 320, zIndex: 2000, pointerEvents: 'none',
+      background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-gold)',
+      borderRadius: 'var(--radius-md)',
+      boxShadow: 'var(--shadow-lg)',
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        padding: '10px 14px',
+        background: 'var(--bg-surface)',
+        borderBottom: '1px solid var(--border-gold)',
+      }}>
+        <div style={{
+          fontFamily: 'var(--font-display)', fontSize: 15,
+          color: 'var(--gold)', letterSpacing: '0.04em', marginBottom: 2,
+        }}>
+          {spell.name}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+          {levelLabel(spell.level)} {spell.school}
+        </div>
+      </div>
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1fr 1fr',
+        gap: 0, borderBottom: '1px solid var(--border)',
+      }}>
+        {[
+          ['Casting Time', spell.casting_time],
+          ['Range', spell.range],
+          ['Duration', spell.duration],
+          ['Components', spell.components],
+        ].map(([label, value]) => (
+          <div key={label} style={{ padding: '6px 12px', borderBottom: '1px solid var(--border-light)', borderRight: '1px solid var(--border-light)' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>
+              {label}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ padding: '10px 14px', maxHeight: 120, overflowY: 'auto' }}>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          {spell.desc}
+        </div>
+        {spell.higher_levels && (
+          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.4 }}>
+            <strong>At Higher Levels. </strong>{spell.higher_levels}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Editor ────────────────────────────────────────────────────────────────
+
+interface RichEditorProps {
+  content: string
+  onChange: (json: string) => void
+  placeholder?: string
+  onWikiLinkClick?: (title: string) => void
+  readOnly?: boolean
+  expandable?: boolean
+}
 
 export default function RichEditor({ content, onChange, placeholder, onWikiLinkClick, readOnly, expandable }: RichEditorProps) {
   const { navigateToArticleByTitle, navigateToSessionById } = useStore()
@@ -506,8 +629,9 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
   } | null>(null)
 
   const [hoveredSpell, setHoveredSpell] = useState<{ spell: Spell; x: number; y: number } | null>(null)
-
   const [showToolbarPopover, setShowToolbarPopover] = useState(false)
+  const [showColorPalette, setShowColorPalette] = useState(false)
+  const [displayFontSize, setDisplayFontSize] = useState<number | ''>('')
 
   const parsedContent = (() => {
     try {
@@ -523,9 +647,15 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       Underline,
       TextStyle,
+      Color,
+      FontSize,
       Highlight.configure({ multicolor: false }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Image.configure({ allowBase64: true }),
+      CustomImage.configure({ allowBase64: true }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Placeholder.configure({ placeholder: placeholder || 'Begin writing…' }),
       WikiLink,
       SessionLink,
@@ -543,6 +673,38 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     if (!editor) return
     editor.setEditable(!readOnly)
   }, [editor, readOnly])
+
+  // Track the computed font size of the current selection for the toolbar input
+  useEffect(() => {
+    if (!editor) return
+    const update = () => {
+      const explicit = editor.getAttributes('textStyle').fontSize
+      if (explicit) {
+        setDisplayFontSize(parseInt(explicit))
+        return
+      }
+      // Fall back to the computed style of the DOM node at the cursor
+      try {
+        const { from } = editor.state.selection
+        const domInfo = editor.view.domAtPos(from)
+        const node = domInfo?.node
+        if (node) {
+          const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as HTMLElement
+          if (el) {
+            const size = parseInt(getComputedStyle(el).fontSize)
+            if (!isNaN(size)) { setDisplayFontSize(size); return }
+          }
+        }
+      } catch { /* ignore */ }
+      setDisplayFontSize('')
+    }
+    editor.on('selectionUpdate', update)
+    editor.on('transaction', update)
+    return () => {
+      editor.off('selectionUpdate', update)
+      editor.off('transaction', update)
+    }
+  }, [editor])
 
   // Handle wiki link and session link clicks
   useEffect(() => {
@@ -573,7 +735,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     return () => el.removeEventListener('click', handleClick, true)
   }, [onWikiLinkClick, navigateToArticleByTitle, navigateToSessionById])
 
-  // Listen for wiki and session search events from extensions
+  // Listen for wiki, session, spell search events from extensions
   useEffect(() => {
     const el = editorRef.current
     if (!el) return
@@ -600,7 +762,6 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     }
     const onSpellClose = () => setSpellSearch(null)
 
-    // Spell hover — mouseover on spell-link spans
     const onMouseOver = (e: MouseEvent) => {
       const target = (e.target as HTMLElement).closest('[data-spell-link]') as HTMLElement | null
       if (!target) { setHoveredSpell(null); return }
@@ -689,57 +850,230 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
 
   if (!editor) return null
 
+  const currentColor = editor.getAttributes('textStyle').color as string | undefined
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: expandable ? 'auto' : '100%' }}>
-      {!readOnly && (
-        <div style={{
-          display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2,
-          padding: '6px 10px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--bg-surface)',
-          flexShrink: 0,
-          position: 'relative',
-        }}>
-          <ToolbarButton onClick={() => editor.chain().focus().undo().run()} title="Undo"><Undo size={13} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().redo().run()} title="Redo"><Redo size={13} /></ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive('heading', { level: 1 })} title="Heading 1"><Heading1 size={14} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })} title="Heading 2"><Heading2 size={14} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })} title="Heading 3"><Heading3 size={14} /></ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title="Bold"><Bold size={13} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} title="Italic"><Italic size={13} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} title="Underline"><UnderlineIcon size={13} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} title="Strikethrough"><Strikethrough size={13} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleHighlight().run()} active={editor.isActive('highlight')} title="Highlight"><Highlighter size={13} /></ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title="Bullet list"><List size={14} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="Numbered list"><ListOrdered size={14} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} title="Blockquote"><Quote size={13} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Divider"><Minus size={13} /></ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="Align left"><AlignLeft size={13} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title="Align center"><AlignCenter size={13} /></ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title="Align right"><AlignRight size={13} /></ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarButton onClick={insertImage} title="Insert image"><ImageIcon size={13} /></ToolbarButton>
-          <ToolbarButton
-            onClick={() => setShowToolbarPopover(v => !v)}
-            active={showToolbarPopover}
-            title="Insert wiki link"
-          >
-            <Link2 size={13} />
-          </ToolbarButton>
 
-          {showToolbarPopover && (
-            <WikiLinkToolbarPopover
-              onSelect={insertWikiLinkFromToolbar}
-              onClose={() => setShowToolbarPopover(false)}
+      {/* ── Toolbar + contextual bars (sticky as one unit) ── */}
+      {!readOnly && (
+        <div style={{ position: 'sticky', top: 0, zIndex: 10, flexShrink: 0 }}>
+
+          {/* Main toolbar */}
+          <div style={{
+            display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2,
+            padding: '6px 10px',
+            borderBottom: '1px solid var(--border)',
+            background: 'var(--bg-surface)',
+          }}>
+            {/* Undo / Redo */}
+            <ToolbarButton onClick={() => editor.chain().focus().undo().run()} title="Undo"><Undo size={13} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().redo().run()} title="Redo"><Redo size={13} /></ToolbarButton>
+            <ToolbarDivider />
+
+            {/* Headings */}
+            <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive('heading', { level: 1 })} title="Heading 1"><Heading1 size={14} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })} title="Heading 2"><Heading2 size={14} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })} title="Heading 3"><Heading3 size={14} /></ToolbarButton>
+            <ToolbarDivider />
+
+            {/* Font size */}
+            <input
+              type="number"
+              title="Font size (10–40)"
+              min={10}
+              max={40}
+              placeholder="px"
+              value={displayFontSize}
+              onChange={e => {
+                const val = parseInt(e.target.value)
+                if (!e.target.value) {
+                  setDisplayFontSize('')
+                  ;(editor.chain().focus() as any).unsetFontSize().run()
+                } else if (val >= 10 && val <= 40) {
+                  setDisplayFontSize(val)
+                  ;(editor.chain().focus() as any).setFontSize(`${val}px`).run()
+                }
+              }}
+              style={{
+                width: 48, height: 26, fontSize: 11,
+                color: 'var(--text-secondary)',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-light)',
+                borderRadius: 4, padding: '0 4px',
+                flexShrink: 0,
+              }}
             />
+            <ToolbarDivider />
+
+            {/* Inline formatting */}
+            <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title="Bold"><Bold size={13} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} title="Italic"><Italic size={13} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} title="Underline"><UnderlineIcon size={13} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} title="Strikethrough"><Strikethrough size={13} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().toggleHighlight().run()} active={editor.isActive('highlight')} title="Highlight"><Highlighter size={13} /></ToolbarButton>
+
+            {/* Text colour */}
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <button
+                onClick={() => setShowColorPalette(v => !v)}
+                title="Text colour"
+                style={{
+                  width: 28, height: 28,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  gap: 2,
+                  background: showColorPalette ? 'var(--bg-active)' : 'transparent',
+                  border: showColorPalette ? '1px solid var(--border-gold)' : '1px solid transparent',
+                  borderRadius: 4, cursor: 'pointer',
+                }}
+              >
+                <Palette size={12} color={currentColor || 'var(--text-secondary)'} />
+                <div style={{
+                  width: 14, height: 3, borderRadius: 1,
+                  background: currentColor || 'var(--text-muted)',
+                }} />
+              </button>
+              {showColorPalette && (
+                <ColorPalette
+                  currentColor={currentColor}
+                  onSelect={color => {
+                    editor.chain().focus().setColor(color).run()
+                    setShowColorPalette(false)
+                  }}
+                  onClear={() => {
+                    editor.chain().focus().unsetColor().run()
+                    setShowColorPalette(false)
+                  }}
+                  onClose={() => setShowColorPalette(false)}
+                />
+              )}
+            </div>
+            <ToolbarDivider />
+
+            {/* Lists / blocks */}
+            <ToolbarButton onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title="Bullet list"><List size={14} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="Numbered list"><ListOrdered size={14} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} title="Blockquote"><Quote size={13} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Divider"><Minus size={13} /></ToolbarButton>
+            <ToolbarDivider />
+
+            {/* Alignment */}
+            <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="Align left"><AlignLeft size={13} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title="Align center"><AlignCenter size={13} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title="Align right"><AlignRight size={13} /></ToolbarButton>
+            <ToolbarDivider />
+
+            {/* Table */}
+            <ToolbarButton
+              onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+              active={editor.isActive('table')}
+              title="Insert table"
+            >
+              <Table2 size={13} />
+            </ToolbarButton>
+            <ToolbarDivider />
+
+            {/* Image + Wiki link */}
+            <ToolbarButton onClick={insertImage} title="Insert image"><ImageIcon size={13} /></ToolbarButton>
+            <ToolbarButton
+              onClick={() => setShowToolbarPopover(v => !v)}
+              active={showToolbarPopover}
+              title="Insert wiki link"
+            >
+              <Link2 size={13} />
+            </ToolbarButton>
+
+            {showToolbarPopover && (
+              <WikiLinkToolbarPopover
+                onSelect={insertWikiLinkFromToolbar}
+                onClose={() => setShowToolbarPopover(false)}
+              />
+            )}
+          </div>
+
+          {/* Contextual — image controls */}
+          {editor.isActive('image') && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              padding: '4px 10px',
+              borderBottom: '1px solid var(--border)',
+              background: 'var(--bg-elevated)',
+            }}>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', marginRight: 2 }}>Float</span>
+              {([
+                { label: 'Left',   float: 'left',  icon: AlignLeft },
+                { label: 'Center', float: 'none',  icon: AlignCenter },
+                { label: 'Right',  float: 'right', icon: AlignRight },
+              ] as const).map(({ label, float, icon: Icon }) => {
+                const active = (editor.getAttributes('image').float || 'none') === float
+                return (
+                  <ToolbarButton key={float} onClick={() => editor.chain().focus().updateAttributes('image', { float }).run()} active={active} title={label}>
+                    <Icon size={12} />
+                  </ToolbarButton>
+                )
+              })}
+              <ToolbarDivider />
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', marginRight: 2 }}>Width</span>
+              <input
+                key={editor.getAttributes('image').width ?? 'none'}
+                type="number"
+                min={1}
+                max={100}
+                title="Image width (1–100%)"
+                defaultValue={editor.getAttributes('image').width ? parseInt(editor.getAttributes('image').width) : 10}
+                placeholder="%"
+                onKeyDown={e => {
+                  if (e.key !== 'Enter') return
+                  const raw = (e.target as HTMLInputElement).value
+                  const val = parseInt(raw)
+                  const clamped = !raw || isNaN(val) || val < 1 ? 10 : Math.min(val, 100)
+                  editor.chain().focus().updateAttributes('image', { width: `${clamped}%` }).run()
+                }}
+                onBlur={e => {
+                  const raw = e.target.value
+                  const val = parseInt(raw)
+                  const clamped = !raw || isNaN(val) || val < 1 ? 10 : Math.min(val, 100)
+                  editor.chain().focus().updateAttributes('image', { width: `${clamped}%` }).run()
+                }}
+                style={{
+                  width: 52, height: 26, fontSize: 11,
+                  color: 'var(--text-secondary)',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: 4, padding: '0 4px',
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>%</span>
+            </div>
           )}
+
+          {/* Contextual — table controls */}
+          {editor.isActive('table') && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 2,
+              padding: '4px 10px',
+              borderBottom: '1px solid var(--border)',
+              background: 'var(--bg-elevated)',
+            }}>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', marginRight: 2 }}>Row</span>
+              <ToolbarButton onClick={() => editor.chain().focus().addRowBefore().run()} title="Add row above"><span style={{ fontSize: 10 }}>↑</span></ToolbarButton>
+              <ToolbarButton onClick={() => editor.chain().focus().addRowAfter().run()} title="Add row below"><span style={{ fontSize: 10 }}>↓</span></ToolbarButton>
+              <ToolbarButton onClick={() => editor.chain().focus().deleteRow().run()} title="Delete row"><span style={{ fontSize: 10, color: '#e05555' }}>✕</span></ToolbarButton>
+              <ToolbarDivider />
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', marginRight: 2 }}>Col</span>
+              <ToolbarButton onClick={() => editor.chain().focus().addColumnBefore().run()} title="Add column left"><span style={{ fontSize: 10 }}>←</span></ToolbarButton>
+              <ToolbarButton onClick={() => editor.chain().focus().addColumnAfter().run()} title="Add column right"><span style={{ fontSize: 10 }}>→</span></ToolbarButton>
+              <ToolbarButton onClick={() => editor.chain().focus().deleteColumn().run()} title="Delete column"><span style={{ fontSize: 10, color: '#e05555' }}>✕</span></ToolbarButton>
+              <ToolbarDivider />
+              <ToolbarButton onClick={() => editor.chain().focus().deleteTable().run()} title="Delete table"><span style={{ fontSize: 10, color: '#e05555' }}>✕ Table</span></ToolbarButton>
+            </div>
+          )}
+
         </div>
       )}
 
+      {/* ── Editor content ── */}
       <div
         ref={editorRef}
         style={{
@@ -753,6 +1087,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
         <EditorContent editor={editor} style={{ height: '100%' }} />
       </div>
 
+      {/* ── Popovers ── */}
       {wikiSearch && (
         <WikiLinkPopover
           query={wikiSearch.query}

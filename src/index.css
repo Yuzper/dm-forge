@@ -278,6 +278,44 @@ select.input {
   opacity: 0.85;
 }
 
+/* Tables */
+.ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  table-layout: fixed;
+}
+.ProseMirror th,
+.ProseMirror td {
+  border: 1px solid var(--border);
+  padding: 7px 12px;
+  min-width: 60px;
+  vertical-align: top;
+  font-size: 13px;
+  position: relative;
+}
+.ProseMirror th {
+  background: var(--bg-surface);
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ProseMirror .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(200, 168, 75, 0.12);
+  pointer-events: none;
+}
+/* Image floats — clearfix so floated images don't bleed out of their container */
+.ProseMirror::after {
+  content: '';
+  display: table;
+  clear: both;
+}
+
 /* ─── POI Type Colors ─────────────────────────────────────────────────────── */
 .poi-location  { --poi-color: #c8a84b; }
 .poi-character { --poi-color: #5bbfb0; }
