@@ -10,7 +10,7 @@ function getStarterMonsters(system: string) {
   return []
 }
 
-type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables'
+type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables' | 'world-map'
 
 // ── Navigation History ────────────────────────────────────────────────────────
 

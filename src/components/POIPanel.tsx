@@ -1,7 +1,8 @@
 // path: src/components/POIPanel.tsx
 import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../store/store'
-import { X, PackageOpen } from 'lucide-react'
+import { useMapContext } from '../context/MapContext'
+import { X, PackageOpen, BookOpen, Plus } from 'lucide-react'
 import LootTableView from './LootTableView'
 import { POI_TYPE_LIST } from '../constants/POITypes'
 import RichEditor from './RichEditor'
@@ -13,8 +14,18 @@ import CombatPanel from './CombatPanel'
 import SectionDivider from './SectionDivider'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
+const POI_TO_ARTICLE_TYPE: Partial<Record<string, string>> = {
+  location:  'location',
+  character: 'character',
+  item:      'item',
+  quest:     'quest',
+  event:     'event',
+}
+
 export default function POIPanel({ readMode }: { readMode?: boolean }) {
-  const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI, articles, navigateToArticleByTitle, currentCampaign } = useStore()
+  const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI } = useMapContext()
+  const { articles, navigateToArticleByTitle, currentCampaign } = useStore()
+
   const [label, setLabel] = useState('')
   const [poiType, setPoiType] = useState<POIType>('location')
   const [content, setContent] = useState('')
@@ -95,6 +106,13 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
   const lootTable = parseLootTable(lootTableJson)
   const masterTable = masterTables.find(t => t.id === lootTableId)
   const hasLootItems = lootTable.items.length > 0 || !!masterTable
+  const linkedArticleType = POI_TO_ARTICLE_TYPE[selectedPOI.poi_type]
+  const linkedArticle = linkedArticleType
+    ? articles.find(a =>
+        a.title.toLowerCase() === selectedPOI.label.toLowerCase() &&
+        a.article_type === linkedArticleType
+      )
+    : undefined
 
   return (
     <div style={{
@@ -192,13 +210,42 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
           />
         </div>
 
+        {/* ── Article link ── */}
+        {linkedArticleType && currentCampaign && (
+          <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+            {linkedArticle ? (
+              <button
+                className="btn btn-sm"
+                style={{ width: '100%', justifyContent: 'center', gap: 6 }}
+                onClick={() => navigateToArticleByTitle(selectedPOI.label)}
+              >
+                <BookOpen size={12} /> Open Article: {linkedArticle.title}
+              </button>
+            ) : (
+              <button
+                className="btn btn-sm btn-ghost"
+                style={{ width: '100%', justifyContent: 'center', gap: 6 }}
+                onClick={async () => {
+                  await window.api.createArticle({
+                    campaign_id: currentCampaign.id,
+                    title: selectedPOI.label,
+                    article_type: linkedArticleType as any,
+                  })
+                  navigateToArticleByTitle(selectedPOI.label)
+                }}
+              >
+                <Plus size={12} /> Create {linkedArticleType} article
+              </button>
+            )}
+          </div>
+        )}
+
         {/* ── Loot section ── */}
         <div style={{ padding: '0 14px 20px' }}>
           <SectionDivider label={lootTable.name || 'Loot'} margin="8px 0 14px" />
 
           {readMode ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {/* Master table items */}
               {(() => {
                 if (!masterTable) return null
                 let masterItems: LootItem[] = []
@@ -218,7 +265,6 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
                 )
               })()}
 
-              {/* Inline items */}
               <LootTableView
                 label={masterTable ? 'Extra drops' : (lootTable.name || 'Loot')}
                 items={lootTable.items}
@@ -242,7 +288,6 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {/* Base table selector */}
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Base table</div>
                 <select
@@ -283,7 +328,6 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
         {!dirty && <span style={{ marginLeft: 'auto', color: 'var(--gold-dim)' }}>Saved</span>}
       </div>
 
-      {/* Loot result modal — rerollable for POIs */}
       {lootResult && (
         <LootResultModal
           creatureName={label || 'Loot'}

@@ -1,11 +1,11 @@
 // path: src/components/POIList.tsx
-import { useStore } from '../store/store'
+import { useMapContext } from '../context/MapContext'
 import { MapPin, MousePointerClick, Edit3 } from 'lucide-react'
 import { TYPE_ORDER, getPoiColor, getPoiIcon } from '../constants/POITypes'
 import type { POI } from '../types'
 
 function POIListItem({ poi, isSelected }: { poi: POI; isSelected: boolean }) {
-  const { selectPOI } = useStore()
+  const { selectPOI } = useMapContext()
   const Icon = getPoiIcon(poi.poi_type)
   const color = getPoiColor(poi.poi_type)
 
@@ -44,7 +44,7 @@ function POIListItem({ poi, isSelected }: { poi: POI; isSelected: boolean }) {
 }
 
 export default function POIList() {
-  const { pois, selectedPOI, editMode } = useStore()
+  const { pois, selectedPOI, editMode } = useMapContext()
 
   const grouped = TYPE_ORDER.reduce<Record<string, POI[]>>((acc, type) => {
     const group = pois.filter(p => p.poi_type === type)

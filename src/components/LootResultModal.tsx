@@ -162,7 +162,7 @@ function LootItemRow({ item }: { item: LootItem }) {
           <div style={{
             fontSize: 13, fontWeight: 500,
             color: 'var(--text-primary)',
-            marginBottom: item.description ? 2 : 0,
+            marginBottom: (item.description || item.price || item.weight) ? 2 : 0,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
             {item.name}
@@ -170,6 +170,16 @@ function LootItemRow({ item }: { item: LootItem }) {
           {item.description && (
             <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
               {item.description}
+            </div>
+          )}
+          {(item.price || item.weight) && (
+            <div style={{ display: 'flex', gap: 10, marginTop: 2, flexWrap: 'wrap' }}>
+              {item.price && (
+                <span style={{ fontSize: 11, color: 'var(--gold-dim)' }}>💰 {item.price}</span>
+              )}
+              {item.weight && (
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>⚖ {item.weight}</span>
+              )}
             </div>
           )}
         </div>

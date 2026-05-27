@@ -5,6 +5,8 @@ import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
 import RichEditor from '../components/RichEditor'
+import { StoreMapProvider } from '../context/MapContext'
+import MapPickerModal from '../components/MapPickerModal'
 import type { GameMap, Session } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
@@ -140,7 +142,6 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
   )
 
   const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Use ref so the unmount flush always sees the latest notes value
   const notesRef = useRef(notes)
   notesRef.current = notes
 
@@ -152,7 +153,6 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
     }, 1500)
   }
 
-  // Flush pending save on close so no notes are lost
   useEffect(() => () => {
     if (saveRef.current) {
       clearTimeout(saveRef.current)
@@ -173,7 +173,6 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
       zIndex: 100,
       animation: 'slideUp 150ms ease',
     }}>
-      {/* Header */}
       <div style={{
         padding: '10px 14px', borderBottom: '1px solid var(--border)',
         display: 'flex', alignItems: 'center', gap: 10,
@@ -203,7 +202,6 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
         </button>
       </div>
 
-      {/* Editor — key={session.id} reinitialises if session switches while panel is open */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <RichEditor
           key={session.id}
@@ -219,19 +217,26 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
 export default function SessionPage() {
   const {
     currentSession, currentCampaign, setView, setCampaignSubView,
-    maps, currentMap, selectMap, importMap, poiPanelOpen, sessionReadMode, setSessionReadMode,
+    maps, currentMap, selectMap, importMap, sessionReadMode, setSessionReadMode,
   } = useStore()
 
   const [importing, setImporting] = useState(false)
   const [editingMap, setEditingMap] = useState<GameMap | null>(null)
   const [showNotes, setShowNotes] = useState(false)
+  const [showPicker, setShowPicker] = useState(false)
 
   if (!currentSession) return null
 
-  const handleImportMap = async () => {
+  const handleImportMap = async (result?: { path: string; name: string }) => {
     if (!currentSession) return
     setImporting(true)
-    await importMap(currentSession.id)
+    if (result) {
+      const map = await window.api.createMap({ session_id: currentSession.id, name: result.name, image_path: result.path })
+      useStore.setState(s => ({ maps: [...s.maps, map] }))
+      useStore.getState().selectMap(map)
+    } else {
+      await importMap(currentSession.id)
+    }
     setImporting(false)
   }
 
@@ -270,7 +275,7 @@ export default function SessionPage() {
           <ChevronLeft size={14} /> Back
         </button>
 
-        {/* Session title + Edit/Done toggle */}
+        {/* Session title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px', borderRight: '1px solid var(--border)' }}>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, color: 'var(--gold)', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>
             Session {currentSession.session_number}{currentSession.session_sub}
@@ -301,20 +306,19 @@ export default function SessionPage() {
                 whiteSpace: 'nowrap',
                 userSelect: 'none',
               }}
-              
               onMouseEnter={e => { if (currentMap?.id !== map.id) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-              onMouseLeave={e => { if (currentMap?.id !== map.id) (e.currentTarget as HTMLElement).style.background = 'transparent' }} >
+              onMouseLeave={e => { if (currentMap?.id !== map.id) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+            >
               <Map size={12} />
               <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{map.name}</span>
               {!sessionReadMode && <MapTabMenu map={map} onEdit={() => setEditingMap(map)} />}
             </div>
           ))}
 
-
           {/* Import map button — edit mode only */}
           {!sessionReadMode && (
             <button
-              onClick={handleImportMap}
+              onClick={() => setShowPicker(true)}
               disabled={importing}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
@@ -334,13 +338,14 @@ export default function SessionPage() {
             </button>
           )}
         </div>
+
         <div style={{ display: 'flex', alignItems: 'center', padding: '0 16px', borderLeft: '1px solid var(--border)', flexShrink: 0 }}>
           {sessionReadMode
             ? <button className="btn btn-sm" onClick={() => setSessionReadMode(false)} style={{ fontSize: 12 }}>Edit</button>
             : <button className="btn btn-sm btn-ghost" onClick={() => setSessionReadMode(true)} style={{ fontSize: 12 }}>Done</button>
           }
         </div>
-        {/* Notes toggle — highlights when panel is open */}
+
         <button
           onClick={() => setShowNotes(v => !v)}
           style={{
@@ -369,22 +374,30 @@ export default function SessionPage() {
               <div style={{ fontSize: 13 }}>Import a PNG or JPEG map image to get started</div>
             </div>
             {!sessionReadMode && (
-              <button className="btn btn-primary" onClick={handleImportMap} disabled={importing}>
+              <button className="btn btn-primary" onClick={() => setShowPicker(true)} disabled={importing}>
                 <Upload size={14} /> {importing ? 'Importing…' : 'Import Map Image'}
               </button>
             )}
           </div>
         ) : (
-          <>
+          <StoreMapProvider>
             <MapCanvas readMode={sessionReadMode} />
-            {poiPanelOpen && <POIPanel readMode={sessionReadMode} />}
-          </>
+            <POIPanel readMode={sessionReadMode} />
+          </StoreMapProvider>
         )}
       </div>
 
       {editingMap && <EditMapModal map={editingMap} onClose={() => setEditingMap(null)} />}
       {showNotes && currentSession && (
         <SessionNotesPanel session={currentSession} onClose={() => setShowNotes(false)} />
+      )}
+      {showPicker && currentCampaign && (
+        <MapPickerModal
+          campaignId={currentCampaign.id}
+          onPickExisting={result => { setShowPicker(false); handleImportMap(result) }}
+          onUploadNew={() => { setShowPicker(false); handleImportMap() }}
+          onClose={() => setShowPicker(false)}
+        />
       )}
       <style>{`
         @keyframes slideUp {

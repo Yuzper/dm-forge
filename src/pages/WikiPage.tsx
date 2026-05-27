@@ -5,7 +5,7 @@ import {
   BookOpen, Plus, Search, Trash2, Check, MapPin, User, Package,
   ScrollText, Users, Landmark, FileText, X, ChevronLeft, Calendar,
   MoreHorizontal, Tag, Image as ImageIcon, Link, PawPrint, StickyNote,
-  ArrowLeft, ShoppingBag,
+  ArrowLeft, ShoppingBag, Pencil, Map, Upload
 } from 'lucide-react'
 import RichEditor from '../components/RichEditor'
 import type { Article, ArticleSummary, ArticleType, MasterLootTable, LootItem } from '../types'
@@ -16,6 +16,7 @@ import LootTableEditor from '../components/LootTableEditor'
 import LootTableView from '../components/LootTableView'
 import { parseLootTable } from '../types'
 import SectionDivider from '../components/SectionDivider'
+import LocationMapSection from '../components/LocationMapSection'  // ADD THIS
 
 // ── Article type definitions ───────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   },
   location: {
     State:  ['Discovered', 'Undiscovered', 'Destroyed', 'Abandoned'],
-    Size:   ['Room', 'Building', 'Village', 'Town', 'City', 'Metropolis', 'Ruins', 'Dungeon', 'Wilderness'],
+    Size:   ['Room', 'Building', 'Village', 'Town', 'City', 'Metropolis', 'Duchy', 'Kingdom', 'Empire', 'Continent', 'World', 'Ruins', 'Dungeon', 'Wilderness', 'Landmark', 'Natural Wonder'],
     Plane:  ['Material Plane', 'The Nine Hells', 'The Abyss', 'Ethereal Plane', 'Shadowfell', 'Feywild', 'Elemental Plane', 'Astral Plane'],
     Region: [],
   },
@@ -156,6 +157,10 @@ function getTrackTags(tracks: Record<string, string>): string[] {
     .map(v => v.toLowerCase().replace(/\s+/g, '-'))
 }
 
+function formatTrackName(key: string): string {
+  return key.replace(/_/g, ' ')
+}
+
 const ALL_FILTERS = [
   { value: 'all', label: 'All', icon: BookOpen, color: 'var(--text-secondary)' },
   ...ARTICLE_TYPES,
@@ -209,7 +214,7 @@ function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions }: 
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-      <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>{name}</span>
+      <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>{formatTrackName(name)}</span>
       {customMode ? (
         <div style={{ display: 'flex', gap: 4, flex: 1 }}>
           <input ref={inputRef} className="input" style={{ height: 28, fontSize: 12, flex: 1 }}
@@ -419,6 +424,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
   const hasStatblock = STATBLOCK_TYPES.includes(articleType)
   const hasLoot      = LOOT_TYPES.includes(articleType)
   const isVendor     = articleType === 'vendor'
+  const hasMap       = articleType === 'location'
 
   const pendingRef = useRef({ title, content, articleType, tracks, statblock, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id })
   pendingRef.current = { title, content, articleType, tracks, statblock, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id }
@@ -616,6 +622,14 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               </div>
             )}
 
+            {/* Map section */}
+            {hasMap && (
+              <div style={{ padding: '0 24px 32px' }}>
+                <SectionDivider label="Maps" />
+                <LocationMapSection articleId={article.id} readMode={readMode} campaignId={currentCampaign!.id} />
+              </div>
+            )}
+
             {/* Loot / Inventory section */}
             {hasLoot && (() => {
               const extrasTable = parseLootTable(lootTableJson)
@@ -644,17 +658,16 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                       ) : (
                         <select className="input" style={{ fontSize: 12 }} value={lootTableId ?? ''} onChange={e => { setLootTableId(e.target.value ? parseInt(e.target.value) : null); setDirty(true) }}>
                           <option value="">— None (custom items only) —</option>
-                          {masterTables.filter(t => t.category === 'vendor').map(t => (
-                            <option key={t.id} value={t.id}>{t.name}</option>
-                          ))}
-                          {masterTables.filter(t => t.category !== 'vendor').length > 0 && (
-                            <>
-                              <option disabled>── Other tables ──</option>
-                              {masterTables.filter(t => t.category !== 'vendor').map(t => (
-                                <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
-                              ))}
-                            </>
-                          )}
+                          {(['vendor', 'creature', 'location', 'custom'] as const).map(cat => {
+                            const group = masterTables.filter(t => t.category === cat)
+                            if (group.length === 0) return null
+                            const labels: Record<string, string> = { creature: 'Creature', vendor: 'Vendor', location: 'Location', custom: 'Custom' }
+                            return (
+                              <optgroup key={cat} label={labels[cat]}>
+                                {group.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                              </optgroup>
+                            )
+                          })}
                         </select>
                       )}
                     </div>
@@ -677,17 +690,16 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                       ) : (
                         <select className="input" style={{ fontSize: 12 }} value={lootTableId ?? ''} onChange={e => { setLootTableId(e.target.value ? parseInt(e.target.value) : null); setDirty(true) }}>
                           <option value="">— None (inline items only) —</option>
-                          {masterTables.filter(t => t.category === 'creature').map(t => (
-                            <option key={t.id} value={t.id}>{t.name}</option>
-                          ))}
-                          {masterTables.filter(t => t.category !== 'creature').length > 0 && (
-                            <>
-                              <option disabled>── Other tables ──</option>
-                              {masterTables.filter(t => t.category !== 'creature').map(t => (
-                                <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
-                              ))}
-                            </>
-                          )}
+                          {(['creature', 'vendor', 'location', 'custom'] as const).map(cat => {
+                            const group = masterTables.filter(t => t.category === cat)
+                            if (group.length === 0) return null
+                            const labels: Record<string, string> = { creature: 'Creature', vendor: 'Vendor', location: 'Location', custom: 'Custom' }
+                            return (
+                              <optgroup key={cat} label={labels[cat]}>
+                                {group.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                              </optgroup>
+                            )
+                          })}
                         </select>
                       )}
                     </div>
@@ -719,6 +731,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                         value={extrasTable}
                         onChange={t => { setLootTableJson(JSON.stringify(t)); setDirty(true) }}
                         suggestions={lootSuggestions}
+                        showPriceWeight={isVendor || ['creature', 'character', 'playerCharacter'].includes(articleType)}
                       />
                     )}
                   </div>
@@ -763,7 +776,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                       const color = TRACK_VALUE_COLORS[val] || '#8a8a8a'
                       return (
                         <div key={trackName} style={{ fontSize: 11, fontWeight: 600, color, padding: '3px 10px', borderRadius: 99, border: `1px solid ${color}44`, background: `${color}12` }}>
-                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{trackName}: </span>{val}
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{formatTrackName(trackName)}: </span>{val}
                         </div>
                       )
                     })}

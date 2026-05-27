@@ -8,11 +8,12 @@ import {
 } from 'lucide-react'
 import POIList from './POIList'
 import type { HistoryEntry } from '../store/store'
+import { StoreMapProvider } from '@/context/MapContext'
 
 function historyIcon(entry: HistoryEntry) {
   switch (entry.type) {
     case 'campaign': return <Layers size={11} />
-    case 'session':  return <Map size={11} />
+    case 'session':  return <Scroll size={11} />
     case 'wiki':     return <BookOpen size={11} />
     case 'article':  return <FileText size={11} />
   }
@@ -27,7 +28,7 @@ export default function Sidebar() {
 
   const inCampaignContext =
     view === 'campaign' || view === 'session' || view === 'wiki' ||
-    view === 'dm-notes' || view === 'loot-tables'
+    view === 'dm-notes' || view === 'loot-tables' || view === 'world-map'
   const canGoBack = navigationHistory.length >= 2
   const [version, setVersion] = useState('')
 
@@ -84,7 +85,7 @@ export default function Sidebar() {
                 }}
                 onClick={() => { setView('campaign'); setCampaignSubView('sessions') }}
               >
-                <Map size={13} />
+                <Scroll size={13} />
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   Sessions
                 </span>
@@ -121,6 +122,17 @@ export default function Sidebar() {
                 onClick={() => setView('loot-tables')}
               >
                 <ShoppingBag size={13} /> Loot Tables
+              </button>
+
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{
+                  width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
+                  color: view === 'world-map' ? '#c8733a' : 'var(--text-secondary)',
+                }}
+                onClick={() => setView('world-map')}
+              >
+                <Map size={13} /> World Map
               </button>
             </div>
           )}
@@ -193,7 +205,9 @@ export default function Sidebar() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {view === 'session' && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderTop: '1px solid var(--border)' }}>
-            <POIList />
+            <StoreMapProvider>
+              <POIList />
+            </StoreMapProvider>
           </div>
         )}
       </div>

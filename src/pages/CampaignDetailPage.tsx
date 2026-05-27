@@ -10,8 +10,8 @@ import type { Session, Arc } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
 const ARC_COLORS = [
-  '#c8a84b', '#7aeada', '#2eb370', '#5b9fe8', '#1323cf',
-  '#b07de8', '#e88c3a', '#e05555', '#8a8a8a', '#e0e0e0',
+  '#c8a84b', '#7aeada', '#2eb370', '#5b9fe8', '#1323cf', '#ce21dd',
+  '#f41111', '#e88c3a', '#8a2e2e', '#8a8a8a', '#6013be', '#e0e0e0',
 ]
 
 const menuItemStyle: React.CSSProperties = {
@@ -512,12 +512,14 @@ export default function CampaignDetailPage() {
   const [noteCount, setNoteCount] = useState(0)
   const [articleCount, setArticleCount] = useState(0)
   const [lootCount, setLootCount] = useState(0)
+  const [worldMapCount, setWorldMapCount] = useState(0)
 
   useEffect(() => {
     if (!currentCampaign) return
     window.api.getDMNotesPages(currentCampaign.id).then(p => setNoteCount(p.length))
     window.api.getArticlesList({ campaignId: currentCampaign.id }).then(a => setArticleCount(a.length))
     window.api.getLootTables(currentCampaign.id).then(t => setLootCount(t.length))
+    window.api.getMapsForCampaign(currentCampaign.id).then(m => setWorldMapCount(m.length))
   }, [currentCampaign?.id])
 
   if (!currentCampaign) return null
@@ -544,7 +546,7 @@ export default function CampaignDetailPage() {
         <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: 20 }}>
           Where to?
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 780 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
           <HubCard
             icon={<Scroll size={20} />}
             title="Sessions"
@@ -576,6 +578,14 @@ export default function CampaignDetailPage() {
             stat={lootCount > 0 ? `${lootCount} table${lootCount !== 1 ? 's' : ''}` : undefined}
             onClick={() => setView('loot-tables')}
             accent="#49c185"
+          />
+          <HubCard
+            icon={<Map size={20} />}
+            title="World Map"
+            description="Place your campaign world on a map. Pin locations, link them to wiki articles, and track where your party has been."
+            stat={worldMapCount > 0 ? `${worldMapCount} map${worldMapCount !== 1 ? 's' : ''}` : undefined}
+            onClick={() => setView('world-map')}
+            accent="#c8733a"
           />
         </div>
       </div>

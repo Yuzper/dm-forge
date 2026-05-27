@@ -1,7 +1,7 @@
 // path: src/components/MapCanvas.tsx
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useStore } from '../store/store'
-import { MapPin, Plus, Maximize } from 'lucide-react'
+import { useMapContext } from '../context/MapContext'
+import { MapPin, Maximize } from 'lucide-react'
 import { getPoiColor, getPoiIcon } from '../constants/POITypes'
 import type { POI } from '../types'
 
@@ -12,7 +12,7 @@ const ZOOM_SPEED = 0.001
 function POIMarker({ poi, onSelect, isSelected, editMode, scale }: {
   poi: POI; onSelect: (p: POI) => void; isSelected: boolean; editMode: boolean; scale: number
 }) {
-  const { updatePOI } = useStore()
+  const { updatePOI, optimisticMovePOI } = useMapContext()
   const [showLabel, setShowLabel] = useState(false)
 
   const dragStart = useRef<{ mouseX: number; mouseY: number; poiX: number; poiY: number } | null>(null)
@@ -53,10 +53,7 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale }: {
       const dy = ((ev.clientY - dragStart.current.mouseY) / (rect.height * scale)) * 100
       const newX = Math.max(0, Math.min(100, dragStart.current.poiX + dx))
       const newY = Math.max(0, Math.min(100, dragStart.current.poiY + dy))
-      useStore.setState(s => ({
-        pois: s.pois.map(p => p.id === poi.id ? { ...p, x: newX, y: newY } : p),
-        selectedPOI: s.selectedPOI?.id === poi.id ? { ...s.selectedPOI!, x: newX, y: newY } : s.selectedPOI,
-      }))
+      optimisticMovePOI(poi.id, newX, newY)
     }
 
     const onUp = async (ev: MouseEvent) => {
@@ -77,7 +74,7 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale }: {
     onUpRef.current = onUp
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [editMode, poi, updatePOI, scale])
+  }, [editMode, poi, updatePOI, optimisticMovePOI, scale])
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -140,7 +137,7 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale }: {
 }
 
 export default function MapCanvas({ readMode }: { readMode?: boolean }) {
-  const { currentMap, pois, selectedPOI, selectPOI, createPOI } = useStore()
+  const { currentMap, pois, selectedPOI, selectPOI, createPOI } = useMapContext()
   const editMode = !readMode
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imageLoaded, setImageLoaded] = useState(false)
@@ -235,11 +232,11 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     await createPOI(x, y)
   }, [editMode, createPOI])
 
-const zoomCenter = () => {
-  const outer = outerRef.current
-  if (!outer) return { cx: 0, cy: 0 }
-  return { cx: outer.offsetWidth / 2, cy: outer.offsetHeight / 2 }
-}
+  const zoomCenter = () => {
+    const outer = outerRef.current
+    if (!outer) return { cx: 0, cy: 0 }
+    return { cx: outer.offsetWidth / 2, cy: outer.offsetHeight / 2 }
+  }
 
   const zoomIn = () => {
     const { cx, cy } = zoomCenter()

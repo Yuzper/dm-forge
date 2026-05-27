@@ -67,7 +67,9 @@
       { "name": "Whetstone",          "description": "",                             "quantity": "1",    "chance": 40 },
       { "name": "Torch (x3)",         "description": "",                             "quantity": "1",    "chance": 35 },
       { "name": "Orders or dispatch", "description": "Official military document",  "quantity": "1",    "chance": 20 },
-      { "name": "Playing cards",      "description": "Well-worn deck",              "quantity": "1",    "chance": 25 }
+      { "name": "Playing cards",      "description": "Well-worn deck",              "quantity": "1",    "chance": 25 },
+      { "name": "Personal letter",  "description": "Private correspondence",           "quantity": "1",    "chance": 15 },
+      { "name": "Lockpicks",         "description": "Well-used set",                  "quantity": "1",    "chance": 10 }
     ]
   },
   {
@@ -78,11 +80,13 @@
       { "name": "Gold pieces",         "description": "",                             "quantity": "2d10", "chance": 70 },
       { "name": "Spell components",    "description": "Bat guano, sulphur, wool",    "quantity": "1d4",  "chance": 75 },
       { "name": "Arcane focus",        "description": "Crystal, rod, or orb shard",  "quantity": "1",    "chance": 40 },
-      { "name": "Spell scroll",        "description": "A single-use scroll, 1st–2nd level","quantity": "1","chance": 25 },
+      { "name": "Spell scroll Level 1",        "description": "A single-use scroll, 1st level","quantity": "1","chance": 25 },
+      { "name": "Spell scroll Level 2",        "description": "A single-use scroll, 2nd level","quantity": "1","chance": 25 },
       { "name": "Ritual notes",        "description": "Partial transcription of a ritual","quantity": "1","chance": 30 },
       { "name": "Potion of Healing",   "description": "",                             "quantity": "1",    "chance": 20 },
       { "name": "Strange reagent",     "description": "Unidentified magical material","quantity": "1d3", "chance": 35 },
-      { "name": "Enchanted trinket",   "description": "Minor magical curiosity",     "quantity": "1",    "chance": 15 }
+      { "name": "Enchanted trinket",   "description": "Minor magical curiosity",     "quantity": "1",    "chance": 15 },
+      { "name": "Familiar's token",    "description": "Something belonging to their familiar", "quantity": "1", "chance": 10 }
     ]
   },
   {
@@ -97,7 +101,14 @@
       { "name": "Letter of credit",    "description": "Redeemable at a bank",        "quantity": "1",    "chance": 35 },
       { "name": "Fine wine (bottle)",  "description": "Aged vintage",                "quantity": "1",    "chance": 30 },
       { "name": "Private correspondence","description":"Potentially scandalous",      "quantity": "1",    "chance": 25 },
-      { "name": "Pocket watch",        "description": "Jewelled, expensive",         "quantity": "1",    "chance": 20 }
+      { "name": "Pocket watch",        "description": "Jewelled, expensive",         "quantity": "1",    "chance": 20 },
+      { "name": "Silk handkerchief",   "description": "Embroidered with a family crest", "quantity": "1",    "chance": 15 },
+      { "name": "Perfume vial",        "description": "Scented with rare ingredients", "quantity": "1",    "chance": 10 },
+      { "name": "Gilded mirror",       "description": "Small, ornate, and expensive", "quantity": "1",    "chance": 5 },
+      { "name": "Jeweled dagger",      "description": "Ornate, ceremonial, and not very sharp", "quantity": "1",    "chance": 10 },
+      { "name": "Silk gloves",         "description": "Embroidered with a family crest", "quantity": "1",    "chance": 15 },
+      { "name": "Locket with portrait", "description": "A miniature painting of a loved one", "quantity": "1",    "chance": 20 },
+      { "name": "Rare book",           "description": "A first edition or a tome of lore", "quantity": "1",    "chance": 25 }
     ]
   },
   {
@@ -145,7 +156,13 @@
       { "name": "Tinderbox",          "description": "",                             "quantity": "1",    "chance": 100 },
       { "name": "Lantern (hooded)",   "description": "",                             "quantity": "1",    "chance": 100 },
       { "name": "Oil flask",          "description": "",                             "quantity": "1",    "chance": 100 },
-      { "name": "Spyglass",          "description": "Basic quality",               "quantity": "1",    "chance": 30 }
+      { "name": "Chalk (x10)",        "description": "Useful for marking walls and leaving trail signs", "quantity": "1", "chance": 100 },
+      { "name": "Crowbar",            "description": "Every party needs one eventually", "quantity": "1", "chance": 100 },
+      { "name": "Sewing kit",         "description": "Needles, thread, and scissors for field repairs", "quantity": "1", "chance": 100 },
+      { "name": "Hand mirror",        "description": "Small steel mirror; useful for peeking around corners", "quantity": "1", "chance": 100 },
+      { "name": "Caltrops (bag of 20)","description": "Scatter on the floor to slow pursuers", "quantity": "1", "chance": 100 },
+      { "name": "Grappling hook",     "description": "Iron, pairs well with rope",  "quantity": "1",    "chance": 100 },
+      { "name": "Spyglass",           "description": "Basic quality",               "quantity": "1",    "chance": 30 }
     ]
   },
   {
@@ -159,6 +176,11 @@
       { "name": "Spear",              "description": "",                             "quantity": "1",    "chance": 100 },
       { "name": "Shield",             "description": "Wooden with iron boss",       "quantity": "1",    "chance": 100 },
       { "name": "Leather armour",     "description": "",                             "quantity": "1",    "chance": 100 },
+      { "name": "Manacles",           "description": "With a key, or without",      "quantity": "1",    "chance": 100 },
+      { "name": "Iron spikes (x10)",  "description": "Wedge doors open or anchor ropes", "quantity": "1", "chance": 100 },
+      { "name": "Horseshoes (set of 4)","description": "For the party's mounts",    "quantity": "1",    "chance": 100 },
+      { "name": "Steel helmet",       "description": "Simple but effective",        "quantity": "1",    "chance": 100 },
+      { "name": "Hunting trap",       "description": "Heavy jaw trap for game or enemies", "quantity": "1", "chance": 100 },
       { "name": "Chain shirt",        "description": "",                             "quantity": "1",    "chance": 80 },
       { "name": "Longsword",          "description": "",                             "quantity": "1",    "chance": 70 },
       { "name": "Battle axe",         "description": "",                             "quantity": "1",    "chance": 60 },
@@ -177,10 +199,15 @@
       { "name": "Acid flask",                 "description": "",                        "quantity": "1d4",  "chance": 100 },
       { "name": "Alchemist's fire",           "description": "",                        "quantity": "1d3",  "chance": 100 },
       { "name": "Healer's kit",               "description": "10 uses",                "quantity": "1",    "chance": 100 },
+      { "name": "Smoke bomb",                 "description": "Blocks vision in a 10 ft radius", "quantity": "1d3", "chance": 100 },
+      { "name": "Thunderstone",               "description": "Shatters on impact; deafens nearby creatures for 1 round", "quantity": "1d3", "chance": 100 },
+      { "name": "Noxious pellet",             "description": "Releases choking fumes on impact; causes coughing and disorientation", "quantity": "1d3", "chance": 100 },
+      { "name": "Tonic of Clarity",           "description": "Grants advantage on the next Wisdom saving throw", "quantity": "1", "chance": 100 },
+      { "name": "Bottled darkness",           "description": "Releases a sphere of magical shadow, 10 ft radius, lasts 1 minute", "quantity": "1", "chance": 50 },
+      { "name": "Sovereign glue (vial)",      "description": "Bonds almost anything permanently; single application", "quantity": "1", "chance": 30 },
       { "name": "Potion of Greater Healing",  "description": "Restores 4d4+4 HP",      "quantity": "1",    "chance": 60 },
       { "name": "Oil of Slipperiness",        "description": "",                        "quantity": "1",    "chance": 40 },
       { "name": "Potion of Climbing",         "description": "",                        "quantity": "1",    "chance": 35 },
-      { "name": "Smoke bomb",                 "description": "Blocks vision 10 ft",    "quantity": "1d3",  "chance": 50 },
       { "name": "Potion of Water Breathing",  "description": "",                        "quantity": "1",    "chance": 20 }
     ]
   },
@@ -193,11 +220,15 @@
       { "name": "Wine (bottle)",      "description": "House red or white",          "quantity": "1",    "chance": 100 },
       { "name": "Meal (hot)",         "description": "Stew, bread, and cheese",     "quantity": "1",    "chance": 100 },
       { "name": "Lodging (night)",    "description": "Shared room",                 "quantity": "1",    "chance": 100 },
-      { "name": "Lodging (private)",  "description": "Private room, lock on door",  "quantity": "1",    "chance": 80 },
       { "name": "Spirits (flask)",    "description": "Something stronger",          "quantity": "1",    "chance": 100 },
+      { "name": "Pipe-weed (pouch)",  "description": "Common leaf; relaxing after a long road", "quantity": "1", "chance": 100 },
+      { "name": "Lodging (private)",  "description": "Private room, lock on door",  "quantity": "1",    "chance": 80 },
+      { "name": "Gambling game",      "description": "Cards or dice; stakes vary",  "quantity": "1",    "chance": 50 },
       { "name": "Local rumour",       "description": "Information has a price",     "quantity": "1",    "chance": 60 },
+      { "name": "Map of the local area","description": "Rough sketch, better than nothing", "quantity": "1", "chance": 40 },
       { "name": "Fine wine (bottle)", "description": "Imported, expensive",         "quantity": "1",    "chance": 40 },
-      { "name": "Gambling game",      "description": "Cards or dice, stakes vary",  "quantity": "1",    "chance": 50 }
+      { "name": "Bard's ballad",      "description": "Information delivered through song; plausibly deniable", "quantity": "1", "chance": 30 },
+      { "name": "Letter-writing service","description": "The barkeep will scribe a letter for a coin", "quantity": "1", "chance": 25 }
     ]
   },
   {
@@ -216,6 +247,133 @@
       { "name": "Cloak of Protection",        "description": "",                       "quantity": "1",   "chance": 15 },
       { "name": "Ring of Feather Falling",    "description": "",                       "quantity": "1",   "chance": 10 },
       { "name": "Spell scroll (3rd level)",   "description": "Rare find",             "quantity": "1",   "chance": 20 }
+    ]
+  },
+  {
+    "name": "Cartographer / Scribe",
+    "description": "Maps, documents, writing supplies, and recorded information",
+    "category": "vendor",
+    "items": [
+      { "name": "Regional map (rough)",       "description": "Covers roads and major settlements; accuracy varies", "quantity": "1", "chance": 100 },
+      { "name": "Blank journal",              "description": "Sturdy leather cover, 200 pages", "quantity": "1", "chance": 100 },
+      { "name": "Quill and ink (set)",        "description": "Good quality, won't smear easily", "quantity": "1", "chance": 100 },
+      { "name": "Sealing wax and stamp",      "description": "Generic seal; no house mark",     "quantity": "1", "chance": 100 },
+      { "name": "Copy of local laws",         "description": "Useful to know before you break them", "quantity": "1", "chance": 100 },
+      { "name": "Wanted poster",              "description": "A notable local bounty",           "quantity": "1d3", "chance": 80 },
+      { "name": "Regional map (detailed)",    "description": "Includes terrain, known ruins, and patrol routes", "quantity": "1", "chance": 50 },
+      { "name": "Dungeon or ruin map",        "description": "Partial; may be inaccurate",       "quantity": "1", "chance": 30 },
+      { "name": "Travel permit (blank)",      "description": "Officially stamped, awaiting a name", "quantity": "1", "chance": 25 },
+      { "name": "Forged document",            "description": "Convincing forgery; specific type on request", "quantity": "1", "chance": 20 },
+      { "name": "Star charts",               "description": "Useful for navigation at sea or open plains", "quantity": "1", "chance": 35 }
+    ]
+  },
+  {
+    "name": "Stablemaster",
+    "description": "Mounts, pack animals, tack, and animal care",
+    "category": "vendor",
+    "items": [
+      { "name": "Riding horse (hire, per day)","description": "Comes with saddle and basic tack", "quantity": "1", "chance": 100 },
+      { "name": "Riding horse (purchase)",     "description": "Young and trail-broken",           "quantity": "1", "chance": 80 },
+      { "name": "Mule",                        "description": "Stubborn but dependable",          "quantity": "1", "chance": 100 },
+      { "name": "Draft horse",                 "description": "For carts and heavy loads",        "quantity": "1", "chance": 70 },
+      { "name": "Saddle",                      "description": "Riding saddle, standard quality",  "quantity": "1", "chance": 100 },
+      { "name": "Saddlebags",                  "description": "Leather, pair of large pouches",   "quantity": "1", "chance": 100 },
+      { "name": "Bridle and bit",              "description": "",                                  "quantity": "1", "chance": 100 },
+      { "name": "Horseshoes (set of 4)",       "description": "Fitted and nailed on request",     "quantity": "1", "chance": 100 },
+      { "name": "Feed (1 week)",               "description": "Oats and hay for one animal",      "quantity": "1", "chance": 100 },
+      { "name": "Animal medicine",             "description": "Poultices and tonics for common ailments", "quantity": "1d3", "chance": 75 },
+      { "name": "Trained guard dog",           "description": "Obedient, alert; will hold a command", "quantity": "1", "chance": 40 },
+      { "name": "Warhorse",                    "description": "Battle-trained; does not spook easily", "quantity": "1", "chance": 20 }
+    ]
+  },
+  {
+    "name": "Herbalist / Hedge Witch",
+    "description": "Folk remedies, natural cures, charms, and curiosities",
+    "category": "vendor",
+    "items": [
+      { "name": "Dried herbs (bundle)",        "description": "Assorted; useful for cooking or mild remedies", "quantity": "1d4", "chance": 100 },
+      { "name": "Poultice",                    "description": "Draws out infection; stabilises a dying creature once", "quantity": "1d3", "chance": 100 },
+      { "name": "Salve of soothing",           "description": "Eases burns and bruises; no HP restored, but reduces pain", "quantity": "1d3", "chance": 100 },
+      { "name": "Mild sedative tea",           "description": "Induces sleep within 30 minutes; harmless dose", "quantity": "1d3", "chance": 100 },
+      { "name": "Witchgrass rope (50 ft)",     "description": "Braided to repel insects; lasts 1 week outdoors", "quantity": "1", "chance": 80 },
+      { "name": "Ward bundle",                 "description": "Hung at a threshold; said to repel minor spirits", "quantity": "1d3", "chance": 80 },
+      { "name": "Luck charm",                  "description": "Effect uncertain; roll a d20 in private when sold", "quantity": "1", "chance": 70 },
+      { "name": "Mushroom powder",             "description": "Unknown properties; smells strange", "quantity": "1d4", "chance": 60 },
+      { "name": "Vial of antivenom",           "description": "Folk remedy; advantage on saves vs. poison for 1 hour", "quantity": "1d2", "chance": 50 },
+      { "name": "Seeing smoke (pouch)",        "description": "Burned in a bowl; the smoke holds shapes for those who look", "quantity": "1", "chance": 30 },
+      { "name": "Cursed trinket (unknown)",    "description": "The witch claims it's protective; she may be wrong", "quantity": "1", "chance": 15 }
+    ]
+  },
+  {
+    "name": "Fence / Black Market",
+    "description": "Stolen goods, contraband, and things with no questions asked",
+    "category": "vendor",
+    "items": [
+      { "name": "Stolen jewellery",            "description": "No paperwork; price reflects the risk", "quantity": "1d3", "chance": 100 },
+      { "name": "Unregistered weapon",         "description": "No maker's mark; untraceable",          "quantity": "1",   "chance": 100 },
+      { "name": "Forged travel papers",        "description": "High quality; specify a name at purchase", "quantity": "1", "chance": 100 },
+      { "name": "Smuggled goods",              "description": "Exotic spice, foreign cloth, or banned drink", "quantity": "1d3", "chance": 90 },
+      { "name": "Vial of poison (basic)",      "description": "Injury poison; target makes DC 12 CON save or takes 2d6 poison damage", "quantity": "1d2", "chance": 80 },
+      { "name": "Stolen guild seal",           "description": "Authenticates documents; someone is missing it", "quantity": "1", "chance": 50 },
+      { "name": "Hot cargo (roll or choose)",  "description": "Something large, suspicious, and recently stolen", "quantity": "1", "chance": 60 },
+      { "name": "Blackmail documents",         "description": "Concerning a named local figure; price is high", "quantity": "1", "chance": 30 },
+      { "name": "Exotic poison",               "description": "Rare and specific; DM determines effect",         "quantity": "1", "chance": 20 },
+      { "name": "Stolen item (player property)","description": "Something the party lost — or thought they lost", "quantity": "1", "chance": 10 }
+    ]
+  },
+  {
+    "name": "Temple / Shrine",
+    "description": "Blessings, holy goods, and divine services — in exchange for a suitable donation",
+    "category": "vendor",
+    "items": [
+      { "name": "Holy water (vial)",           "description": "Blessed by a priest; deals 2d6 radiant to undead on contact", "quantity": "1d4", "chance": 100 },
+      { "name": "Holy symbol",                 "description": "Wooden or iron; appropriate to the deity",       "quantity": "1",   "chance": 100 },
+      { "name": "Incense (bundle)",            "description": "Used in rituals or to calm a restless spirit",   "quantity": "1d6", "chance": 100 },
+      { "name": "Prayer candle",               "description": "Burns for 8 hours; said to ward off nightmares", "quantity": "1d4", "chance": 100 },
+      { "name": "Written blessing",            "description": "Parchment blessing from the high priest; advantage on one death saving throw", "quantity": "1", "chance": 80 },
+      { "name": "Healing service",             "description": "Lay on hands equivalent; restores 1d8 HP",       "quantity": "1",   "chance": 70 },
+      { "name": "Last rites",                  "description": "Performed for the fallen; may prevent undead rising", "quantity": "1", "chance": 100 },
+      { "name": "Identify cursed item (service)","description": "The priests will examine one item",            "quantity": "1",   "chance": 60 },
+      { "name": "Greater healing service",     "description": "Removes one disease or condition; high donation required", "quantity": "1", "chance": 30 },
+      { "name": "Relic (minor)",               "description": "A fragment of something holy; effect determined by DM", "quantity": "1", "chance": 15 }
+    ]
+  },
+  {
+    "name": "Ship Chandler",
+    "description": "Maritime supplies for seafaring parties — port towns only",
+    "category": "vendor",
+    "items": [
+      { "name": "Navigation charts",           "description": "Covers coastal waters and major sea routes",    "quantity": "1",   "chance": 100 },
+      { "name": "Compass",                     "description": "Reliable; points north even in storms",        "quantity": "1",   "chance": 100 },
+      { "name": "Oilskin cloak",               "description": "Waterproof; keeps you dry in bad weather",     "quantity": "1",   "chance": 100 },
+      { "name": "Fishing gear",                "description": "Rod, line, hooks, and a small net",            "quantity": "1",   "chance": 100 },
+      { "name": "Signal lantern",              "description": "Shuttered; sends simple light signals",        "quantity": "1",   "chance": 100 },
+      { "name": "Tar and caulking",            "description": "For patching small boats or sealing barrels",  "quantity": "1",   "chance": 100 },
+      { "name": "Rations (preserved, 2 weeks)","description": "Salt fish, hardtack, and dried fruit",         "quantity": "1",   "chance": 100 },
+      { "name": "Belaying pin",                "description": "Simple club in a pinch",                       "quantity": "1d4", "chance": 100 },
+      { "name": "Grapple and line",            "description": "Heavy iron grappling hook and 60 ft of rope",  "quantity": "1",   "chance": 100 },
+      { "name": "Spyglass (quality)",          "description": "Better than the general store's",              "quantity": "1",   "chance": 70 },
+      { "name": "Anchor chain (10 ft)",        "description": "Heavy; can be used as an improvised weapon",   "quantity": "1",   "chance": 60 },
+      { "name": "Sea charts (deep water)",     "description": "Covers open ocean; marks known hazards",       "quantity": "1",   "chance": 40 },
+      { "name": "Waterproof map case",         "description": "Protects documents from the elements",         "quantity": "1",   "chance": 50 }
+    ]
+  },
+  {
+    "name": "Sage / Scholar",
+    "description": "Knowledge, research, translation, and the identification of strange things",
+    "category": "vendor",
+    "items": [
+      { "name": "Monster identification (service)","description": "The sage will identify one creature type, weaknesses included", "quantity": "1", "chance": 100 },
+      { "name": "Historical research (service)",  "description": "Answers one question about local or regional history", "quantity": "1", "chance": 100 },
+      { "name": "Language translation (service)", "description": "Translates a written passage into Common",          "quantity": "1", "chance": 100 },
+      { "name": "Curse analysis (service)",       "description": "Identifies the nature and possible source of a curse", "quantity": "1", "chance": 80 },
+      { "name": "Reference tome",                 "description": "Narrow subject — roll or choose: heraldry, herbalism, demonology, siege weapons, etc.", "quantity": "1", "chance": 100 },
+      { "name": "Star charts",                    "description": "Accurate astronomical charts; useful for navigation or ritual timing", "quantity": "1", "chance": 80 },
+      { "name": "Magnifying glass",               "description": "Fine quality; allows examination of minute details", "quantity": "1", "chance": 100 },
+      { "name": "Specimen jars (x6)",             "description": "Glass, sealed with wax; for preserving samples",     "quantity": "1", "chance": 100 },
+      { "name": "Preserved creature parts",       "description": "Eyes, organs, or bones of various creatures, labelled", "quantity": "1d4", "chance": 70 },
+      { "name": "Map of known ruins",             "description": "Academically sourced; some sites may be picked clean", "quantity": "1", "chance": 50 },
+      { "name": "Partial ritual text",            "description": "An incomplete transcription of something old and odd",  "quantity": "1", "chance": 30 }
     ]
   }
 ]

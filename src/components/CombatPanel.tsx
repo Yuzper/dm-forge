@@ -1,6 +1,7 @@
 // path: src/components/CombatPanel.tsx
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useStore } from '../store/store'
+import { useMapContext } from '../context/MapContext'
 import { X, Trash2, Plus, Search, Save, Dices } from 'lucide-react'
 import RichEditor from './RichEditor'
 import CombatantRow from './CombatantRow'
@@ -11,7 +12,9 @@ import { useConfirmDelete } from '../hooks/useConfirmDelete'
 type Tab = 'general' | 'combatants'
 
 export default function CombatPanel({ readMode }: { readMode?: boolean }) {
-  const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI } = useStore()
+  // Map state + actions come from context
+  const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI } = useMapContext()
+  // Campaign context stays in global store
   const { currentCampaign } = useStore()
 
   // ── General text state ─────────────────────────────────────────────────────
@@ -103,11 +106,12 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   // ── Load picker articles (creature + character) ────────────────────────────
   useEffect(() => {
     if (!showPicker) return
-    const { currentCampaign } = useStore.getState()
-    if (!currentCampaign) return
+    // Read currentCampaign directly from store to avoid stale closure
+    const campaign = useStore.getState().currentCampaign
+    if (!campaign) return
     Promise.all([
-      window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'creature' }),
-      window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'character' }),
+      window.api.getArticlesList({ campaignId: campaign.id, type: 'creature' }),
+      window.api.getArticlesList({ campaignId: campaign.id, type: 'character' }),
     ]).then(([creatures, characters]) => {
       setPickerArticles([...creatures, ...characters].sort((a, b) => a.title.localeCompare(b.title)))
     })
@@ -213,13 +217,11 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
         display: 'flex', alignItems: 'center', gap: 10,
         flexShrink: 0, background: 'var(--bg-elevated)',
       }}>
-        {/* Combat icon */}
         <div style={{
           width: 28, height: 28, borderRadius: 4,
           background: '#e0555522', border: '1px solid #e0555555',
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         }}>
-          {/* Using text sword since we can't import here — icon comes from POI marker */}
           ⚔
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -303,7 +305,6 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
       {/* ── Combatants tab ── */}
       {activeTab === 'combatants' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {/* Add combatant button */}
           {!readMode && (
             <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
               <button
@@ -316,7 +317,6 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
             </div>
           )}
 
-          {/* Creature list */}
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
             {sortedCreatures.length === 0 ? (
               <div style={{
@@ -340,7 +340,6 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
             )}
           </div>
 
-          {/* Footer save */}
           {creaturesDirty && (
             <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
               <button className="btn btn-sm btn-primary" onClick={save} disabled={saving} style={{ width: '100%', justifyContent: 'center' }}>
@@ -405,7 +404,6 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{article.article_type}</div>
                     </div>
-                    {/* Add with average HP */}
                     <button
                       className="btn btn-sm"
                       onClick={() => addCombatant(article, false)}
@@ -414,7 +412,6 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
                     >
                       Avg HP
                     </button>
-                    {/* Add with rolled HP */}
                     <button
                       className="btn btn-ghost btn-sm"
                       onClick={() => addCombatant(article, true)}

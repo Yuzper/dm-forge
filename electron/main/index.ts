@@ -32,10 +32,8 @@ function initUpdater(mainWindow: BrowserWindow) {
 
 let db!: InstanceType<typeof Database>
 
-// Load default loot tables from bundled JSON
 function loadDefaultLootTables(): any[] {
   try {
-    // In dev: relative to project root. In prod: next to the main bundle.
     const candidates = [
       path.join(__dirname, '../../src/data/loot_tables_default.json'),
       path.join(__dirname, '../renderer/loot_tables_default.json'),
@@ -129,7 +127,8 @@ function initDatabase() {
 
     CREATE TABLE IF NOT EXISTS maps (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
+      article_id INTEGER REFERENCES articles(id) ON DELETE CASCADE,
       name       TEXT    NOT NULL,
       image_path TEXT    NOT NULL,
       created_at TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -258,6 +257,31 @@ function initDatabase() {
   if (!sessionCols.some(c => c.name === 'arc_id')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN arc_id INTEGER`)
   }
+
+  const mapCols = db.pragma('table_info(maps)') as { name: string; notnull: number }[]
+    if (!mapCols.some(c => c.name === 'campaign_id')) {
+      db.exec(`ALTER TABLE maps ADD COLUMN campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE`)
+    }
+    // Older databases have session_id NOT NULL, which breaks article-only maps.
+    // SQLite can't ALTER COLUMN, so we recreate the table if needed.
+    const sessionIdCol = mapCols.find(c => c.name === 'session_id')
+    if (sessionIdCol && sessionIdCol.notnull === 1) {
+      db.exec(`
+        PRAGMA foreign_keys = OFF;
+        CREATE TABLE maps_new (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
+          article_id INTEGER REFERENCES articles(id) ON DELETE CASCADE,
+          name       TEXT    NOT NULL,
+          image_path TEXT    NOT NULL,
+          created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO maps_new SELECT id, session_id, article_id, name, image_path, created_at FROM maps;
+        DROP TABLE maps;
+        ALTER TABLE maps_new RENAME TO maps;
+        PRAGMA foreign_keys = ON;
+      `)
+    }
 
   const dmNotesPageCols = db.pragma('table_info(dm_notes_pages)') as { name: string }[]
   if (!dmNotesPageCols.some(c => c.name === 'group_id')) {
@@ -506,10 +530,21 @@ function registerIPC(imagesPath: string) {
     `).all(sessionId)
   })
 
+  ipcMain.handle('maps:get-by-article', (_e, articleId: number) => {
+    return db.prepare(`
+      SELECT m.*, COUNT(p.id) as poi_count
+      FROM maps m
+      LEFT JOIN pois p ON p.map_id = m.id
+      WHERE m.article_id = ?
+      GROUP BY m.id
+      ORDER BY m.created_at ASC
+    `).all(articleId)
+  })
+
   ipcMain.handle('maps:create', (_e, data: any) => {
     const result = db.prepare(
-      'INSERT INTO maps (session_id, name, image_path) VALUES (@session_id, @name, @image_path)'
-    ).run(data)
+      'INSERT INTO maps (session_id, article_id, campaign_id, name, image_path) VALUES (@session_id, @article_id, @campaign_id, @name, @image_path)'
+    ).run({ session_id: null, article_id: null, campaign_id: null, ...data })
     return db.prepare('SELECT * FROM maps WHERE id = ?').get(result.lastInsertRowid)
   })
 
@@ -541,6 +576,65 @@ function registerIPC(imagesPath: string) {
     return { path: `images/${filename}`, name }
   })
 
+  ipcMain.handle('maps:import-for-article', async (_e, articleId: number) => {
+    if (!mainWindow) return null
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Map Image',
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    const srcPath = result.filePaths[0]
+    const baseName = `map_article_${articleId}_${Date.now()}`
+    const filename = processAndSaveImage(srcPath, imagesPath, baseName, 4000, 85)
+    const name = path.basename(srcPath, path.extname(srcPath))
+    return { path: `images/${filename}`, name }
+  })
+
+  ipcMain.handle('maps:get-by-campaign', (_e, campaignId: number) => {
+    return db.prepare(`
+      SELECT m.*, COUNT(p.id) as poi_count
+      FROM maps m
+      LEFT JOIN pois p ON p.map_id = m.id
+      WHERE m.campaign_id = ?
+      GROUP BY m.id
+      ORDER BY m.created_at ASC
+    `).all(campaignId)
+  })
+
+  ipcMain.handle('maps:import-for-campaign', async (_e, campaignId: number) => {
+    if (!mainWindow) return null
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Map Image',
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    const srcPath = result.filePaths[0]
+    const baseName = `map_campaign_${campaignId}_${Date.now()}`
+    const filename = processAndSaveImage(srcPath, imagesPath, baseName, 4000, 85)
+    const name = path.basename(srcPath, path.extname(srcPath))
+    return { path: `images/${filename}`, name }
+  })
+
+  ipcMain.handle('maps:get-campaign-images', (_e, campaignId: number) => {
+    return db.prepare(`
+      SELECT m.image_path, m.name,
+        CASE
+          WHEN s.id IS NOT NULL THEN 'Session ' || s.session_number || COALESCE(s.session_sub,'') || ': ' || s.name
+          WHEN a.id IS NOT NULL THEN a.title || ' (' || a.article_type || ')'
+          ELSE 'Unknown'
+        END as label,
+        m.created_at
+      FROM maps m
+      LEFT JOIN sessions s ON s.id = m.session_id
+      LEFT JOIN articles a ON a.id = m.article_id
+      WHERE s.campaign_id = @campaignId OR a.campaign_id = @campaignId
+      GROUP BY m.image_path
+      ORDER BY m.created_at DESC
+    `).all({ campaignId })
+  })
+  
   // ── POIs ──────────────────────────────────────────────────────────────────────
 
   ipcMain.handle('pois:get-all', (_e, mapId: number) => {
@@ -960,7 +1054,6 @@ function registerIPC(imagesPath: string) {
       'SELECT * FROM loot_tables WHERE campaign_id = ? ORDER BY category ASC, name ASC'
     ).all(campaignId) as any[]
 
-    // Auto-seed defaults if campaign has no tables at all
     if (tables.length === 0) {
       tables = seedDefaultTables(campaignId)
     }
@@ -996,7 +1089,6 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('loot-tables:delete', (_e, id: number) => {
-    // Null out references before deleting — articles and POIs keep their inline loot_table JSON
     db.prepare('UPDATE articles SET loot_table_id = NULL WHERE loot_table_id = ?').run(id)
     db.prepare('UPDATE pois SET loot_table_id = NULL WHERE loot_table_id = ?').run(id)
     const { affected } = db.prepare('SELECT COUNT(*) as affected FROM articles WHERE loot_table_id = ?').get(id) as { affected: number }
@@ -1005,7 +1097,6 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('loot-tables:roll', (_e, tableId: number | null, extraItemsJson: string) => {
-    // Merge master table items + vendor-specific extras, then roll
     let masterItems: any[] = []
     if (tableId) {
       const table = db.prepare('SELECT items FROM loot_tables WHERE id = ?').get(tableId) as { items: string } | undefined
@@ -1019,7 +1110,6 @@ function registerIPC(imagesPath: string) {
 
     const allItems = [...masterItems, ...extraItems]
 
-    // Roll — 100% always drops, others roll against their chance
     const result = allItems.filter(item => {
       if (item.chance >= 100) return true
       return Math.random() * 100 <= item.chance
@@ -1029,7 +1119,6 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('loot-tables:reset-defaults', (_e, campaignId: number) => {
-    // Delete existing default-seeded tables and re-seed from JSON
     db.prepare('DELETE FROM loot_tables WHERE campaign_id = ? AND is_default = 1').run(campaignId)
     return seedDefaultTables(campaignId)
   })

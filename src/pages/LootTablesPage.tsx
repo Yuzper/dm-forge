@@ -231,6 +231,7 @@ function TableEditorPanel({ table, onUpdate, onDelete }: {
             value={{ name, items }}
             onChange={t => { setItems(t.items); setDirty(true) }}
             suggestions={lootSuggestions}
+            showPriceWeight={category === 'creature' || category === 'vendor'}
             />
       </div>
     </div>

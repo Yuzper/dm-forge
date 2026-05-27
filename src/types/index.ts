@@ -26,7 +26,9 @@ export interface Session {
 
 export interface GameMap {
   id: number
-  session_id: number
+  campaign_id: number | null  // null when owned by a session or article
+  session_id: number | null   // null when owned by an article
+  article_id: number | null   // null when owned by a session
   name: string
   image_path: string
   created_at: string
@@ -271,7 +273,9 @@ export interface CreateSessionInput {
 }
 
 export interface CreateMapInput {
-  session_id: number
+  session_id?: number | null
+  campaign_id?: number | null
+  article_id?: number | null
   name: string
   image_path: string
 }
@@ -337,11 +341,16 @@ export interface ElectronAPI {
   updateArc:  (id: number, data: Partial<CreateArcInput>) => Promise<Arc>
   deleteArc:  (id: number)                         => Promise<{ success: boolean; error?: string }>
 
-  getMaps:         (sessionId: number)             => Promise<GameMap[]>
-  createMap:       (data: CreateMapInput)          => Promise<GameMap>
-  updateMap:       (id: number, data: Partial<CreateMapInput>) => Promise<GameMap>
-  deleteMap:       (id: number)                    => Promise<void>
-  importMapImage:  (sessionId: number)             => Promise<{ path: string; name: string } | null>
+  getMaps:            (sessionId: number)          => Promise<GameMap[]>
+  getMapsForArticle:  (articleId: number)          => Promise<GameMap[]>
+  createMap:          (data: CreateMapInput)       => Promise<GameMap>
+  updateMap:          (id: number, data: Partial<CreateMapInput>) => Promise<GameMap>
+  deleteMap:          (id: number)                 => Promise<void>
+  importMapImage:     (sessionId: number)          => Promise<{ path: string; name: string } | null>
+  importMapForArticle:(articleId: number)          => Promise<{ path: string; name: string } | null>
+  getMapsForCampaign:   (campaignId: number) => Promise<GameMap[]>
+  importMapForCampaign: (campaignId: number) => Promise<{ path: string; name: string } | null>
+  getCampaignMapImages: (campaignId: number) => Promise<{ image_path: string; name: string; label: string; created_at: string }[]>
 
   getPOIs:         (mapId: number)                 => Promise<POI[]>
   createPOI:       (data: CreatePOIInput)          => Promise<POI>

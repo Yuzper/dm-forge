@@ -22,11 +22,16 @@ contextBridge.exposeInMainWorld('api', {
   deleteArc:  (id: number)                  => ipcRenderer.invoke('arcs:delete', id),
 
   // Maps
-  getMaps:         (sessionId: number) => ipcRenderer.invoke('maps:get-all', sessionId),
-  createMap:       (data: any)    => ipcRenderer.invoke('maps:create', data),
-  updateMap:       (id: number, data: any) => ipcRenderer.invoke('maps:update', id, data),
-  deleteMap:       (id: number)   => ipcRenderer.invoke('maps:delete', id),
-  importMapImage:  (sessionId: number) => ipcRenderer.invoke('maps:import-image', sessionId),
+  getMaps:            (sessionId: number)  => ipcRenderer.invoke('maps:get-all', sessionId),
+  getMapsForArticle:  (articleId: number)  => ipcRenderer.invoke('maps:get-by-article', articleId),
+  createMap:          (data: any)          => ipcRenderer.invoke('maps:create', data),
+  updateMap:          (id: number, data: any) => ipcRenderer.invoke('maps:update', id, data),
+  deleteMap:          (id: number)         => ipcRenderer.invoke('maps:delete', id),
+  importMapImage:     (sessionId: number)  => ipcRenderer.invoke('maps:import-image', sessionId),
+  importMapForArticle:(articleId: number)  => ipcRenderer.invoke('maps:import-for-article', articleId),
+  getCampaignMapImages: (campaignId: number) => ipcRenderer.invoke('maps:get-campaign-images', campaignId),
+  getMapsForCampaign:   (campaignId: number) => ipcRenderer.invoke('maps:get-by-campaign', campaignId),
+  importMapForCampaign: (campaignId: number) => ipcRenderer.invoke('maps:import-for-campaign', campaignId),
 
   // POIs
   getPOIs:         (mapId: number) => ipcRenderer.invoke('pois:get-all', mapId),

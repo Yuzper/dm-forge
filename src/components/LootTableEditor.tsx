@@ -8,6 +8,7 @@ interface Props {
   value: LootTable
   onChange: (table: LootTable) => void
   suggestions?: string[]
+  showPriceWeight?: boolean
 }
 
 function newItem(): LootItem {
@@ -20,13 +21,33 @@ function newItem(): LootItem {
   }
 }
 
+const CURRENCIES = [
+  { code: 'cp', label: 'CP (copper)' },
+  { code: 'sp', label: 'SP (silver)' },
+  { code: 'ep', label: 'EP (electrum)' },
+  { code: 'gp', label: 'GP (gold)' },
+  { code: 'pp', label: 'PP (platinum)' },
+] as const
+type CurrencyCode = 'cp' | 'sp' | 'ep' | 'gp' | 'pp'
+
+function parsePrice(price: string | undefined): { amount: string; currency: CurrencyCode } {
+  if (!price) return { amount: '', currency: 'gp' }
+  const parts = price.trim().split(' ')
+  const last = parts[parts.length - 1].toLowerCase()
+  if (CURRENCIES.some(c => c.code === last)) {
+    return { amount: parts.slice(0, -1).join(' '), currency: last as CurrencyCode }
+  }
+  return { amount: price, currency: 'gp' }
+}
+
 function ItemRow({
-  item, onChange, onRemove, suggestions,
+  item, onChange, onRemove, suggestions, showPriceWeight,
 }: {
   item: LootItem
   onChange: (item: LootItem) => void
   onRemove: () => void
   suggestions?: string[]
+  showPriceWeight?: boolean
 }) {
   const set = <K extends keyof LootItem>(key: K, val: LootItem[K]) =>
     onChange({ ...item, [key]: val })
@@ -112,6 +133,47 @@ function ItemRow({
           <span style={{ fontSize: 11, color, fontWeight: 500, flexShrink: 0 }}>%</span>
         </div>
 
+        {/* Price & Weight */}
+        {showPriceWeight && (() => {
+          const { amount, currency } = parsePrice(item.price)
+          return (
+            <>
+              <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                <input
+                  className="input"
+                  style={{ width: 46, height: 28, fontSize: 12, textAlign: 'center', borderRadius: 'var(--radius-sm) 0 0 var(--radius-sm)', borderRight: 'none' }}
+                  placeholder="amt"
+                  title="Amount"
+                  value={amount}
+                  onChange={e => {
+                    const newAmt = e.target.value
+                    set('price', `${newAmt} ${currency}`.trim())
+                  }}
+                />
+                <select
+                  className="input"
+                  style={{ width: 48, height: 28, fontSize: 11, padding: '0 2px', flexShrink: 0, borderRadius: '0 var(--radius-sm) var(--radius-sm) 0', cursor: 'pointer' }}
+                  value={currency}
+                  onChange={e => {
+                    const newCur = e.target.value as CurrencyCode
+                    set('price', `${amount} ${newCur}`.trim())
+                  }}
+                >
+                  {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+                </select>
+              </div>
+              <input
+                className="input"
+                style={{ width: 58, height: 28, fontSize: 12, textAlign: 'center', flexShrink: 0 }}
+                placeholder="weight"
+                title="Weight (e.g. 2 lb)"
+                value={item.weight ?? ''}
+                onChange={e => set('weight', e.target.value)}
+              />
+            </>
+          )
+        })()}
+
         {/* Delete */}
         <button
           onClick={onRemove}
@@ -142,7 +204,7 @@ function ItemRow({
   )
 }
 
-export default function LootTableEditor({ value, onChange, suggestions }: Props) {
+export default function LootTableEditor({ value, onChange, suggestions, showPriceWeight }: Props) {
   const updateItem = useCallback((id: string, updated: LootItem) => {
     onChange({ ...value, items: value.items.map(i => i.id === id ? updated : i) })
   }, [value, onChange])
@@ -171,6 +233,16 @@ export default function LootTableEditor({ value, onChange, suggestions }: Props)
           <span style={{ width: 72, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: 'center', flexShrink: 0 }}>
             Chance
           </span>
+          {showPriceWeight && (
+            <>
+              <span style={{ width: 96, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: 'center', flexShrink: 0 }}>
+                Price
+              </span>
+              <span style={{ width: 58, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: 'center', flexShrink: 0 }}>
+                Weight
+              </span>
+            </>
+          )}
           <span style={{ width: 20, flexShrink: 0 }} />
         </div>
       )}
@@ -184,6 +256,7 @@ export default function LootTableEditor({ value, onChange, suggestions }: Props)
             onChange={updated => updateItem(item.id, updated)}
             onRemove={() => removeItem(item.id)}
             suggestions={suggestions}
+            showPriceWeight={showPriceWeight}
           />
         ))}
       </div>
