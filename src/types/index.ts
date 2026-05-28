@@ -38,6 +38,7 @@ export interface GameMap {
 export interface POI {
   id: number
   map_id: number
+  hub_links: string   // JSON: HubLink[]
   label: string
   x: number
   y: number
@@ -408,7 +409,25 @@ export interface ElectronAPI {
   deleteLootTable:     (id: number) => Promise<{ success: boolean; affected: number }>
   rollLootTable:       (tableId: number, extraItemsJson: string) => Promise<LootItem[]>
   resetDefaultTables:  (campaignId: number) => Promise<MasterLootTable[]>
+
+  // Relations
+  getRelationWebs:        (campaignId: number) => Promise<any[]>
+  createRelationWeb:      (data: any) => Promise<any>
+  updateRelationWeb:      (id: number, data: any) => Promise<any>
+  deleteRelationWeb:      (id: number) => Promise<void>
+  getRelationWebData:     (webId: number) => Promise<{ nodes: any[]; edges: any[] }>
+  createRelationNode:     (data: any) => Promise<any>
+  updateRelationNode:     (id: number, data: any) => Promise<any>
+  deleteRelationNode:     (id: number) => Promise<void>
+  createRelationEdge:     (data: any) => Promise<any>
+  updateRelationEdge:     (id: number, data: any) => Promise<any>
+  deleteRelationEdge:     (id: number) => Promise<void>
+  getArticleRelations:    (articleId: number, campaignId: number) => Promise<any[]>
+
+  // Maps
+  replaceMapImage: (mapId: number) => Promise<{ path: string } | null>
 }
+
 
 declare global {
   interface Window {

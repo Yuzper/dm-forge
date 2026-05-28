@@ -4,7 +4,7 @@ import { useStore } from '../store/store'
 import {
   ChevronLeft, Map, Scroll, Download, Upload, Check,
   AlertCircle, BookOpen, Clock, ArrowLeft,
-  FileText, Layers, Sparkles, ShoppingBag,
+  FileText, Layers, Sparkles, ShoppingBag, Network,
 } from 'lucide-react'
 import POIList from './POIList'
 import type { HistoryEntry } from '../store/store'
@@ -28,7 +28,7 @@ export default function Sidebar() {
 
   const inCampaignContext =
     view === 'campaign' || view === 'session' || view === 'wiki' ||
-    view === 'dm-notes' || view === 'loot-tables' || view === 'world-map'
+    view === 'dm-notes' || view === 'loot-tables' || view === 'relations'
   const canGoBack = navigationHistory.length >= 2
   const [version, setVersion] = useState('')
 
@@ -128,11 +128,11 @@ export default function Sidebar() {
                 className="btn btn-ghost btn-sm"
                 style={{
                   width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
-                  color: view === 'world-map' ? '#c8733a' : 'var(--text-secondary)',
+                  color: view === 'relations' ? '#b07de8' : 'var(--text-secondary)',
                 }}
-                onClick={() => setView('world-map')}
+                onClick={() => setView('relations')}
               >
-                <Map size={13} /> World Map
+                <Network size={13} /> Relations
               </button>
             </div>
           )}

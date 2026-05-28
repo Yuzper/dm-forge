@@ -1,7 +1,7 @@
 // path: src/pages/SessionPage.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
-import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon } from 'lucide-react'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
 import RichEditor from '../components/RichEditor'
@@ -58,7 +58,7 @@ const menuItemStyle: React.CSSProperties = {
   cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease',
 }
 
-function MapTabMenu({ map, onEdit }: { map: GameMap; onEdit: () => void }) {
+function MapTabMenu({ map, onEdit, onReplace }: { map: GameMap; onEdit: () => void; onReplace: () => void }) {
   const { deleteMap, selectMap } = useStore()
   const [open, setOpen] = useState(false)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
@@ -112,7 +112,7 @@ function MapTabMenu({ map, onEdit }: { map: GameMap; onEdit: () => void }) {
             border: '1px solid var(--border-light)',
             borderRadius: 'var(--radius-md)',
             boxShadow: 'var(--shadow-md)',
-            minWidth: 150,
+            minWidth: 160,
             zIndex: 1000,
             overflow: 'hidden',
           }}
@@ -122,6 +122,9 @@ function MapTabMenu({ map, onEdit }: { map: GameMap; onEdit: () => void }) {
           </button>
           <button onClick={() => { onEdit(); setOpen(false) }} style={menuItemStyle}>
             <Pencil size={13} /> Rename
+          </button>
+          <button onClick={() => { onReplace(); setOpen(false) }} style={menuItemStyle}>
+            <ImageIcon size={13} /> Replace image
           </button>
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
           <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteMap(map.id); setOpen(false) }) }} style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}>
@@ -240,6 +243,16 @@ export default function SessionPage() {
     setImporting(false)
   }
 
+  const handleReplaceMapImage = async (map: GameMap) => {
+    const result = await window.api.replaceMapImage(map.id)
+    if (!result) return
+    await window.api.updateMap(map.id, { image_path: result.path })
+    useStore.setState(s => ({
+      maps: s.maps.map(m => m.id === map.id ? { ...m, image_path: result.path } : m),
+      currentMap: s.currentMap?.id === map.id ? { ...s.currentMap, image_path: result.path } : s.currentMap,
+    }))
+  }
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
@@ -311,7 +324,13 @@ export default function SessionPage() {
             >
               <Map size={12} />
               <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{map.name}</span>
-              {!sessionReadMode && <MapTabMenu map={map} onEdit={() => setEditingMap(map)} />}
+              {!sessionReadMode && (
+                <MapTabMenu
+                  map={map}
+                  onEdit={() => setEditingMap(map)}
+                  onReplace={() => handleReplaceMapImage(map)}
+                />
+              )}
             </div>
           ))}
 

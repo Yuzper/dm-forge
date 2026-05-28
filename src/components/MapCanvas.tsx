@@ -1,5 +1,5 @@
 // path: src/components/MapCanvas.tsx
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useMapContext } from '../context/MapContext'
 import { MapPin, Maximize } from 'lucide-react'
 import { getPoiColor, getPoiIcon } from '../constants/POITypes'
@@ -9,8 +9,9 @@ const MIN_SCALE = 0.2
 const MAX_SCALE = 8
 const ZOOM_SPEED = 0.001
 
-function POIMarker({ poi, onSelect, isSelected, editMode, scale }: {
+function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef }: {
   poi: POI; onSelect: (p: POI) => void; isSelected: boolean; editMode: boolean; scale: number
+  imgBoundsRef: React.RefObject<{ left: number; top: number; w: number; h: number } | null>
 }) {
   const { updatePOI, optimisticMovePOI } = useMapContext()
   const [showLabel, setShowLabel] = useState(false)
@@ -49,8 +50,11 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale }: {
           Math.abs(ev.clientY - dragStart.current.mouseY) > 3) {
         hasDragged.current = true
       }
-      const dx = ((ev.clientX - dragStart.current.mouseX) / (rect.width * scale)) * 100
-      const dy = ((ev.clientY - dragStart.current.mouseY) / (rect.height * scale)) * 100
+      const ib = imgBoundsRef.current
+      const bw = ib ? ib.w : rect.width
+      const bh = ib ? ib.h : rect.height
+      const dx = ((ev.clientX - dragStart.current.mouseX) / (bw * scale)) * 100
+      const dy = ((ev.clientY - dragStart.current.mouseY) / (bh * scale)) * 100
       const newX = Math.max(0, Math.min(100, dragStart.current.poiX + dx))
       const newY = Math.max(0, Math.min(100, dragStart.current.poiY + dy))
       optimisticMovePOI(poi.id, newX, newY)
@@ -58,8 +62,11 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale }: {
 
     const onUp = async (ev: MouseEvent) => {
       if (!dragStart.current) return
-      const dx = ((ev.clientX - dragStart.current.mouseX) / (rect.width * scale)) * 100
-      const dy = ((ev.clientY - dragStart.current.mouseY) / (rect.height * scale)) * 100
+      const ib = imgBoundsRef.current
+      const bw = ib ? ib.w : rect.width
+      const bh = ib ? ib.h : rect.height
+      const dx = ((ev.clientX - dragStart.current.mouseX) / (bw * scale)) * 100
+      const dy = ((ev.clientY - dragStart.current.mouseY) / (bh * scale)) * 100
       const newX = Math.max(0, Math.min(100, dragStart.current.poiX + dx))
       const newY = Math.max(0, Math.min(100, dragStart.current.poiY + dy))
       dragStart.current = null
@@ -157,13 +164,41 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
 
   const outerRef = useRef<HTMLDivElement>(null)
 
+  // ── Image-relative POI positioning ────────────────────────────────────────
+  const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null)
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
+
+  useEffect(() => {
+    const el = outerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect
+      setContainerSize({ w: width, h: height })
+    })
+    ro.observe(el)
+    setContainerSize({ w: el.clientWidth, h: el.clientHeight })
+    return () => ro.disconnect()
+  }, [])
+
+  const imgBounds = useMemo(() => {
+    if (!imgNatural || containerSize.w === 0 || containerSize.h === 0) return null
+    const s = Math.min(containerSize.w / imgNatural.w, containerSize.h / imgNatural.h)
+    const w = imgNatural.w * s
+    const h = imgNatural.h * s
+    return { left: (containerSize.w - w) / 2, top: (containerSize.h - h) / 2, w, h }
+  }, [imgNatural, containerSize])
+
+  const imgBoundsRef = useRef(imgBounds)
+  imgBoundsRef.current = imgBounds
+
   useEffect(() => {
     setScale(1)
     setOffset({ x: 0, y: 0 })
     setImageLoaded(false)
+    setImgNatural(null)
     if (!currentMap) { setImageUrl(null); return }
     window.api.getImagePath(currentMap.image_path).then(setImageUrl)
-  }, [currentMap?.id])
+  }, [currentMap?.id, currentMap?.image_path])
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault()
@@ -222,12 +257,15 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     if (hasPanned.current) { hasPanned.current = false; return }
     if (!editMode || readMode) return
     const outer = outerRef.current
-    if (!outer) return
+    if (!outer || !imgBoundsRef.current) return
     const rect = outer.getBoundingClientRect()
     const cx = e.clientX - rect.left
     const cy = e.clientY - rect.top
-    const x = ((cx - offsetRef.current.x) / (rect.width * scaleRef.current)) * 100
-    const y = ((cy - offsetRef.current.y) / (rect.height * scaleRef.current)) * 100
+    const innerX = (cx - offsetRef.current.x) / scaleRef.current
+    const innerY = (cy - offsetRef.current.y) / scaleRef.current
+    const { left: iL, top: iT, w: iW, h: iH } = imgBoundsRef.current
+    const x = (innerX - iL) / iW * 100
+    const y = (innerY - iT) / iH * 100
     if (x < 0 || x > 100 || y < 0 || y > 100) return
     await createPOI(x, y)
   }, [editMode, createPOI])
@@ -309,7 +347,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
             <img
               src={imageUrl}
               alt={currentMap.name}
-              onLoad={() => setImageLoaded(true)}
+              onLoad={e => { setImageLoaded(true); setImgNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight }) }}
               style={{
                 width: '100%', height: '100%', objectFit: 'contain', display: 'block',
                 opacity: imageLoaded ? 1 : 0, transition: 'opacity 300ms ease',
@@ -319,16 +357,21 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
             />
           )}
 
-          {imageLoaded && pois.map(poi => (
-            <POIMarker
-              key={poi.id}
-              poi={poi}
-              onSelect={selectPOI}
-              isSelected={selectedPOI?.id === poi.id}
-              editMode={editMode}
-              scale={scale}
-            />
-          ))}
+          {imageLoaded && imgBounds && (
+            <div style={{ position: 'absolute', left: imgBounds.left, top: imgBounds.top, width: imgBounds.w, height: imgBounds.h }}>
+              {pois.map(poi => (
+                <POIMarker
+                  key={poi.id}
+                  poi={poi}
+                  onSelect={selectPOI}
+                  isSelected={selectedPOI?.id === poi.id}
+                  editMode={editMode}
+                  scale={scale}
+                  imgBoundsRef={imgBoundsRef}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

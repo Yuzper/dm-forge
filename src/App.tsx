@@ -9,8 +9,8 @@ import WikiPage from './pages/WikiPage'
 import DMNotesPage from './pages/DMNotesPage'
 import LootTablesPage from './pages/LootTablesPage'
 import StatBlockPage from './pages/StatBlockPage'
-import WorldMapPage from './pages/WorldMapPage'
 import { UpdateBanner } from './components/UpdateBanner'
+import RelationsPage from './pages/RelationsPage'
 
 const params = new URLSearchParams(window.location.search)
 const statblockMode = params.get('mode') === 'statblock'
@@ -36,7 +36,7 @@ export default function App() {
         {view === 'wiki'        && <WikiPage />}
         {view === 'dm-notes'    && <DMNotesPage />}
         {view === 'loot-tables' && <LootTablesPage />}
-        {view === 'world-map'   && <WorldMapPage />}
+        {view === 'relations'   && <RelationsPage />}
       </main>
     </div>
   )

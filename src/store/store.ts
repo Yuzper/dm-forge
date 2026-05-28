@@ -10,7 +10,8 @@ function getStarterMonsters(system: string) {
   return []
 }
 
-type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables' | 'world-map'
+type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables' | 'relations'
+
 
 // ── Navigation History ────────────────────────────────────────────────────────
 
@@ -19,6 +20,9 @@ export type HistoryEntry =
   | { type: 'session';  label: string; campaign: Campaign; session: Session }
   | { type: 'article';  label: string; campaign: Campaign; articleId: number }
   | { type: 'wiki';     label: string; campaign: Campaign }
+  | { type: 'relations'; label: string; campaign: Campaign }
+  | { type: 'dm-notes'; label: string; campaign: Campaign }
+  | { type: 'loot-tables'; label: string; campaign: Campaign }
 
 interface AppStore {
   // Navigation
@@ -101,6 +105,8 @@ interface AppStore {
   setWikiTagFilter: (tag: string | null) => void
   setWikiSearchFields: (fields: { title: boolean; tags: boolean }) => void
   setWikiShowTags: (v: boolean) => void
+  relationsOpenWebId: number | null // Relations navigation — used to deep-link from article sidebar into a specific web
+  setRelationsOpenWebId: (id: number | null) => void
   getArticleBacklinks: (title: string) => Promise<ArticleSummary[]>
 }
 
@@ -626,4 +632,6 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   setWikiShowTags: (wikiShowTags) => set({ wikiShowTags }),
+  relationsOpenWebId: null,
+  setRelationsOpenWebId: (relationsOpenWebId) => set({ relationsOpenWebId }),
 }))

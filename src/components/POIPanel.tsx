@@ -297,17 +297,19 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
                   onChange={e => { setLootTableId(e.target.value ? parseInt(e.target.value) : null); setDirty(true) }}
                 >
                   <option value="">— None (inline items only) —</option>
-                  {masterTables.filter(t => t.category === 'location').map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                  {masterTables.filter(t => t.category !== 'location').length > 0 && (
-                    <>
-                      <option disabled>── Other tables ──</option>
-                      {masterTables.filter(t => t.category !== 'location').map(t => (
-                        <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
-                      ))}
-                    </>
-                  )}
+                  {(['location', 'creature', 'vendor', 'custom'] as const).map(cat => {
+                    const group = masterTables.filter(t => t.category === cat)
+                    if (group.length === 0) return null
+                    const labels: Record<string, string> = {
+                      location: 'Location', creature: 'Creature',
+                      vendor: 'Vendor', custom: 'Custom',
+                    }
+                    return (
+                      <optgroup key={cat} label={labels[cat]}>
+                        {group.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </optgroup>
+                    )
+                  })}
                 </select>
               </div>
 

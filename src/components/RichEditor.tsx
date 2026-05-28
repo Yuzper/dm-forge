@@ -445,7 +445,7 @@ function SessionLinkPopover({ query, coords, onSelect, onClose }: {
                 Session {s.session_number}{s.session_sub ?? ''}: {s.name}
               </span>
               {s.date && (
-                <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{s.date}</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
               )}
             </button>
           ))}

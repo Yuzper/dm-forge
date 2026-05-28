@@ -1,18 +1,27 @@
 // path: src/pages/CampaignDetailPage.tsx
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useStore } from '../store/store'
 import {
   Plus, Calendar, Map, BookOpen, MoreHorizontal, Trash2, Pencil,
   ChevronRight, ArrowUpDown, ChevronDown, ChevronUp, Layers,
-  Scroll, Sparkles, ArrowLeft, ShoppingBag,
+  Scroll, Sparkles, ArrowLeft, ShoppingBag, Upload, X, Search,
+  ExternalLink, Network,
+  Maximize, Eye, EyeOff, Image as ImageIcon,
 } from 'lucide-react'
-import type { Session, Arc } from '../types'
+import type { Session, Arc, GameMap, POI } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
+import MapPickerModal from '../components/MapPickerModal'
+
+// ── Constants ──────────────────────────────────────────────────────────────────
 
 const ARC_COLORS = [
   '#c8a84b', '#7aeada', '#2eb370', '#5b9fe8', '#1323cf', '#ce21dd',
   '#f41111', '#e88c3a', '#8a2e2e', '#8a8a8a', '#6013be', '#e0e0e0',
 ]
+
+const MIN_SCALE = 0.2
+const MAX_SCALE = 8
+const ZOOM_SPEED = 0.001
 
 const menuItemStyle: React.CSSProperties = {
   width: '100%', display: 'flex', alignItems: 'center', gap: 8,
@@ -21,19 +30,934 @@ const menuItemStyle: React.CSSProperties = {
   cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease',
 }
 
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface HubLink {
+  type: 'wiki' | 'session'
+  article_id?: number
+  title?: string
+  session_id?: number
+  session_number?: number
+  session_sub?: string
+  name?: string
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function extractPoiDescription(contentJson: string): string {
+  try {
+    const doc = JSON.parse(contentJson)
+    const paras = doc?.content ?? []
+    for (const node of paras) {
+      if (node.type === 'paragraph') {
+        const text = (node.content ?? []).map((c: any) => c.text ?? '').join('')
+        if (text.trim()) return text.trim()
+      }
+    }
+  } catch {}
+  return ''
+}
+
+function makePoiContent(description: string): string {
+  return JSON.stringify({
+    type: 'doc',
+    content: description.trim()
+      ? [{ type: 'paragraph', content: [{ type: 'text', text: description.trim() }] }]
+      : [{ type: 'paragraph' }],
+  })
+}
+
+function parseHubLinks(raw: string): HubLink[] {
+  try { return JSON.parse(raw) } catch { return [] }
+}
+
+// ── POI Popup ──────────────────────────────────────────────────────────────────
+
+function HubPOIPopup({
+  poi, links, onClose, onEdit, editMode,
+  onNavigateWiki, onNavigateSession,
+}: {
+  poi: POI
+  links: HubLink[]
+  onClose: () => void
+  onEdit: () => void
+  editMode: boolean
+  onNavigateWiki: (title: string) => void
+  onNavigateSession: (sessionId: number) => void
+}) {
+  const description = extractPoiDescription(poi.content)
+  const wikis = links.filter(l => l.type === 'wiki')
+  const sessions = links.filter(l => l.type === 'session')
+
+  return (
+    <div
+      style={{
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-md)',
+        width: 220,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+        overflow: 'hidden',
+        fontFamily: 'var(--font-ui)',
+      }}
+      onClick={e => e.stopPropagation()}
+    >
+      {/* Header */}
+      <div style={{ padding: '9px 11px 7px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: poi.color, flexShrink: 0 }} />
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {poi.label}
+          </span>
+          <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+            {editMode && (
+              <button onClick={onEdit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: '2px 3px', borderRadius: 3, transition: 'color var(--transition)' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+                title="Edit">
+                <Pencil size={11} />
+              </button>
+            )}
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: '2px 3px', borderRadius: 3, transition: 'color var(--transition)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+              title="Close">
+              <X size={11} />
+            </button>
+          </div>
+        </div>
+        {description && (
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 5, lineHeight: 1.5, maxHeight: 80, overflowY: 'auto' }}>
+            {description}
+          </div>
+        )}
+      </div>
+
+      {/* Scrollable links body */}
+      <div style={{ overflowY: 'auto', maxHeight: 220 }}>
+      {/* Wiki links */}
+      {wikis.length > 0 && (
+        <div style={{ padding: '6px 11px', borderBottom: sessions.length > 0 ? '1px solid var(--border)' : 'none' }}>
+          <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>Wiki</div>
+          {wikis.map((l, i) => (
+            <button key={i} onClick={() => onNavigateWiki(l.title!)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '4px 5px', margin: '0 -5px', background: 'none', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', textAlign: 'left', transition: 'background var(--transition)' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-active)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}>
+              <BookOpen size={11} style={{ color: '#5b9fe8', flexShrink: 0 }} />
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</span>
+              <ExternalLink size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Session links */}
+      {sessions.length > 0 && (
+        <div style={{ padding: '6px 11px' }}>
+          <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>Sessions</div>
+          {sessions.map((l, i) => (
+            <button key={i} onClick={() => onNavigateSession(l.session_id!)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '4px 5px', margin: '0 -5px', background: 'none', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', textAlign: 'left', transition: 'background var(--transition)' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-active)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}>
+              <Scroll size={11} style={{ color: 'var(--gold)', flexShrink: 0 }} />
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Session {l.session_number}{l.session_sub}: {l.name}
+              </span>
+              <ExternalLink size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {wikis.length === 0 && sessions.length === 0 && (
+        <div style={{ padding: '8px 11px', fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+          {editMode ? 'Click the pencil to add links' : 'No links yet'}
+        </div>
+      )}
+      </div>
+    </div>
+  )
+}
+
+// ── POI Edit Modal ─────────────────────────────────────────────────────────────
+
+function HubPOIEditModal({
+  poi, links, sessions, articles,
+  onSave, onDelete, onClose,
+}: {
+  poi: POI
+  links: HubLink[]
+  sessions: Session[]
+  articles: { id: number; title: string }[]
+  onSave: (label: string, description: string, links: HubLink[], color: string) => void
+  onDelete: () => void
+  onClose: () => void
+}) {
+  const [label, setLabel] = useState(poi.label)
+  const [poiColor, setPoiColor] = useState(poi.color || '#c8a84b')
+  const [description, setDescription] = useState(extractPoiDescription(poi.content))
+  const [editLinks, setEditLinks] = useState<HubLink[]>([...links])
+  const [wikiSearch, setWikiSearch] = useState('')
+  const [sessionSearch, setSessionSearch] = useState('')
+  const { confirming: confirmingDelete, trigger: triggerDelete } = useConfirmDelete()
+
+  const filteredArticles = articles.filter(a =>
+    a.title.toLowerCase().includes(wikiSearch.toLowerCase()) &&
+    !editLinks.some(l => l.type === 'wiki' && l.article_id === a.id)
+  ).slice(0, 6)
+
+  const filteredSessions = sessions.filter(s => {
+    const label = `Session ${s.session_number}${s.session_sub ?? ''}: ${s.name}`
+    return label.toLowerCase().includes(sessionSearch.toLowerCase()) &&
+      !editLinks.some(l => l.type === 'session' && l.session_id === s.id)
+  }).slice(0, 6)
+
+  const addWiki = (a: { id: number; title: string }) => {
+    setEditLinks(prev => [...prev, { type: 'wiki', article_id: a.id, title: a.title }])
+    setWikiSearch('')
+  }
+
+  const addSession = (s: Session) => {
+    setEditLinks(prev => [...prev, { type: 'session', session_id: s.id, session_number: s.session_number, session_sub: s.session_sub, name: s.name }])
+    setSessionSearch('')
+  }
+
+  const removeLink = (i: number) => setEditLinks(prev => prev.filter((_, idx) => idx !== i))
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 440, width: '100%' }}>
+        <div className="modal-title">Edit location</div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="input-group">
+            <label className="input-label">Name</label>
+            <input className="input" value={label} onChange={e => setLabel(e.target.value)} autoFocus />
+          </div>
+
+          <div className="input-group">
+            <label className="input-label">Color</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {['#c8a84b','#7aeada','#2eb370','#5b9fe8','#ce21dd','#f41111','#e88c3a','#8a2e2e','#8a8a8a','#e0e0e0'].map(c => (
+                <button key={c} type="button" onClick={() => setPoiColor(c)}
+                  style={{ width: 20, height: 20, borderRadius: '50%', background: c, padding: 0, border: `2px solid ${poiColor === c ? 'var(--text-primary)' : 'transparent'}`, cursor: 'pointer', flexShrink: 0 }} />
+              ))}
+            </div>
+          </div>
+
+          <div className="input-group">
+            <label className="input-label">Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+            <textarea className="input" value={description} onChange={e => setDescription(e.target.value)}
+              style={{ minHeight: 64, resize: 'vertical', lineHeight: 1.5 }}
+              placeholder="A fortified dwarven city carved into the mountains…" />
+          </div>
+
+          {/* Current links */}
+          {editLinks.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Linked</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {editLinks.map((l, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: 12 }}>
+                    {l.type === 'wiki'
+                      ? <BookOpen size={11} style={{ color: '#5b9fe8', flexShrink: 0 }} />
+                      : <Scroll size={11} style={{ color: 'var(--gold)', flexShrink: 0 }} />}
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
+                      {l.type === 'wiki' ? l.title : `Session ${l.session_number}${l.session_sub}: ${l.name}`}
+                    </span>
+                    <button onClick={() => removeLink(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 1, flexShrink: 0, borderRadius: 3 }}>
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Add wiki link */}
+          <div className="input-group">
+            <label className="input-label">Link wiki article</label>
+            <div style={{ position: 'relative' }}>
+              <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input className="input" style={{ paddingLeft: 28 }} placeholder="Search articles…"
+                value={wikiSearch} onChange={e => setWikiSearch(e.target.value)} />
+            </div>
+            {wikiSearch && filteredArticles.length > 0 && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: 4 }}>
+                {filteredArticles.map(a => (
+                  <button key={a.id} onClick={() => addWiki(a)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 12, color: 'var(--text-primary)', textAlign: 'left' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                    <BookOpen size={11} style={{ color: '#5b9fe8' }} /> {a.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Add session link */}
+          <div className="input-group">
+            <label className="input-label">Link session</label>
+            <div style={{ position: 'relative' }}>
+              <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input className="input" style={{ paddingLeft: 28 }} placeholder="Search sessions…"
+                value={sessionSearch} onChange={e => setSessionSearch(e.target.value)} />
+            </div>
+            {sessionSearch && filteredSessions.length > 0 && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: 4 }}>
+                {filteredSessions.map(s => (
+                  <button key={s.id} onClick={() => addSession(s)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 12, color: 'var(--text-primary)', textAlign: 'left' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                    <Scroll size={11} style={{ color: 'var(--gold)' }} />
+                    Session {s.session_number}{s.session_sub}: {s.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="modal-actions" style={{ justifyContent: 'space-between' }}>
+          <button
+            onClick={() => triggerDelete(onDelete)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: confirmingDelete ? '#ff7777' : '#e05555', fontSize: 13, display: 'flex', alignItems: 'center', gap: 5, padding: '4px 2px' }}>
+            <Trash2 size={13} /> {confirmingDelete ? 'Confirm' : 'Delete'}
+          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={() => onSave(label.trim() || poi.label, description, editLinks, poiColor)}>
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Hub World Map ──────────────────────────────────────────────────────────────
+
+function HubWorldMap() {
+  const { currentCampaign, sessions, articles, navigateToArticleByTitle, navigateToSessionById } = useStore()
+
+  const [maps, setMaps] = useState<GameMap[]>([])
+  const [localArticles, setLocalArticles] = useState<{ id: number; title: string }[]>([])
+  const [currentMap, setCurrentMap] = useState<GameMap | null>(null)
+  const [pois, setPois] = useState<POI[]>([])
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null)
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
+  const [editMode, setEditMode] = useState(false)
+  const [mapVisible, setMapVisible] = useState<boolean>(() => {
+    const stored = localStorage.getItem('worldmap-map-visible')
+    return stored === null ? true : stored === 'true'
+  })
+  const toggleMapVisible = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMapVisible(prev => {
+      const next = !prev
+      localStorage.setItem('worldmap-map-visible', String(next))
+      return next
+    })
+  }
+  const [importing, setImporting] = useState(false)
+  const [showPicker, setShowPicker] = useState(false)
+  const [renamingMap, setRenamingMap] = useState<GameMap | null>(null)
+  const [selectedPOI, setSelectedPOI] = useState<POI | null>(null)
+  const [hoveredPoiId, setHoveredPoiId] = useState<number | null>(null)
+  const [editingPOI, setEditingPOI] = useState<POI | null>(null)
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null)
+  const [menuOpenId, setMenuOpenId] = useState<number | null>(null)
+  const mapRef = useRef<HTMLDivElement>(null)
+
+  // ── Image-relative POI positioning ────────────────────────────────────────
+  useEffect(() => {
+    const el = mapRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect
+      setContainerSize({ w: width, h: Math.max(0, height - 34) })
+    })
+    ro.observe(el)
+    setContainerSize({ w: el.clientWidth, h: Math.max(0, el.clientHeight - 34) })
+    return () => ro.disconnect()
+  }, [])
+
+  const imgBoundsRef = useRef<{ left: number; top: number; w: number; h: number } | null>(null)
+  if (imgNatural && containerSize.w > 0 && containerSize.h > 0) {
+    const s = Math.min(containerSize.w / imgNatural.w, containerSize.h / imgNatural.h)
+    const w = imgNatural.w * s
+    const h = imgNatural.h * s
+    imgBoundsRef.current = { left: (containerSize.w - w) / 2, top: (containerSize.h - h) / 2, w, h }
+  } else {
+    imgBoundsRef.current = null
+  }
+
+  // ── Pan / zoom state ──────────────────────────────────────────────────────
+  const [scale, setScaleState] = useState(1)
+  const [offset, setOffsetState] = useState({ x: 0, y: 0 })
+  const scaleRef = useRef(1)
+  const offsetRef = useRef({ x: 0, y: 0 })
+  const setScale = (v: number) => { scaleRef.current = v; setScaleState(v) }
+  const setOffset = (v: { x: number; y: number }) => { offsetRef.current = v; setOffsetState(v) }
+  const panStart = useRef<{ mouseX: number; mouseY: number; ox: number; oy: number } | null>(null)
+  const hasPanned = useRef(false)
+  const isPanning = useRef(false)
+  const [cursorStyle, setCursorStyle] = useState('grab')
+
+  // ── Load maps ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!currentCampaign) return
+    window.api.getArticlesList({ campaignId: currentCampaign.id }).then((list: any[]) =>
+      setLocalArticles(list.map((a: any) => ({ id: a.id, title: a.title })))
+    )
+    window.api.getMapsForCampaign(currentCampaign.id).then((fetched: GameMap[]) => {
+      setMaps(fetched)
+      const first = fetched[0] ?? null
+      setCurrentMap(first)
+      if (first) window.api.getPOIs(first.id).then(setPois)
+    })
+  }, [currentCampaign?.id])
+
+  // ── Load image + reset view when map changes ──────────────────────────────
+  useEffect(() => {
+    if (!currentMap) { setImageUrl(null); return }
+    setScale(1)
+    setOffset({ x: 0, y: 0 })
+    setImgNatural(null)
+    window.api.getImagePath(currentMap.image_path).then(setImageUrl)
+  }, [currentMap?.id, currentMap?.image_path])
+
+  // ── Wheel zoom ────────────────────────────────────────────────────────────
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault()
+    if (!mapRef.current) return
+    const rect = mapRef.current.getBoundingClientRect()
+    const cx = e.clientX - rect.left
+    const cy = e.clientY - rect.top - 34
+    const rawDelta = -e.deltaY * ZOOM_SPEED
+    const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scaleRef.current * (1 + rawDelta)))
+    const zf = newScale / scaleRef.current
+    setScale(newScale)
+    setOffset({ x: cx - zf * (cx - offsetRef.current.x), y: cy - zf * (cy - offsetRef.current.y) })
+  }, [])
+
+  useEffect(() => {
+    const el = mapRef.current
+    if (!el) return
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [handleWheel])
+
+  // ── Pan handlers ──────────────────────────────────────────────────────────
+  const handlePanDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('[data-poi]')) return
+    panStart.current = { mouseX: e.clientX, mouseY: e.clientY, ox: offsetRef.current.x, oy: offsetRef.current.y }
+    hasPanned.current = false
+    isPanning.current = false
+    setCursorStyle('grabbing')
+  }
+
+  const handlePanMove = (e: React.MouseEvent) => {
+    if (!panStart.current) return
+    const dx = e.clientX - panStart.current.mouseX
+    const dy = e.clientY - panStart.current.mouseY
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) { hasPanned.current = true; isPanning.current = true }
+    if (isPanning.current) setOffset({ x: panStart.current.ox + dx, y: panStart.current.oy + dy })
+  }
+
+  const handlePanUp = () => {
+    panStart.current = null
+    isPanning.current = false
+    setCursorStyle(editMode ? 'crosshair' : 'grab')
+  }
+
+  // ── Zoom buttons ──────────────────────────────────────────────────────────
+  const zoomIn = () => {
+    const cx = mapRef.current ? mapRef.current.offsetWidth / 2 : 0
+    const cy = mapRef.current ? (mapRef.current.offsetHeight - 34) / 2 : 0
+    const newScale = Math.min(MAX_SCALE, scaleRef.current * 1.25)
+    const zf = newScale / scaleRef.current
+    setOffset({ x: cx - zf * (cx - offsetRef.current.x), y: cy - zf * (cy - offsetRef.current.y) })
+    setScale(newScale)
+  }
+
+  const zoomOut = () => {
+    const cx = mapRef.current ? mapRef.current.offsetWidth / 2 : 0
+    const cy = mapRef.current ? (mapRef.current.offsetHeight - 34) / 2 : 0
+    const newScale = Math.max(MIN_SCALE, scaleRef.current * 0.8)
+    const zf = newScale / scaleRef.current
+    setOffset({ x: cx - zf * (cx - offsetRef.current.x), y: cy - zf * (cy - offsetRef.current.y) })
+    setScale(newScale)
+  }
+
+  const resetView = () => { setScale(1); setOffset({ x: 0, y: 0 }) }
+
+  // ── Map interactions ──────────────────────────────────────────────────────
+  const handleSelectMap = (map: GameMap) => {
+    setCurrentMap(map)
+    setPois([])
+    setSelectedPOI(null)
+    window.api.getPOIs(map.id).then(setPois)
+  }
+
+  const handleImport = async (result: { path: string; name: string }) => {
+    if (!currentCampaign) return
+    setImporting(true)
+    const map = await window.api.createMap({ campaign_id: currentCampaign.id, name: result.name, image_path: result.path })
+    setMaps((prev: GameMap[]) => [...prev, map])
+    handleSelectMap(map)
+    setImporting(false)
+  }
+
+  const handleDeleteMap = async (id: number) => {
+    await window.api.deleteMap(id)
+    setMaps((prev: GameMap[]) => {
+      const next = prev.filter(m => m.id !== id)
+      if (currentMap?.id === id) {
+        const fallback = next[0] ?? null
+        setCurrentMap(fallback)
+        setPois([])
+        setSelectedPOI(null)
+        if (fallback) window.api.getPOIs(fallback.id).then(setPois)
+      }
+      return next
+    })
+  }
+
+  const handleReplaceMapImage = async (map: GameMap) => {
+    const result = await (window.api as any).replaceMapImage(map.id)
+    if (!result) return
+    const updated = await window.api.updateMap(map.id, { image_path: result.path })
+    setMaps(prev => prev.map(m => m.id === updated.id ? updated : m))
+    if (currentMap?.id === updated.id) {
+      setCurrentMap(updated)
+      window.api.getImagePath(updated.image_path).then(setImageUrl)
+    }
+  }
+
+  const handleRenameMap = async (map: GameMap, name: string) => {
+    if (!name.trim()) { setRenamingMap(null); return }
+    const updated = await window.api.updateMap(map.id, { name: name.trim() })
+    setMaps((prev: GameMap[]) => prev.map(m => m.id === updated.id ? updated : m))
+    if (currentMap?.id === updated.id) setCurrentMap(updated)
+    setRenamingMap(null)
+  }
+
+  // ── POI click — popup positioned in screen space ──────────────────────────
+  const handlePOIClick = (poi: POI, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (selectedPOI?.id === poi.id) { setSelectedPOI(null); setPopupPos(null); return }
+    const rect = mapRef.current!.getBoundingClientRect()
+    // Convert POI % coords through the current transform to screen space
+    const ib = imgBoundsRef.current
+    const dotX = offsetRef.current.x + (ib ? (ib.left + poi.x / 100 * ib.w) : (poi.x / 100 * rect.width)) * scaleRef.current
+    const dotY = 34 + offsetRef.current.y + (ib ? (ib.top + poi.y / 100 * ib.h) : (poi.y / 100 * (rect.height - 34))) * scaleRef.current
+    const popW = 224, popH = 200
+    let left = dotX + 14
+    let top = dotY - 16
+    if (left + popW > rect.width - 4) left = dotX - popW - 14
+    if (top + popH > rect.height - 8) top = rect.height - popH - 8
+    if (top < 38) top = 38
+    setSelectedPOI(poi)
+    setPopupPos({ top, left })
+  }
+
+  // ── Map background click to place POI ────────────────────────────────────
+  const handleMapClick = (e: React.MouseEvent) => {
+    if (hasPanned.current) { hasPanned.current = false; return }
+    if (!editMode || !currentMap) return
+    if ((e.target as HTMLElement).closest('[data-poi]')) return
+    const rect = mapRef.current!.getBoundingClientRect()
+    const ib = imgBoundsRef.current
+    if (!ib) return
+    const innerX = (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current
+    const innerY = (e.clientY - rect.top - 34 - offsetRef.current.y) / scaleRef.current
+    const x = (innerX - ib.left) / ib.w * 100
+    const y = (innerY - ib.top) / ib.h * 100
+    if (x < 0 || x > 100 || y < 0 || y > 100) return
+    window.api.createPOI({ map_id: currentMap.id, label: 'New Location', x, y }).then((poi: POI) => {
+      setPois((prev: POI[]) => [...prev, poi])
+      setSelectedPOI(poi)
+      setEditingPOI(poi)
+    })
+  }
+
+  // ── POI drag (scale-aware) ────────────────────────────────────────────────
+  const dragRef = useRef<{ poi: POI; startX: number; startY: number; origX: number; origY: number } | null>(null)
+
+  const handlePOIMouseDown = (poi: POI, e: React.MouseEvent) => {
+    if (!editMode) return
+    e.preventDefault(); e.stopPropagation()
+    dragRef.current = { poi, startX: e.clientX, startY: e.clientY, origX: poi.x, origY: poi.y }
+    const onMove = (mv: MouseEvent) => {
+      if (!dragRef.current || !mapRef.current) return
+      const rect = mapRef.current.getBoundingClientRect()
+      const ib2 = imgBoundsRef.current
+      const bw2 = ib2 ? ib2.w : rect.width
+      const bh2 = ib2 ? ib2.h : (rect.height - 34)
+      const dx = ((mv.clientX - dragRef.current.startX) / (bw2 * scaleRef.current)) * 100
+      const dy = ((mv.clientY - dragRef.current.startY) / (bh2 * scaleRef.current)) * 100
+      const newX = Math.max(0, Math.min(100, dragRef.current.origX + dx))
+      const newY = Math.max(0, Math.min(100, dragRef.current.origY + dy))
+      setPois((prev: POI[]) => prev.map(p => p.id === poi.id ? { ...p, x: newX, y: newY } : p))
+      if (selectedPOI?.id === poi.id) setSelectedPOI(prev => prev ? { ...prev, x: newX, y: newY } : prev)
+    }
+    const onUp = async (uv: MouseEvent) => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      if (!dragRef.current || !mapRef.current) return
+      const rect = mapRef.current.getBoundingClientRect()
+      const moved = Math.abs(uv.clientX - dragRef.current.startX) > 4 || Math.abs(uv.clientY - dragRef.current.startY) > 4
+      if (moved) {
+        const ib3 = imgBoundsRef.current
+        const bw3 = ib3 ? ib3.w : rect.width
+        const bh3 = ib3 ? ib3.h : (rect.height - 34)
+        const dx = ((uv.clientX - dragRef.current.startX) / (bw3 * scaleRef.current)) * 100
+        const dy = ((uv.clientY - dragRef.current.startY) / (bh3 * scaleRef.current)) * 100
+        const newX = Math.max(0, Math.min(100, dragRef.current.origX + dx))
+        const newY = Math.max(0, Math.min(100, dragRef.current.origY + dy))
+        await window.api.updatePOI(poi.id, { x: newX, y: newY })
+      }
+      dragRef.current = null
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  // ── POI save / delete ─────────────────────────────────────────────────────
+  const handleSavePOI = async (label: string, description: string, links: HubLink[], color: string) => {
+    if (!editingPOI) return
+    const content = makePoiContent(description)
+    const hub_links = JSON.stringify(links)
+    const updated = await window.api.updatePOI(editingPOI.id, { label, content, hub_links, color } as any)
+    setPois((prev: POI[]) => prev.map(p => p.id === updated.id ? updated : p))
+    setSelectedPOI(updated)
+    setEditingPOI(null)
+  }
+
+  const handleDeletePOI = async () => {
+    if (!editingPOI) return
+    await window.api.deletePOI(editingPOI.id)
+    setPois((prev: POI[]) => prev.filter(p => p.id !== editingPOI.id))
+    setSelectedPOI(null)
+    setEditingPOI(null)
+    setPopupPos(null)
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div style={{ marginBottom: 28 }}>
+      {/* Map panel */}
+      <div
+        ref={mapRef}
+        style={{
+          position: 'relative', width: '100%', height: mapVisible ? 500 : 34,
+          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--border)',
+          overflow: 'hidden',
+          background: 'var(--bg-elevated)',
+          cursor: cursorStyle,
+          userSelect: 'none',
+        }}
+        onMouseDown={handlePanDown}
+        onMouseMove={handlePanMove}
+        onMouseUp={handlePanUp}
+        onMouseLeave={handlePanUp}
+        onClick={handleMapClick}
+      >
+        {/* Tab strip */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 34, display: 'flex', alignItems: 'stretch', background: 'rgba(0,0,0,0.55)', borderBottom: '1px solid rgba(255,255,255,0.07)', zIndex: 10 }}>
+          {/* Visibility toggle — leftmost */}
+          <button
+            onClick={toggleMapVisible}
+            title={mapVisible ? 'Hide map' : 'Show map'}
+            style={{ display: 'flex', alignItems: 'center', padding: '0 11px', background: 'transparent', border: 'none', borderRight: '1px solid rgba(255,255,255,0.07)', color: mapVisible ? '#c8733a' : 'rgba(255,255,255,0.35)', cursor: 'pointer', transition: 'color var(--transition)', flexShrink: 0 }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = mapVisible ? '#e8935a' : 'rgba(255,255,255,0.65)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = mapVisible ? '#c8733a' : 'rgba(255,255,255,0.35)' }}
+          >
+            {mapVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+          </button>
+          {maps.map(map => (
+            <div key={map.id}
+              onClick={e => { e.stopPropagation(); handleSelectMap(map) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px 0 12px', cursor: 'pointer', borderRight: '1px solid rgba(255,255,255,0.07)', borderBottom: currentMap?.id === map.id ? '2px solid #c8733a' : '2px solid transparent', background: currentMap?.id === map.id ? 'rgba(200,115,58,0.12)' : 'transparent', color: currentMap?.id === map.id ? '#c8733a' : 'rgba(255,255,255,0.45)', fontSize: 11, fontWeight: currentMap?.id === map.id ? 600 : 400, whiteSpace: 'nowrap', userSelect: 'none', transition: 'all var(--transition)', position: 'relative' }}
+              onMouseEnter={e => { if (currentMap?.id !== map.id) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)' }}
+              onMouseLeave={e => { if (currentMap?.id !== map.id) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+            >
+              <Map size={11} />
+              <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{map.name}</span>
+              {editMode && (
+                <button onClick={e => { e.stopPropagation(); setMenuOpenId(menuOpenId === map.id ? null : map.id) }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', padding: '0 2px', marginLeft: 2, borderRadius: 2 }}>
+                  <MoreHorizontal size={11} />
+                </button>
+              )}
+              {editMode && menuOpenId === map.id && (
+                <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 36, left: 0, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 130, zIndex: 100, overflow: 'hidden' }}>
+                  <button onClick={() => { setRenamingMap(map); setMenuOpenId(null) }} style={menuItemStyle}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                    <Pencil size={12} /> Rename
+                  </button>
+                  <button onClick={() => { handleReplaceMapImage(map); setMenuOpenId(null) }} style={menuItemStyle}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                    <ImageIcon size={12} /> Replace image
+                  </button>
+                  <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+                  <button onClick={() => { handleDeleteMap(map.id); setMenuOpenId(null) }} style={{ ...menuItemStyle, color: '#e05555' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                    <Trash2 size={12} /> Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {editMode && (
+            <button onClick={e => { e.stopPropagation(); setShowPicker(true) }} disabled={importing}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 12px', background: 'transparent', border: 'none', borderRight: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.3)', fontSize: 11, cursor: importing ? 'wait' : 'pointer', whiteSpace: 'nowrap', transition: 'color var(--transition)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.65)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.3)'}>
+              <Upload size={11} /> {importing ? 'Importing…' : 'Add map'}
+            </button>
+          )}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', padding: '0 12px', borderLeft: '1px solid rgba(255,255,255,0.07)' }}>
+            {editMode
+              ? <button onClick={e => { e.stopPropagation(); setEditMode(false); setSelectedPOI(null) }} style={{ background: 'rgba(200,115,58,0.2)', border: '1px solid rgba(200,115,58,0.4)', color: '#c8733a', borderRadius: 4, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}>Done</button>
+              : <button onClick={e => { e.stopPropagation(); setEditMode(true) }} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.55)', borderRadius: 4, padding: '3px 10px', fontSize: 11, cursor: 'pointer', transition: 'all var(--transition)' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#fff'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.3)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.55)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.12)' }}>
+                  Edit
+                </button>
+            }
+          </div>
+        </div>
+
+        {/* Empty state */}
+        {maps.length === 0 && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: 'var(--text-muted)' }}>
+            <Map size={44} strokeWidth={1} color="var(--border-light)" />
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontFamily: 'var(--font-display)', color: 'var(--text-secondary)', marginBottom: 4 }}>No world map yet</div>
+              <div style={{ fontSize: 13 }}>Import a PNG or JPEG to get started</div>
+            </div>
+            <button className="btn btn-primary" onClick={e => { e.stopPropagation(); setShowPicker(true) }} disabled={importing}
+              style={{ background: '#c8733a', borderColor: '#c8733a' }}>
+              <Upload size={14} /> {importing ? 'Importing…' : 'Import Map'}
+            </button>
+          </div>
+        )}
+
+        {/* Transformable content layer (below tab strip) */}
+        {maps.length > 0 && (
+          <div style={{ position: 'absolute', top: 34, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
+            <div style={{
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+              transformOrigin: '0 0',
+            }}>
+              {imageUrl && (
+                <img
+                  src={imageUrl}
+                  alt={currentMap?.name}
+                  onLoad={e => setImgNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }}
+                  draggable={false}
+                />
+              )}
+              {imageUrl && imgBoundsRef.current && (
+              <div style={{ position: 'absolute', left: imgBoundsRef.current.left, top: imgBoundsRef.current.top, width: imgBoundsRef.current.w, height: imgBoundsRef.current.h }}>
+              {pois.map(poi => (
+                <div key={poi.id} data-poi="1"
+                  style={{ position: 'absolute', left: `${poi.x}%`, top: `${poi.y}%`, transform: 'translate(-50%, -50%)', zIndex: 5 }}
+                  onMouseDown={e => handlePOIMouseDown(poi, e)}
+                  onMouseEnter={() => setHoveredPoiId(poi.id)}
+                  onMouseLeave={() => setHoveredPoiId(null)}
+                  onClick={e => handlePOIClick(poi, e)}
+                >
+                  {hoveredPoiId === poi.id && !editingPOI && (
+                    <div style={{
+                      position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+                      marginBottom: 5, whiteSpace: 'nowrap',
+                      background: 'rgba(0,0,0,0.75)', color: '#fff',
+                      fontSize: 10, padding: '2px 7px', borderRadius: 3,
+                      pointerEvents: 'none',
+                    }}>{poi.label}</div>
+                  )}
+                  <div style={{
+                    width: 11, height: 11, borderRadius: '50%',
+                    background: poi.color || '#c8a84b',
+                    border: '1.5px solid rgba(0,0,0,0.5)',
+                    cursor: editMode ? 'move' : 'pointer',
+                    boxShadow: selectedPOI?.id === poi.id ? `0 0 0 4px ${poi.color || '#c8a84b'}44` : 'none',
+                    transition: 'box-shadow 0.15s',
+                  }} />
+                </div>
+              ))}
+              </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Popup — rendered outside the transform layer in map-panel space */}
+        {selectedPOI && popupPos && !editingPOI && (
+          <div style={{ position: 'absolute', top: popupPos.top, left: popupPos.left, zIndex: 20 }}
+            onClick={e => e.stopPropagation()}>
+            <HubPOIPopup
+              poi={selectedPOI}
+              links={parseHubLinks((selectedPOI as any).hub_links || '[]')}
+              onClose={() => { setSelectedPOI(null); setPopupPos(null) }}
+              onEdit={() => setEditingPOI(selectedPOI)}
+              editMode={editMode}
+              onNavigateWiki={title => navigateToArticleByTitle(title)}
+              onNavigateSession={id => navigateToSessionById(id)}
+            />
+          </div>
+        )}
+
+        {/* Click outside popup closes it */}
+        {selectedPOI && !editingPOI && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 4 }}
+            onClick={() => { setSelectedPOI(null); setPopupPos(null) }} />
+        )}
+
+        {/* Zoom controls */}
+        {maps.length > 0 && mapVisible && (
+          <div style={{ position: 'absolute', bottom: 10, right: 10, zIndex: 15, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 4, padding: '4px 8px' }}
+            onMouseDown={e => e.stopPropagation()}>
+            <button onClick={zoomOut} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 2px', fontWeight: 300 }}>−</button>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 36, textAlign: 'center' }}>{Math.round(scale * 100)}%</span>
+            <button onClick={zoomIn} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 2px', fontWeight: 300 }}>+</button>
+            <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.12)', margin: '0 2px' }} />
+            <button onClick={resetView} title="Reset view" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0 2px' }}>
+              <Maximize size={11} />
+            </button>
+          </div>
+        )}
+
+        {/* Edit hint */}
+        {editMode && (
+          <div style={{ position: 'absolute', bottom: 10, left: 12, fontSize: 10, color: 'rgba(255,255,255,0.35)', pointerEvents: 'none', userSelect: 'none', zIndex: 15 }}>
+            Click to place · drag to move · scroll to zoom
+          </div>
+        )}
+      </div>
+
+      {/* Modals */}
+      {showPicker && currentCampaign && (
+        <MapPickerModal
+          campaignId={currentCampaign.id}
+          onPickExisting={(result: { path: string; name: string }) => { setShowPicker(false); handleImport(result) }}
+          onUploadNew={async () => {
+            setShowPicker(false)
+            setImporting(true)
+            const result = await window.api.importMapForCampaign(currentCampaign.id)
+            if (result) await handleImport(result)
+            setImporting(false)
+          }}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+
+      {renamingMap && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setRenamingMap(null)}>
+          <div className="modal">
+            <div className="modal-title">Rename map</div>
+            <div className="input-group">
+              <label className="input-label">Name</label>
+              <input className="input" defaultValue={renamingMap.name} autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') handleRenameMap(renamingMap, (e.target as HTMLInputElement).value) }}
+                id="rename-map-input" />
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setRenamingMap(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => {
+                const val = (document.getElementById('rename-map-input') as HTMLInputElement)?.value || ''
+                handleRenameMap(renamingMap, val)
+              }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingPOI && (
+        <HubPOIEditModal
+          poi={editingPOI}
+          links={parseHubLinks((editingPOI as any).hub_links || '[]')}
+          sessions={sessions}
+          articles={localArticles}
+          onSave={handleSavePOI}
+          onDelete={handleDeletePOI}
+          onClose={() => setEditingPOI(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Hub Card ───────────────────────────────────────────────────────────────────
+
+function HubCard({ icon, title, description, stat, onClick, accent = 'var(--gold)' }: {
+  icon: React.ReactNode; title: string; description: string; stat?: string; onClick: () => void; accent?: string
+}) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 16,
+        padding: '28px 24px',
+        background: hovered ? 'var(--bg-elevated)' : 'var(--bg-surface)',
+        border: `1px solid ${hovered ? accent : 'var(--border)'}`,
+        borderRadius: 'var(--radius-lg)', cursor: 'pointer', textAlign: 'left',
+        transition: 'all 180ms ease',
+        boxShadow: hovered ? `0 0 24px ${accent}18` : 'none',
+      }}
+    >
+      <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: `${accent}18`, border: `1px solid ${accent}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: accent, flexShrink: 0, transition: 'all 180ms ease' }}>
+        {icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, color: hovered ? accent : 'var(--text-primary)', letterSpacing: '0.04em', marginBottom: 5, transition: 'color 180ms ease' }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-ui)', lineHeight: 1.5 }}>
+          {description}
+        </div>
+      </div>
+      {stat && (
+        <div style={{ fontSize: 11, color: accent, fontFamily: 'var(--font-ui)', letterSpacing: '0.06em', opacity: 0.8 }}>
+          {stat}
+        </div>
+      )}
+    </button>
+  )
+}
+
+// ── ColorPicker ────────────────────────────────────────────────────────────────
+
 function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
       {ARC_COLORS.map(c => (
-        <button key={c} onClick={() => onChange(c)} style={{
-          width: 22, height: 22, borderRadius: '50%', background: c, padding: 0,
-          border: `2px solid ${value === c ? 'var(--text-primary)' : 'transparent'}`,
-          cursor: 'pointer', transition: 'border 120ms ease',
-        }} />
+        <button key={c} onClick={() => onChange(c)} style={{ width: 22, height: 22, borderRadius: '50%', background: c, padding: 0, border: `2px solid ${value === c ? 'var(--text-primary)' : 'transparent'}`, cursor: 'pointer', transition: 'border 120ms ease' }} />
       ))}
     </div>
   )
 }
+
+// ── Arc Modals ─────────────────────────────────────────────────────────────────
 
 function CreateArcModal({ onClose }: { onClose: () => void }) {
   const { createArc } = useStore()
@@ -41,10 +965,8 @@ function CreateArcModal({ onClose }: { onClose: () => void }) {
   const [color, setColor] = useState(ARC_COLORS[0])
   const [saving, setSaving] = useState(false)
   const handleSubmit = async () => {
-    if (!name.trim()) return
-    setSaving(true)
-    await createArc({ name: name.trim(), color })
-    onClose()
+    if (!name.trim()) return; setSaving(true)
+    await createArc({ name: name.trim(), color }); onClose()
   }
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -54,8 +976,7 @@ function CreateArcModal({ onClose }: { onClose: () => void }) {
           <div className="input-group">
             <label className="input-label">Arc Name</label>
             <input className="input" placeholder="Northern Expedition…" value={name}
-              onChange={e => setName(e.target.value)} autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
+              onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
           </div>
           <div className="input-group">
             <label className="input-label">Colour</label>
@@ -79,10 +1000,8 @@ function EditArcModal({ arc, onClose }: { arc: Arc; onClose: () => void }) {
   const [color, setColor] = useState(arc.color)
   const [saving, setSaving] = useState(false)
   const handleSubmit = async () => {
-    if (!name.trim()) return
-    setSaving(true)
-    await updateArc(arc.id, { name: name.trim(), color })
-    onClose()
+    if (!name.trim()) return; setSaving(true)
+    await updateArc(arc.id, { name: name.trim(), color }); onClose()
   }
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -91,8 +1010,7 @@ function EditArcModal({ arc, onClose }: { arc: Arc; onClose: () => void }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="input-group">
             <label className="input-label">Arc Name</label>
-            <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
+            <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
           </div>
           <div className="input-group">
             <label className="input-label">Colour</label>
@@ -110,76 +1028,6 @@ function EditArcModal({ arc, onClose }: { arc: Arc; onClose: () => void }) {
   )
 }
 
-function CreateSessionModal({ defaultArcId, onClose }: { defaultArcId: number | null; onClose: () => void }) {
-  const { sessions, arcs, createSession, currentCampaign, lastUsedArcId, setLastUsedArcId } = useStore()
-  const [name, setName] = useState('')
-  const [sessionSub, setSessionSub] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [arcId, setArcId] = useState<number | null>(() => {
-    if (defaultArcId !== null) return defaultArcId
-    if (currentCampaign) {
-      const lastId = lastUsedArcId[currentCampaign.id]
-      if (lastId && arcs.some(a => a.id === lastId)) return lastId
-    }
-    return arcs.find(a => a.is_default)?.id ?? null
-  })
-  const nextNumber = (sessions.length > 0 ? Math.max(...sessions.map(s => s.session_number)) : 0) + 1
-  const today = new Date().toISOString().slice(0, 10)
-  const subClean = sessionSub.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 3)
-  const isDuplicate = sessions.some(s => s.session_number === nextNumber && s.session_sub === subClean)
-  const PLACEHOLDERS = ['The Road to Neverwinter…', 'The Battle of Helm\'s Deep…', 'The Goblin King\'s Lair…', 'Descent into the Underdark…']
-  const randomPlaceholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)]
-  const handleSubmit = async () => {
-    if (!name.trim() || isDuplicate) return
-    setSaving(true)
-    if (currentCampaign && arcId !== null) setLastUsedArcId(currentCampaign.id, arcId)
-    await createSession({ name: name.trim(), session_number: nextNumber, session_sub: subClean, arc_id: arcId, date: today })
-    onClose()
-  }
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">New Session</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-            <div className="input-group" style={{ flex: '0 0 80px' }}>
-              <label className="input-label">Session #</label>
-              <input className="input" type="number" value={nextNumber} readOnly style={{ textAlign: 'center', color: 'var(--gold)', fontWeight: 600 }} />
-            </div>
-            <div className="input-group" style={{ flex: '0 0 72px' }}>
-              <label className="input-label">Sub (opt.)</label>
-              <input className="input" placeholder="a, b…" value={sessionSub}
-                onChange={e => setSessionSub(e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3))}
-                style={{ textAlign: 'center' }} />
-            </div>
-          </div>
-          {isDuplicate && <div style={{ fontSize: 12, color: '#e05555' }}>Session {nextNumber}{subClean} already exists</div>}
-          <div className="input-group">
-            <label className="input-label">Session Name</label>
-            <input className="input" placeholder={`Session ${nextNumber}${subClean}: ${randomPlaceholder}`}
-              value={name} onChange={e => setName(e.target.value)} autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
-          </div>
-          {arcs.length > 1 && (
-            <div className="input-group">
-              <label className="input-label">Arc</label>
-              <select className="input" value={arcId ?? ''} onChange={e => setArcId(e.target.value ? parseInt(e.target.value) : null)}>
-                {arcs.map(a => <option key={a.id} value={a.id}>{a.name}{a.is_default ? ' (default)' : ''}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving || isDuplicate}>
-            {saving ? 'Creating…' : 'Create Session'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function EditSessionModal({ session, onClose }: { session: Session; onClose: () => void }) {
   const { updateSession, sessions, arcs } = useStore()
   const [name, setName] = useState(session.name)
@@ -190,14 +1038,16 @@ function EditSessionModal({ session, onClose }: { session: Session; onClose: () 
   const [saving, setSaving] = useState(false)
   const subClean = sessionSub.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 3)
   const isDuplicate = sessions.some(s => s.id !== session.id && s.session_number === sessionNumber && s.session_sub === subClean)
+
   const handleSubmit = async () => {
     if (!name.trim() || isDuplicate) return
     setSaving(true)
     try {
       await updateSession(session.id, { name: name.trim(), session_number: sessionNumber, session_sub: subClean, arc_id: arcId, date: date || null })
       onClose()
-    } catch (e) { setSaving(false) }
+    } catch { setSaving(false) }
   }
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
@@ -250,34 +1100,85 @@ function EditSessionModal({ session, onClose }: { session: Session; onClose: () 
   )
 }
 
-function SessionMenu({ session, onEdit }: { session: Session; onEdit: () => void }) {
+// ── Arc / Session row components ──────────────────────────────────
+function SessionRow({ session, arc }: { session: Session; arc: Arc }) {
   const { selectSession, deleteSession } = useStore()
-  const [open, setOpen] = useState(false)
-  const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
+
   useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false) }
+    if (!menuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  }, [menuOpen])
+
   return (
-    <div ref={menuRef} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
-      <button className="btn btn-ghost btn-icon btn-sm" onClick={e => { e.stopPropagation(); setOpen(o => !o) }} style={{ color: 'var(--text-muted)' }}>
-        <MoreHorizontal size={15} />
-      </button>
-      {open && (
-        <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 140, zIndex: 50, overflow: 'hidden' }}>
-          <button onClick={() => { selectSession(session); setOpen(false) }} style={menuItemStyle}><ChevronRight size={13} /> Select</button>
-          <button onClick={() => { onEdit(); setOpen(false) }} style={menuItemStyle}><Pencil size={13} /> Edit</button>
-          <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-          <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteSession(session.id); setOpen(false) }) }}
-            style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}>
-            <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
-          </button>
+    <>
+      <div
+        onClick={() => selectSession(session)}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', cursor: 'pointer', transition: 'all 120ms ease', position: 'relative' }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = arc.color; (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)' }}
+      >
+        <div style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', background: `${arc.color}18`, border: `1px solid ${arc.color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Scroll size={13} color={arc.color} />
         </div>
-      )}
-    </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, color: arc.color, letterSpacing: '0.04em' }}>
+              {session.session_number}{session.session_sub}
+            </span>
+            <span style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {session.name}
+            </span>
+          </div>
+          
+          {session.date && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2, color: 'var(--text-muted)', fontSize: 11 }}>
+              <Calendar size={10} />
+              {new Date(session.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </div>
+          )}
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)' }}>
+            <Map size={10} /> {(session as any).map_count ?? 0} maps
+          </span>
+        </div>
+
+        <div ref={menuRef} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+          <button
+            onClick={e => { e.stopPropagation(); setMenuOpen(o => !o) }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: '3px 2px', borderRadius: 3 }}>
+            <MoreHorizontal size={14} />
+          </button>
+          {menuOpen && (
+            <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 140, zIndex: 50, overflow: 'hidden' }}>
+              <button onClick={() => { selectSession(session); setMenuOpen(false) }} style={menuItemStyle}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                <ChevronRight size={13} /> Select
+              </button>
+              <button onClick={() => { setEditOpen(true); setMenuOpen(false) }} style={menuItemStyle}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                <Pencil size={13} /> Edit
+              </button>
+              <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteSession(session.id); setMenuOpen(false) }) }}
+                style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+      {editOpen && <EditSessionModal session={session} onClose={() => setEditOpen(false)} />}
+    </>
   )
 }
 
@@ -288,7 +1189,9 @@ function ArcMenu({ arc, onEdit }: { arc: Arc; onEdit: () => void }) {
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
-    const handler = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false) }
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
+    }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
@@ -299,12 +1202,18 @@ function ArcMenu({ arc, onEdit }: { arc: Arc; onEdit: () => void }) {
       </button>
       {open && (
         <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 140, zIndex: 50, overflow: 'hidden' }}>
-          <button onClick={() => { onEdit(); setOpen(false) }} style={menuItemStyle}><Pencil size={13} /> Rename</button>
+          <button onClick={() => { onEdit(); setOpen(false) }} style={menuItemStyle}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+            <Pencil size={13} /> Rename
+          </button>
           {!arc.is_default && (
             <>
               <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
               <button onClick={() => triggerDelete(() => { deleteArc(arc.id); setOpen(false) })}
-                style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}>
+                style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
                 <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
               </button>
             </>
@@ -312,36 +1221,6 @@ function ArcMenu({ arc, onEdit }: { arc: Arc; onEdit: () => void }) {
         </div>
       )}
     </div>
-  )
-}
-
-function SessionCard({ session }: { session: Session }) {
-  const { selectSession } = useStore()
-  const [editOpen, setEditOpen] = useState(false)
-  return (
-    <>
-      <div className="card card-clickable" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 16 }} onClick={() => selectSession(session)}>
-        <div style={{ width: 44, height: 44, background: 'var(--bg-active)', border: '1px solid var(--border-gold)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'var(--font-display)', fontSize: session.session_sub ? 12 : 14, color: 'var(--gold)' }}>
-          {session.session_number}{session.session_sub}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--text-primary)', marginBottom: 4, letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {session.name}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, color: 'var(--text-muted)' }}>
-            {session.date && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Calendar size={11} />
-                {new Date(session.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </span>
-            )}
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Map size={11} /> {session.map_count ?? 0} maps</span>
-          </div>
-        </div>
-        <SessionMenu session={session} onEdit={() => setEditOpen(true)} />
-      </div>
-      {editOpen && <EditSessionModal session={session} onClose={() => setEditOpen(false)} />}
-    </>
   )
 }
 
@@ -356,7 +1235,8 @@ function ArcSection({ arc, sessions, sortAsc, onAddSession }: { arc: Arc; sessio
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px' }}>
-        <button onClick={() => setCollapsed(v => !v)} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', flex: 1, textAlign: 'left', padding: 0 }}>
+        <button onClick={() => setCollapsed(v => !v)}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', flex: 1, textAlign: 'left', padding: 0 }}>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: arc.color, flexShrink: 0 }} />
           <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, color: arc.color, letterSpacing: '0.04em' }}>{arc.name}</span>
           {arc.is_default && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-ui)' }}>default</span>}
@@ -373,7 +1253,7 @@ function ArcSection({ arc, sessions, sortAsc, onAddSession }: { arc: Arc; sessio
             <div style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
               No sessions in this arc yet
             </div>
-          ) : sorted.map(s => <SessionCard key={s.id} session={s} />)}
+          ) : sorted.map(s => <SessionRow key={s.id} session={s} arc={arc} />)}
           <button onClick={() => onAddSession(arc.id)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'none', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', transition: 'all 120ms ease' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = arc.color; (e.currentTarget as HTMLElement).style.color = arc.color }}
@@ -387,49 +1267,73 @@ function ArcSection({ arc, sessions, sortAsc, onAddSession }: { arc: Arc; sessio
   )
 }
 
-function HubCard({ icon, title, description, stat, onClick, accent = 'var(--gold)' }: {
-  icon: React.ReactNode; title: string; description: string; stat?: string; onClick: () => void; accent?: string
-}) {
-  const [hovered, setHovered] = useState(false)
+// ── Create Session Modal ───────────────────────────────────────────────────────
+
+function CreateSessionModal({ defaultArcId, onClose }: { defaultArcId: number | null; onClose: () => void }) {
+  const { createSession, arcs, lastUsedArcId, currentCampaign, sessions } = useStore()
+  const [name, setName] = useState('')
+  const [sessionNumber, setSessionNumber] = useState(() => {
+    const nums = sessions.map(s => s.session_number)
+    return nums.length > 0 ? Math.max(...nums) + 1 : 1
+  })
+  const [sessionSub, setSessionSub] = useState('')
+  const [arcId, setArcId] = useState<number | null>(() => {
+    if (defaultArcId) return defaultArcId
+    if (currentCampaign && lastUsedArcId[currentCampaign.id]) return lastUsedArcId[currentCampaign.id]
+    return arcs.find(a => a.is_default)?.id ?? null
+  })
+  const [date, setDate] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async () => {
+    if (!name.trim()) return
+    setSaving(true)
+    await createSession({ name: name.trim(), session_number: sessionNumber, session_sub: sessionSub.trim(), arc_id: arcId, date: date || undefined })
+    onClose()
+  }
+
   return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 16,
-        padding: '28px 24px',
-        background: hovered ? 'var(--bg-elevated)' : 'var(--bg-surface)',
-        border: `1px solid ${hovered ? accent : 'var(--border)'}`,
-        borderRadius: 'var(--radius-lg)', cursor: 'pointer', textAlign: 'left',
-        transition: 'all 180ms ease',
-        boxShadow: hovered ? `0 0 24px ${accent}18` : 'none',
-      }}
-    >
-      <div style={{
-        width: 44, height: 44, borderRadius: 'var(--radius-md)',
-        background: `${accent}18`, border: `1px solid ${accent}40`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: accent, flexShrink: 0, transition: 'all 180ms ease',
-      }}>
-        {icon}
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-title">New Session</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '80px 60px 1fr', gap: 10 }}>
+            <div className="input-group">
+              <label className="input-label">Session #</label>
+              <input className="input" type="number" value={sessionNumber} onChange={e => setSessionNumber(parseInt(e.target.value) || 1)} min={1} />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Sub</label>
+              <input className="input" placeholder="a…" value={sessionSub} onChange={e => setSessionSub(e.target.value)} maxLength={4} />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Name</label>
+              <input className="input" placeholder="The Iron Gate…" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
+            </div>
+          </div>
+          <div className="input-group">
+            <label className="input-label">Arc</label>
+            <select className="input" value={arcId ?? ''} onChange={e => setArcId(e.target.value ? parseInt(e.target.value) : null)}>
+              {arcs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <div className="input-group">
+            <label className="input-label">Date <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+            <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
+            {saving ? 'Creating…' : 'Create Session'}
+          </button>
+        </div>
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, color: hovered ? accent : 'var(--text-primary)', letterSpacing: '0.04em', marginBottom: 5, transition: 'color 180ms ease' }}>
-          {title}
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-ui)', lineHeight: 1.5 }}>
-          {description}
-        </div>
-      </div>
-      {stat && (
-        <div style={{ fontSize: 11, color: accent, fontFamily: 'var(--font-ui)', letterSpacing: '0.06em', opacity: 0.8 }}>
-          {stat}
-        </div>
-      )}
-    </button>
+    </div>
   )
 }
+
+// ── Sessions View ──────────────────────────────────────────────────────────────
 
 function SessionsView({ onBack }: { onBack: () => void }) {
   const { currentCampaign, sessions, arcs } = useStore()
@@ -449,6 +1353,7 @@ function SessionsView({ onBack }: { onBack: () => void }) {
   const sortedArcs = [...arcs].sort((a, b) => a.name.localeCompare(b.name))
   const sessionsForArc = (arcId: number) =>
     sessions.filter(s => s.arc_id === arcId || (s.arc_id === null && arcId === defaultArc?.id))
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ padding: '20px 32px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -457,8 +1362,9 @@ function SessionsView({ onBack }: { onBack: () => void }) {
             <button onClick={onBack} className="btn btn-ghost btn-sm" style={{ color: 'var(--text-muted)', gap: 6 }}>
               <ArrowLeft size={14} /> Back
             </button>
-            <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
-            <h2 style={{ fontSize: 20, letterSpacing: '0.04em' }}>Sessions</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 20, letterSpacing: '0.04em', color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
+              <Scroll size={20} color="var(--gold)" /> Sessions
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn" onClick={() => setCreateArcOpen(true)}><Layers size={15} /> New Arc</button>
@@ -507,19 +1413,19 @@ function SessionsView({ onBack }: { onBack: () => void }) {
 // ── Campaign Detail Page ───────────────────────────────────────────────────────
 
 export default function CampaignDetailPage() {
-  const { currentCampaign, sessions, setView } = useStore()
+  const { currentCampaign, sessions, articles, setView, setRelationsOpenWebId } = useStore()
   const { campaignSubView: subView, setCampaignSubView: setSubView } = useStore()
   const [noteCount, setNoteCount] = useState(0)
   const [articleCount, setArticleCount] = useState(0)
   const [lootCount, setLootCount] = useState(0)
-  const [worldMapCount, setWorldMapCount] = useState(0)
+  const [relationsCount, setRelationsCount] = useState(0)
 
   useEffect(() => {
     if (!currentCampaign) return
-    window.api.getDMNotesPages(currentCampaign.id).then(p => setNoteCount(p.length))
-    window.api.getArticlesList({ campaignId: currentCampaign.id }).then(a => setArticleCount(a.length))
-    window.api.getLootTables(currentCampaign.id).then(t => setLootCount(t.length))
-    window.api.getMapsForCampaign(currentCampaign.id).then(m => setWorldMapCount(m.length))
+    window.api.getDMNotesPages(currentCampaign.id).then((p: any[]) => setNoteCount(p.length))
+    window.api.getArticlesList({ campaignId: currentCampaign.id }).then((a: any[]) => setArticleCount(a.length))
+    window.api.getLootTables(currentCampaign.id).then((t: any[]) => setLootCount(t.length))
+    window.api.getRelationWebs(currentCampaign.id).then((w: any[]) => setRelationsCount(w.length))
   }, [currentCampaign?.id])
 
   if (!currentCampaign) return null
@@ -530,62 +1436,54 @@ export default function CampaignDetailPage() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ padding: '28px 40px 24px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+      {/* Header */}
+      <div style={{ padding: '28px 40px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <span className="badge badge-gold">{currentCampaign.system}</span>
         </div>
-        <h1 style={{ fontSize: 28, letterSpacing: '0.04em', marginBottom: 6 }}>{currentCampaign.name}</h1>
-        {currentCampaign.description && (
-          <p style={{ fontSize: 14, fontFamily: 'var(--font-ui)', color: 'var(--text-secondary)', lineHeight: 1.5, maxWidth: 560 }}>
-            {currentCampaign.description}
-          </p>
-        )}
+        <h1 style={{ fontSize: 28, letterSpacing: '0.04em' }}>{currentCampaign.name}</h1>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '40px' }}>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: 20 }}>
+      {/* Scrollable body */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '28px 40px 40px' }}>
+
+        {/* World map embedded */}
+        <HubWorldMap />
+
+        {/* Hub cards */}
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: 16 }}>
           Where to?
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
           <HubCard
-            icon={<Scroll size={20} />}
-            title="Sessions"
+            icon={<Scroll size={20} />} title="Sessions"
             description="Plan and run your sessions, manage maps, points of interest, and combat encounters."
             stat={sessions.length > 0 ? `${sessions.length} session${sessions.length !== 1 ? 's' : ''}` : undefined}
-            onClick={() => setSubView('sessions')}
-            accent="var(--gold)"
+            onClick={() => setSubView('sessions')} accent="var(--gold)"
           />
           <HubCard
-            icon={<BookOpen size={20} />}
-            title="Wiki"
+            icon={<BookOpen size={20} />} title="Wiki"
             description="Browse and edit your campaign compendium — characters, locations, factions, lore, and more."
             stat={articleCount > 0 ? `${articleCount} article${articleCount !== 1 ? 's' : ''}` : undefined}
-            onClick={() => setView('wiki')}
-            accent="#5b9fe8"
+            onClick={() => setView('wiki')} accent="#5b9fe8"
           />
           <HubCard
-            icon={<Sparkles size={20} />}
-            title="DM Notes"
+            icon={<Sparkles size={20} />} title="DM Notes"
             description="A freeform scratchpad with wiki, session, and spell links for planning on the fly."
             stat={noteCount > 0 ? `${noteCount} note${noteCount !== 1 ? 's' : ''}` : undefined}
-            onClick={() => setView('dm-notes')}
-            accent="#9b7de8"
+            onClick={() => setView('dm-notes')} accent="#9b7de8"
           />
           <HubCard
-            icon={<ShoppingBag size={20} />}
-            title="Loot Tables"
+            icon={<ShoppingBag size={20} />} title="Loot Tables"
             description="Manage reusable loot tables for creatures and vendors. Edit master tables that update all references live."
             stat={lootCount > 0 ? `${lootCount} table${lootCount !== 1 ? 's' : ''}` : undefined}
-            onClick={() => setView('loot-tables')}
-            accent="#49c185"
+            onClick={() => setView('loot-tables')} accent="#49c185"
           />
           <HubCard
-            icon={<Map size={20} />}
-            title="World Map"
-            description="Place your campaign world on a map. Pin locations, link them to wiki articles, and track where your party has been."
-            stat={worldMapCount > 0 ? `${worldMapCount} map${worldMapCount !== 1 ? 's' : ''}` : undefined}
-            onClick={() => setView('world-map')}
-            accent="#c8733a"
+            icon={<Network size={20} />} title="Relations"
+            description="Map relationships between characters, factions, and entities. Build family trees, hierarchies, and political webs."
+            stat={relationsCount > 0 ? `${relationsCount} web${relationsCount !== 1 ? 's' : ''}` : undefined}
+            onClick={() => setView('relations')} accent="#b07de8"
           />
         </div>
       </div>

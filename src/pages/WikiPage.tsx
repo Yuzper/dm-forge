@@ -5,7 +5,8 @@ import {
   BookOpen, Plus, Search, Trash2, Check, MapPin, User, Package,
   ScrollText, Users, Landmark, FileText, X, ChevronLeft, Calendar,
   MoreHorizontal, Tag, Image as ImageIcon, Link, PawPrint, StickyNote,
-  ArrowLeft, ShoppingBag, Pencil, Map, Upload
+  ArrowLeft, ShoppingBag, Pencil, Map, Upload,
+  Network
 } from 'lucide-react'
 import RichEditor from '../components/RichEditor'
 import type { Article, ArticleSummary, ArticleType, MasterLootTable, LootItem } from '../types'
@@ -46,6 +47,7 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Attitude:    ['Friendly', 'Neutral', 'Hostile'],
     Attitude_Towards_Party: ['Friendly', 'Neutral', 'Hostile', 'Unknown'],
     Age:         [],
+    Species:     [],
     Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned'],
     Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Location:    [],
@@ -59,6 +61,7 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Royalty:     ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
     Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Age:         [],
+    Species:     [],
     Location:    [],
     Faction:     [],
     Religion:    [],
@@ -383,7 +386,114 @@ function ArticleMenu({ onDelete }: { onDelete: () => void }) {
   )
 }
 
-// ─── Loot section shared renderer — uses LootTableView ────────────────────────
+// ── Article Relations Panel ────────────────────────────────────────────────────
+
+interface ArticleRelationRow {
+  edge_id: number
+  web_id: number
+  web_name: string
+  from_node_id: number
+  to_node_id: number
+  from_article_id: number | null
+  to_article_id: number | null
+  from_article_title: string | null
+  to_article_title: string | null
+  from_node_label: string
+  to_node_label: string
+  from_vitality: string | null
+  to_vitality: string | null
+  label_from: string
+  label_to: string
+}
+
+function ArticleRelationsPanel({
+  articleId,
+  onOpenWeb,
+}: {
+  articleId: number
+  onOpenWeb: (webId: number) => void
+}) {
+  const { currentCampaign } = useStore()
+  const [rows, setRows] = useState<ArticleRelationRow[]>([])
+
+  useEffect(() => {
+    if (!currentCampaign || !articleId) return
+    ;(window as any).api.getArticleRelations(articleId, currentCampaign.id).then(setRows)
+  }, [articleId, currentCampaign?.id])
+
+  if (rows.length === 0) return null
+
+  // Group by web
+  const byWeb = rows.reduce<Record<number, { webName: string; rows: ArticleRelationRow[] }>>(
+    (acc, row) => {
+      if (!acc[row.web_id]) acc[row.web_id] = { webName: row.web_name, rows: [] }
+      acc[row.web_id].rows.push(row)
+      return acc
+    },
+    {}
+  )
+
+  return (
+    <div style={{ borderBottom: '1px solid var(--border)' }}>
+      <div style={{ padding: '12px 16px 4px' }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+          Relations
+        </div>
+      </div>
+      {Object.entries(byWeb).map(([webIdStr, { webName, rows: webRows }]) => (
+        <div key={webIdStr}>
+          <button
+            onClick={() => onOpenWeb(Number(webIdStr))}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 5, padding: '4px 16px 3px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderTop: '1px solid var(--border-light)', transition: 'color var(--transition)', textAlign: 'left' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          >
+            <Network size={10} /> {webName}
+          </button>
+          {webRows.map(row => {
+            const isFrom = row.from_article_id === articleId
+            const otherName = isFrom
+              ? (row.to_article_title || row.to_node_label)
+              : (row.from_article_title || row.from_node_label)
+            const relationLabel = isFrom ? row.label_to : row.label_from
+            const otherVitality = isFrom ? row.to_vitality : row.from_vitality
+            const otherLinked = isFrom ? row.to_article_id !== null : row.from_article_id !== null
+
+            const vc = !otherLinked
+              ? 'transparent'
+              : !otherVitality
+              ? 'transparent'
+              : otherVitality === 'Alive' || otherVitality === 'Immortal'
+              ? '#3dbf7f'
+              : otherVitality === 'Dead'
+              ? '#e05555'
+              : '#8a8a8a'
+
+            return (
+              <div
+                key={row.edge_id}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 16px', cursor: 'default' }}
+              >
+                <div style={{
+                  width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                  background: vc,
+                  border: otherLinked && otherVitality ? 'none' : '1.5px dashed var(--border-light)',
+                }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: otherLinked ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: otherLinked ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                    {otherName}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{relationLabel}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ))}
+      <div style={{ height: 8 }} />
+    </div>
+  )
+}
 
 // ─── Article Editor ────────────────────────────────────────────────────────────
 
@@ -391,7 +501,7 @@ const STATBLOCK_TYPES: ArticleType[] = ['creature', 'character', 'playerCharacte
 const LOOT_TYPES: ArticleType[] = ['creature', 'character', 'playerCharacter', 'vendor']
 
 function ArticleEditor({ article, onBack }: { article: Article; onBack: () => void }) {
-  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles } = useStore()
+  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, setView, setRelationsOpenWebId } = useStore()
 
   const [factionNames, setFactionNames]       = useState<string[]>([])
   const [organizationNames, setOrgNames]      = useState<string[]>([])
@@ -843,6 +953,14 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               </div>
             </div>
 
+            <ArticleRelationsPanel
+              articleId={article.id}
+              onOpenWeb={(webId) => {
+                setRelationsOpenWebId(webId)   // ← tell RelationsPage which web to open
+                setView('relations')
+              }}
+            />
+
             {backlinks.length > 0 && (
               <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
                 <div style={{ ...sidebarSectionLabel, display: 'flex', alignItems: 'center', gap: 5 }}><Link size={11} /> Linked from</div>
@@ -864,8 +982,8 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
             )}
 
             <div style={{ padding: 16, fontSize: 11, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span>Created {new Date(article.created_at).toLocaleDateString()}</span>
-              <span>Updated {new Date(article.updated_at).toLocaleDateString()}</span>
+              <span>Created {new Date(article.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              <span>Updated {new Date(article.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
             </div>
           </div>
         </div>

@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('api', {
   updateMap:          (id: number, data: any) => ipcRenderer.invoke('maps:update', id, data),
   deleteMap:          (id: number)         => ipcRenderer.invoke('maps:delete', id),
   importMapImage:     (sessionId: number)  => ipcRenderer.invoke('maps:import-image', sessionId),
+  replaceMapImage:    (...args)            => ipcRenderer.invoke('maps:replace-image', ...args),
   importMapForArticle:(articleId: number)  => ipcRenderer.invoke('maps:import-for-article', articleId),
   getCampaignMapImages: (campaignId: number) => ipcRenderer.invoke('maps:get-campaign-images', campaignId),
   getMapsForCampaign:   (campaignId: number) => ipcRenderer.invoke('maps:get-by-campaign', campaignId),
@@ -121,4 +122,18 @@ contextBridge.exposeInMainWorld('api', {
                         ipcRenderer.invoke('loot-tables:roll', tableId, extraItemsJson),
   resetDefaultTables: (campaignId: number) =>
                         ipcRenderer.invoke('loot-tables:reset-defaults', campaignId),
+
+  // Relation Webs
+  getRelationWebs:     (...args) => ipcRenderer.invoke('relation-webs:get-all', ...args),
+  createRelationWeb:   (...args) => ipcRenderer.invoke('relation-webs:create', ...args),
+  updateRelationWeb:   (...args) => ipcRenderer.invoke('relation-webs:update', ...args),
+  deleteRelationWeb:   (...args) => ipcRenderer.invoke('relation-webs:delete', ...args),
+  getRelationWebData:  (...args) => ipcRenderer.invoke('relation-webs:get-data', ...args),
+  createRelationNode:  (...args) => ipcRenderer.invoke('relation-nodes:create', ...args),
+  updateRelationNode:  (...args) => ipcRenderer.invoke('relation-nodes:update', ...args),
+  deleteRelationNode:  (...args) => ipcRenderer.invoke('relation-nodes:delete', ...args),
+  createRelationEdge:  (...args) => ipcRenderer.invoke('relation-edges:create', ...args),
+  updateRelationEdge:  (...args) => ipcRenderer.invoke('relation-edges:update', ...args),
+  deleteRelationEdge:  (...args) => ipcRenderer.invoke('relation-edges:delete', ...args),
+  getArticleRelations: (...args) => ipcRenderer.invoke('relation-edges:get-for-article', ...args),
 })

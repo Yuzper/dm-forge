@@ -217,6 +217,35 @@ function initDatabase() {
       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS relation_webs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      name        TEXT    NOT NULL DEFAULT 'New Web',
+      description TEXT    NOT NULL DEFAULT '',
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS relation_nodes (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      web_id     INTEGER NOT NULL REFERENCES relation_webs(id) ON DELETE CASCADE,
+      article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+      label      TEXT    NOT NULL DEFAULT 'New node',
+      pos_x      REAL    NOT NULL DEFAULT 100,
+      pos_y      REAL    NOT NULL DEFAULT 100,
+      created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS relation_edges (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      web_id       INTEGER NOT NULL REFERENCES relation_webs(id) ON DELETE CASCADE,
+      from_node_id INTEGER NOT NULL REFERENCES relation_nodes(id) ON DELETE CASCADE,
+      to_node_id   INTEGER NOT NULL REFERENCES relation_nodes(id) ON DELETE CASCADE,
+      label_from   TEXT    NOT NULL DEFAULT '',
+      label_to     TEXT    NOT NULL DEFAULT '',
+      created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
   `)
 
   // ── Migrations for existing databases ────────────────────────────────────────
@@ -240,6 +269,10 @@ function initDatabase() {
   }
   if (!poiCols.some(c => c.name === 'loot_table_id')) {
     db.exec(`ALTER TABLE pois ADD COLUMN loot_table_id INTEGER REFERENCES loot_tables(id) ON DELETE SET NULL`)
+  }
+
+  if (!poiCols.some(c => c.name === 'hub_links')) {
+    db.exec(`ALTER TABLE pois ADD COLUMN hub_links TEXT NOT NULL DEFAULT '[]'`)
   }
 
   const creatureCols = db.pragma('table_info(combat_creatures)') as { name: string }[]
@@ -575,6 +608,20 @@ function registerIPC(imagesPath: string) {
     const name = path.basename(srcPath, path.extname(srcPath))
     return { path: `images/${filename}`, name }
   })
+
+  ipcMain.handle('maps:replace-image', async (_e, mapId: number) => {
+  if (!mainWindow) return null
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Replacement Map Image',
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    properties: ['openFile'],
+  })
+  if (result.canceled || !result.filePaths.length) return null
+  const srcPath = result.filePaths[0]
+  const baseName = `map_${mapId}_replace_${Date.now()}`
+  const filename = processAndSaveImage(srcPath, imagesPath, baseName, 4000, 85)
+  return { path: `images/${filename}` }
+})
 
   ipcMain.handle('maps:import-for-article', async (_e, articleId: number) => {
     if (!mainWindow) return null
@@ -1121,6 +1168,179 @@ function registerIPC(imagesPath: string) {
   ipcMain.handle('loot-tables:reset-defaults', (_e, campaignId: number) => {
     db.prepare('DELETE FROM loot_tables WHERE campaign_id = ? AND is_default = 1').run(campaignId)
     return seedDefaultTables(campaignId)
+  })
+
+  // ── Relation Webs ─────────────────────────────────────────────────────────────
+
+  ipcMain.handle('relation-webs:get-all', (_e, campaignId: number) => {
+    return db.prepare(`
+      SELECT w.*,
+        (SELECT COUNT(*) FROM relation_nodes n WHERE n.web_id = w.id) AS node_count
+      FROM relation_webs w
+      WHERE w.campaign_id = ?
+      ORDER BY w.updated_at DESC
+    `).all(campaignId)
+  })
+
+  ipcMain.handle('relation-webs:create', (_e, data: any) => {
+    const result = db.prepare(`
+      INSERT INTO relation_webs (campaign_id, name, description)
+      VALUES (@campaign_id, @name, @description)
+    `).run({ description: '', ...data })
+    return db.prepare(`
+      SELECT w.*, 0 AS node_count FROM relation_webs w WHERE w.id = ?
+    `).get(result.lastInsertRowid)
+  })
+
+  ipcMain.handle('relation-webs:update', (_e, id: number, data: any) => {
+    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
+    db.prepare(`UPDATE relation_webs SET ${fields}, updated_at = datetime('now') WHERE id = @id`).run({ ...data, id })
+    return db.prepare(`
+      SELECT w.*, (SELECT COUNT(*) FROM relation_nodes n WHERE n.web_id = w.id) AS node_count
+      FROM relation_webs w WHERE w.id = ?
+    `).get(id)
+  })
+
+  ipcMain.handle('relation-webs:delete', (_e, id: number) => {
+    db.prepare('DELETE FROM relation_webs WHERE id = ?').run(id)
+  })
+
+  // Returns the full web + all its nodes (with joined article data) + all edges
+  ipcMain.handle('relation-webs:get-data', (_e, webId: number) => {
+    const nodes = db.prepare(`
+      SELECT n.id, n.web_id, n.article_id, n.label, n.pos_x, n.pos_y,
+             a.title AS article_title, a.article_type, a.tracks
+      FROM relation_nodes n
+      LEFT JOIN articles a ON a.id = n.article_id
+      WHERE n.web_id = ?
+      ORDER BY n.id
+    `).all(webId) as any[]
+
+    // Extract vitality from tracks JSON
+    const nodesWithVitality = nodes.map(n => {
+      let vitality: string | null = null
+      if (n.tracks) {
+        try {
+          const tracks = JSON.parse(n.tracks)
+          vitality = tracks.Vitality || null
+        } catch {}
+      }
+      return { ...n, vitality }   // ← keeps tracks (raw JSON string)
+    })
+
+    const edges = db.prepare(`
+      SELECT * FROM relation_edges WHERE web_id = ? ORDER BY id
+    `).all(webId)
+
+    return { nodes: nodesWithVitality, edges }
+  })
+
+  // ── Relation Nodes ────────────────────────────────────────────────────────────
+
+  ipcMain.handle('relation-nodes:create', (_e, data: any) => {
+    const result = db.prepare(`
+      INSERT INTO relation_nodes (web_id, article_id, label, pos_x, pos_y)
+      VALUES (@web_id, @article_id, @label, @pos_x, @pos_y)
+    `).run({ article_id: null, pos_x: 100, pos_y: 100, ...data })
+
+    // Touch web updated_at
+    db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(data.web_id)
+
+    const node = db.prepare(`
+      SELECT n.id, n.web_id, n.article_id, n.label, n.pos_x, n.pos_y,
+             a.title AS article_title, a.article_type, a.tracks
+      FROM relation_nodes n
+      LEFT JOIN articles a ON a.id = n.article_id
+      WHERE n.id = ?
+    `).get(result.lastInsertRowid) as any
+
+    let vitality: string | null = null
+    if (node?.tracks) {
+      try { vitality = JSON.parse(node.tracks).Vitality || null } catch {}
+    }
+    const { tracks: _t, ...rest } = node ?? {}
+    return { ...rest, vitality }
+  })
+
+  ipcMain.handle('relation-nodes:update', (_e, id: number, data: any) => {
+    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
+    db.prepare(`UPDATE relation_nodes SET ${fields} WHERE id = @id`).run({ ...data, id })
+
+    const node = db.prepare(`
+      SELECT n.id, n.web_id, n.article_id, n.label, n.pos_x, n.pos_y,
+             a.title AS article_title, a.article_type, a.tracks
+      FROM relation_nodes n
+      LEFT JOIN articles a ON a.id = n.article_id
+      WHERE n.id = ?
+    `).get(id) as any
+
+    if (node?.web_id) {
+      db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(node.web_id)
+    }
+
+    let vitality: string | null = null
+    if (node?.tracks) {
+      try { vitality = JSON.parse(node.tracks).Vitality || null } catch {}
+    }
+    const { tracks: _t, ...rest } = node ?? {}
+    return { ...rest, vitality }
+  })
+
+  ipcMain.handle('relation-nodes:delete', (_e, id: number) => {
+    db.prepare('DELETE FROM relation_edges WHERE from_node_id = ? OR to_node_id = ?').run(id, id)
+    db.prepare('DELETE FROM relation_nodes WHERE id = ?').run(id)
+  })
+
+  // ── Relation Edges ────────────────────────────────────────────────────────────
+
+  ipcMain.handle('relation-edges:create', (_e, data: any) => {
+    const result = db.prepare(`
+      INSERT INTO relation_edges (web_id, from_node_id, to_node_id, label_from, label_to)
+      VALUES (@web_id, @from_node_id, @to_node_id, @label_from, @label_to)
+    `).run({ label_from: '', label_to: '', ...data })
+    db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(data.web_id)
+    return db.prepare('SELECT * FROM relation_edges WHERE id = ?').get(result.lastInsertRowid)
+  })
+
+  ipcMain.handle('relation-edges:update', (_e, id: number, data: any) => {
+    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
+    db.prepare(`UPDATE relation_edges SET ${fields} WHERE id = @id`).run({ ...data, id })
+    return db.prepare('SELECT * FROM relation_edges WHERE id = ?').get(id)
+  })
+
+  ipcMain.handle('relation-edges:delete', (_e, id: number) => {
+    db.prepare('DELETE FROM relation_edges WHERE id = ?').run(id)
+  })
+
+  // Returns all edges involving a specific article (for the wiki sidebar panel)
+  ipcMain.handle('relation-edges:get-for-article', (_e, articleId: number, campaignId: number) => {
+    return (db.prepare(`
+      SELECT
+        e.id AS edge_id,
+        e.label_from, e.label_to,
+        e.from_node_id, e.to_node_id,
+        w.id AS web_id, w.name AS web_name,
+        fn.label AS from_node_label, fn.article_id AS from_article_id,
+        tn.label AS to_node_label, tn.article_id AS to_article_id,
+        fa.title AS from_article_title, fa.tracks AS from_tracks,
+        ta.title AS to_article_title, ta.tracks AS to_tracks
+      FROM relation_edges e
+      JOIN relation_nodes fn ON fn.id = e.from_node_id
+      JOIN relation_nodes tn ON tn.id = e.to_node_id
+      JOIN relation_webs w ON w.id = e.web_id
+      LEFT JOIN articles fa ON fa.id = fn.article_id
+      LEFT JOIN articles ta ON ta.id = tn.article_id
+      WHERE w.campaign_id = ?
+        AND (fn.article_id = ? OR tn.article_id = ?)
+      ORDER BY w.name, e.id
+    `).all(campaignId, articleId, articleId) as any[]).map(row => {
+      let fromVitality: string | null = null
+      let toVitality: string | null = null
+      try { fromVitality = JSON.parse(row.from_tracks || '{}').Vitality || null } catch {}
+      try { toVitality = JSON.parse(row.to_tracks || '{}').Vitality || null } catch {}
+      const { from_tracks, to_tracks, ...rest } = row
+      return { ...rest, from_vitality: fromVitality, to_vitality: toVitality }
+    })
   })
 }
 
