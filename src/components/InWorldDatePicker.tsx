@@ -244,6 +244,7 @@ interface InWorldDatePickerProps {
 export function InWorldDatePicker({ value, onChange, baseYear = 1507, label = 'In-world date' }: InWorldDatePickerProps) {
   const { currentCampaign, sessions, arcs } = useStore()
   const [open, setOpen] = useState(false)
+  const [dropUp, setDropUp] = useState(false)
   const [day, setDay] = useState<number>(() => parseInWorldDate(value)?.day ?? 0)
   const [year, setYear] = useState<number>(() => parseInWorldDate(value)?.year ?? baseYear)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -263,6 +264,15 @@ export function InWorldDatePicker({ value, onChange, baseYear = 1507, label = 'I
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
+
+  const handleToggleOpen = () => {
+    if (!open && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.bottom
+      setDropUp(spaceBelow < 340)
+    }
+    setOpen(o => !o)
+  }
 
   const commit = (d: number, y: number) => {
     const date: InWorldDate = { day: d, year: y, label: `Day ${d}, Year ${y}` }
@@ -294,7 +304,7 @@ export function InWorldDatePicker({ value, onChange, baseYear = 1507, label = 'I
     <div ref={containerRef} style={{ position: 'relative' }}>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={handleToggleOpen}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '7px 10px', background: 'var(--bg-elevated)', border: `1px solid ${open ? 'var(--border-gold)' : 'var(--border-light)'}`,
@@ -308,7 +318,7 @@ export function InWorldDatePicker({ value, onChange, baseYear = 1507, label = 'I
 
       {open && (
         <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
+          position: 'absolute', ...(dropUp ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }), left: 0, right: 0,
           background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
           borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
           zIndex: 200, overflow: 'hidden', minWidth: 360,
