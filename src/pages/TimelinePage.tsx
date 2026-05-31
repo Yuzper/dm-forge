@@ -4,6 +4,7 @@ import { useStore } from '../store/store'
 import { Clock, Plus, ArrowLeft, ExternalLink, Filter, ZoomIn, ZoomOut, Settings, X, Skull } from 'lucide-react'
 import { parseInWorldDate, InWorldDatePicker } from '../components/InWorldDatePicker'
 import type { ArticleType } from '../types'
+import { ARTICLE_TYPE_COLORS } from '../constants/articleTypes'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -22,13 +23,6 @@ const NS = 'http://www.w3.org/2000/svg'
 const ZOOM_LEVELS = [4, 6, 8, 10, 14, 18, 24, 32]
 const DEFAULT_ZOOM = 4 // index into ZOOM_LEVELS
 
-const TYPE_COLORS: Record<string, string> = {
-  character: '#5bbfb0', playerCharacter: '#49c185', creature: '#36a502',
-  location: '#c8a84b', faction: '#e88c3a', organization: '#e8a23a',
-  culture: '#4da6ff', religion: '#b07de8', item: '#9b7de8',
-  vendor: '#49c185', note: '#776d92', quest: '#5b9fe8',
-  event: '#e05555', lore: '#e05555', other: '#8a8a8a',
-}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -338,7 +332,7 @@ function DetailPanel({ item, baseYear, onOpenArticle, onOpenSession, onSaveSessi
 
   const color = item.kind === 'session' ? (item.arcColor ?? 'var(--gold)')
     : item.kind === 'death' ? '#9b7de8'
-    : (TYPE_COLORS[item.articleType ?? 'event'] ?? '#e05555')
+    : (ARTICLE_TYPE_COLORS[item.articleType ?? 'event'] ?? '#e05555')
 
   const dateLabel = item.dayEnd && item.dayEnd > item.day
     ? `Day ${item.day}–${item.dayEnd}, Year ${item.year} (${item.dayEnd - item.day + 1} days)`

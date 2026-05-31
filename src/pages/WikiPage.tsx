@@ -1,6 +1,7 @@
 // path: src/pages/WikiPage.tsx
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useStore } from '../store/store'
+import { useMenuClose } from '../hooks/useMenuClose'
 import {
   BookOpen, Plus, Search, Trash2, Check, MapPin, User, Package,
   ScrollText, Users, Landmark, FileText, X, ChevronLeft, Calendar,
@@ -182,13 +183,6 @@ const ALL_FILTERS = [
   { value: 'all', label: 'All', icon: BookOpen, color: 'var(--text-secondary)' },
   ...ARTICLE_TYPES,
 ]
-
-const menuItemStyle: React.CSSProperties = {
-  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-  padding: '8px 14px', background: 'none', border: 'none',
-  color: 'var(--text-secondary)', fontSize: 13, fontFamily: 'var(--font-ui)',
-  cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease',
-}
 
 const imgBtnStyle: React.CSSProperties = {
   background: 'rgba(0,0,0,0.6)', border: '1px solid var(--border-light)',
@@ -373,14 +367,7 @@ function ArticleMenu({ onDelete }: { onDelete: () => void }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) { setOpen(false); setConfirmDelete(false) }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  useMenuClose(open, menuRef, v => { if (!v) setConfirmDelete(false); setOpen(v) })
 
   return (
     <div ref={menuRef} style={{ position: 'relative' }}>
@@ -391,7 +378,7 @@ function ArticleMenu({ onDelete }: { onDelete: () => void }) {
         <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 140, zIndex: 50, overflow: 'hidden' }}>
           <button
             onClick={e => { e.stopPropagation(); if (!confirmDelete) { setConfirmDelete(true); return } onDelete(); setOpen(false) }}
-            style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}>
+            className="menu-item menu-item-danger" style={confirmDelete ? { color: '#ff7777' } : undefined}>
             <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
           </button>
         </div>

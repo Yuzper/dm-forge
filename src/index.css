@@ -193,6 +193,22 @@ select.input {
 }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
 
+/* ─── Menu item buttons ───────────────────────────────────────────────────── */
+.menu-item {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; background: none; border: none;
+  color: var(--text-secondary); font-size: 13px; font-family: var(--font-ui);
+  cursor: pointer; text-align: left; transition: all 120ms ease;
+}
+.menu-item:hover { background: var(--bg-hover); }
+.menu-item-danger { color: #e05555; }
+.menu-item-danger:hover { background: var(--bg-hover); color: #ff7777; }
+.menu-item-sm { padding: 7px 12px; font-size: 12px; }
+
+/* ─── Hover utilities ─────────────────────────────────────────────────────── */
+.hover-opacity:hover { opacity: 0.75; }
+.hover-text:hover { color: var(--text-primary) !important; }
+
 @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }

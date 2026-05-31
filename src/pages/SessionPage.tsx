@@ -10,6 +10,9 @@ import MapPickerModal from '../components/MapPickerModal'
 import { InWorldDatePicker, parseInWorldDate } from '../components/InWorldDatePicker'
 import type { GameMap, Session } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
+import { useMenuClose } from '../hooks/useMenuClose'
+import { parseDay } from '../utils/dates'
+import Modal from '../components/Modal'
 
 function EditMapModal({ map, onClose }: { map: GameMap; onClose: () => void }) {
   const { updateMap } = useStore()
@@ -28,35 +31,25 @@ function EditMapModal({ map, onClose }: { map: GameMap; onClose: () => void }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Rename Map</div>
-        <div className="input-group">
-          <label className="input-label">Map Name</label>
-          <input
-            className="input"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            autoFocus
-            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-          />
-        </div>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+    <Modal title="Rename Map" onClose={onClose}>
+      <div className="input-group">
+        <label className="input-label">Map Name</label>
+        <input
+          className="input"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          autoFocus
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+        />
       </div>
-    </div>
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </Modal>
   )
-}
-
-const menuItemStyle: React.CSSProperties = {
-  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-  padding: '8px 14px', background: 'none', border: 'none',
-  color: 'var(--text-secondary)', fontSize: 13, fontFamily: 'var(--font-ui)',
-  cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease',
 }
 
 function MapTabMenu({ map, onEdit, onReplace }: { map: GameMap; onEdit: () => void; onReplace: () => void }) {
@@ -67,16 +60,7 @@ function MapTabMenu({ map, onEdit, onReplace }: { map: GameMap; onEdit: () => vo
   const menuRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
 
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  useMenuClose(open, menuRef, setOpen)
 
   const handleOpen = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -118,17 +102,17 @@ function MapTabMenu({ map, onEdit, onReplace }: { map: GameMap; onEdit: () => vo
             overflow: 'hidden',
           }}
         >
-          <button onClick={() => { selectMap(map); setOpen(false) }} style={menuItemStyle}>
+          <button onClick={() => { selectMap(map); setOpen(false) }} className="menu-item">
             <Map size={13} /> Select
           </button>
-          <button onClick={() => { onEdit(); setOpen(false) }} style={menuItemStyle}>
+          <button onClick={() => { onEdit(); setOpen(false) }} className="menu-item">
             <Pencil size={13} /> Rename
           </button>
-          <button onClick={() => { onReplace(); setOpen(false) }} style={menuItemStyle}>
+          <button onClick={() => { onReplace(); setOpen(false) }} className="menu-item">
             <ImageIcon size={13} /> Replace image
           </button>
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-          <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteMap(map.id); setOpen(false) }) }} style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}>
+          <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteMap(map.id); setOpen(false) }) }} className={`menu-item menu-item-danger${confirmDelete ? '' : ''}`} style={confirmDelete ? { color: '#ff7777' } : undefined}>
             <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
           </button>
         </div>
@@ -152,23 +136,13 @@ function InWorldDateHeader({ session, readMode }: { session: Session; readMode: 
   const endDay: number | null = s.in_world_day_end ?? null
   const year: number = (currentCampaign as any)?.timeline_base_year ?? 1507
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  useMenuClose(open, containerRef, setOpen)
 
   const openEditor = () => {
     setStartRaw(startDay ? JSON.stringify({ day: startDay, year, label: '' }) : '')
     setEndRaw(endDay ? JSON.stringify({ day: endDay, year, label: '' }) : '')
     setOpen(true)
   }
-
-  const parseDay = (raw: string): number | null => { try { return JSON.parse(raw)?.day ?? null } catch { return null } }
 
   const handleStartChange = (raw: string) => {
     setStartRaw(raw)

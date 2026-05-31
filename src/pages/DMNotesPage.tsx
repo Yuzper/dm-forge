@@ -1,5 +1,7 @@
 // path: src/pages/DMNotesPage.tsx
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useMenuClose } from '../hooks/useMenuClose'
+import Modal from '../components/Modal'
 import { useStore } from '../store/store'
 import {
   Sparkles, Plus, Trash2, MoreHorizontal, FileText, Check,
@@ -40,13 +42,6 @@ const GROUP_COLORS = [
   '#c8a84b', '#e88c3a', '#e05555', '#8a8a8a',
 ]
 
-const menuItemStyle: React.CSSProperties = {
-  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-  padding: '7px 12px', background: 'none', border: 'none',
-  color: 'var(--text-secondary)', fontSize: 12, fontFamily: 'var(--font-ui)',
-  cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease',
-}
-
 // ── Create Group Modal ─────────────────────────────────────────────────────────
 
 function CreateGroupModal({ campaignId, onClose, onCreate }: {
@@ -67,46 +62,43 @@ function CreateGroupModal({ campaignId, onClose, onCreate }: {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">New Group</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="input-group">
-            <label className="input-label">Group Name</label>
-            <input
-              className="input"
-              placeholder="One-shot ideas…"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            />
-          </div>
-          <div className="input-group">
-            <label className="input-label">Colour</label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {GROUP_COLORS.map(c => (
-                <button
-                  key={c}
-                  onClick={() => setColor(c)}
-                  style={{
-                    width: 22, height: 22, borderRadius: '50%', background: c, padding: 0,
-                    border: `2px solid ${color === c ? 'var(--text-primary)' : 'transparent'}`,
-                    cursor: 'pointer', transition: 'border 120ms ease',
-                  }}
-                />
-              ))}
-            </div>
-          </div>
+    <Modal title="New Group" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="input-group">
+          <label className="input-label">Group Name</label>
+          <input
+            className="input"
+            placeholder="One-shot ideas…"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            autoFocus
+            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+          />
         </div>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
-            {saving ? 'Creating…' : 'Create Group'}
-          </button>
+        <div className="input-group">
+          <label className="input-label">Colour</label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {GROUP_COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => setColor(c)}
+                style={{
+                  width: 22, height: 22, borderRadius: '50%', background: c, padding: 0,
+                  border: `2px solid ${color === c ? 'var(--text-primary)' : 'transparent'}`,
+                  cursor: 'pointer', transition: 'border 120ms ease',
+                }}
+              />
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
+          {saving ? 'Creating…' : 'Create Group'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -125,15 +117,7 @@ function PageMenu({ page, groups, isFirst, isLast, onDelete, onMoveUp, onMoveDow
   const [open, setOpen] = useState(false)
   const { confirming, trigger } = useConfirmDelete()
   const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  useMenuClose(open, menuRef, setOpen)
 
   // Build move-to targets: all groups + ungrouped, excluding current
   const moveTargets: { label: string; groupId: number | null }[] = [
@@ -161,12 +145,12 @@ function PageMenu({ page, groups, isFirst, isLast, onDelete, onMoveUp, onMoveDow
           minWidth: 160, zIndex: 50, overflow: 'hidden',
         }}>
           {!isFirst && (
-            <button onClick={() => { onMoveUp(); setOpen(false) }} style={menuItemStyle}>
+            <button onClick={() => { onMoveUp(); setOpen(false) }} className="menu-item menu-item-sm">
               <ArrowUpCircle size={12} /> Move up
             </button>
           )}
           {!isLast && (
-            <button onClick={() => { onMoveDown(); setOpen(false) }} style={menuItemStyle}>
+            <button onClick={() => { onMoveDown(); setOpen(false) }} className="menu-item menu-item-sm">
               <ArrowDownCircle size={12} /> Move down
             </button>
           )}
@@ -177,7 +161,7 @@ function PageMenu({ page, groups, isFirst, isLast, onDelete, onMoveUp, onMoveDow
                 <button
                   key={t.groupId ?? 'ungrouped'}
                   onClick={() => { onMoveToGroup(t.groupId); setOpen(false) }}
-                  style={menuItemStyle}
+                  className="menu-item menu-item-sm"
                 >
                   <FileText size={12} /> Move to: {t.label}
                 </button>
@@ -187,7 +171,7 @@ function PageMenu({ page, groups, isFirst, isLast, onDelete, onMoveUp, onMoveDow
           <div style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />
           <button
             onClick={() => trigger(() => { onDelete(); setOpen(false) })}
-            style={{ ...menuItemStyle, color: confirming ? '#ff7777' : '#e05555' }}
+            className="menu-item menu-item-sm menu-item-danger" style={confirming ? { color: '#ff7777' } : undefined}
           >
             <Trash2 size={12} /> {confirming ? 'Confirm delete' : 'Delete'}
           </button>
@@ -211,15 +195,7 @@ function GroupMenu({ group, isFirst, isLast, onMoveUp, onMoveDown, onRename, onD
   const [open, setOpen] = useState(false)
   const { confirming, trigger } = useConfirmDelete()
   const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  useMenuClose(open, menuRef, setOpen)
 
   return (
     <div ref={menuRef} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
@@ -237,23 +213,23 @@ function GroupMenu({ group, isFirst, isLast, onMoveUp, onMoveDown, onRename, onD
           borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)',
           minWidth: 140, zIndex: 50, overflow: 'hidden',
         }}>
-          <button onClick={() => { onRename(); setOpen(false) }} style={menuItemStyle}>
+          <button onClick={() => { onRename(); setOpen(false) }} className="menu-item menu-item-sm">
             <Pencil size={12} /> Rename
           </button>
           {!isFirst && (
-            <button onClick={() => { onMoveUp(); setOpen(false) }} style={menuItemStyle}>
+            <button onClick={() => { onMoveUp(); setOpen(false) }} className="menu-item menu-item-sm">
               <ArrowUpCircle size={12} /> Move up
             </button>
           )}
           {!isLast && (
-            <button onClick={() => { onMoveDown(); setOpen(false) }} style={menuItemStyle}>
+            <button onClick={() => { onMoveDown(); setOpen(false) }} className="menu-item menu-item-sm">
               <ArrowDownCircle size={12} /> Move down
             </button>
           )}
           <div style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />
           <button
             onClick={() => trigger(() => { onDelete(); setOpen(false) })}
-            style={{ ...menuItemStyle, color: confirming ? '#ff7777' : '#e05555' }}
+            className="menu-item menu-item-sm menu-item-danger" style={confirming ? { color: '#ff7777' } : undefined}
           >
             <Trash2 size={12} /> {confirming ? 'Confirm delete' : 'Delete'}
           </button>

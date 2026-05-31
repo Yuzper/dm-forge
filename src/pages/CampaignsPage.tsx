@@ -1,8 +1,11 @@
 // path: src/pages/CampaignsPage.tsx
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { useStore } from '../store/store'
 import { Plus, Sword, BookOpen, ChevronRight, MoreHorizontal, Trash2, Pencil } from 'lucide-react'
 import type { Campaign } from '../types'
+import { useMenuClose } from '../hooks/useMenuClose'
+import Modal from '../components/Modal'
+import EmptyState from '../components/EmptyState'
 
 const SYSTEMS = ['D&D 5e 2014', 'D&D 5e 2024', 'Other']
 
@@ -36,64 +39,61 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">New Campaign</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="input-group">
-            <label className="input-label">Campaign Name</label>
-            <input className="input" placeholder={randomPlaceholder} value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
-          </div>
-          <div className="input-group">
-            <label className="input-label">System</label>
-            <select className="input" value={system} onChange={e => {
-              setSystem(e.target.value)
-              if (e.target.value === 'Other') setSeedMonsters(false)
-              else setSeedMonsters(true)
-            }}>
-              {SYSTEMS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="input-group">
-            <label className="input-label">Description</label>
-            <textarea className="input" placeholder="A brief overview of this campaign…" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
-          </div>
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            cursor: 'pointer', userSelect: 'none',
-            padding: '10px 12px',
-            background: seedMonsters ? 'var(--bg-active)' : 'var(--bg-elevated)',
-            border: `1px solid ${seedMonsters ? 'var(--border-gold)' : 'var(--border-light)'}`,
-            borderRadius: 'var(--radius-md)',
-            transition: 'all 120ms ease',
+    <Modal title="New Campaign" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="input-group">
+          <label className="input-label">Campaign Name</label>
+          <input className="input" placeholder={randomPlaceholder} value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
+        </div>
+        <div className="input-group">
+          <label className="input-label">System</label>
+          <select className="input" value={system} onChange={e => {
+            setSystem(e.target.value)
+            if (e.target.value === 'Other') setSeedMonsters(false)
+            else setSeedMonsters(true)
           }}>
-            <input
-              type="checkbox"
-              checked={seedMonsters}
-              disabled={system === 'Other'}
-              onChange={e => setSeedMonsters(e.target.checked)}
-              style={{ width: 15, height: 15, accentColor: 'var(--gold)', cursor: system === 'Other' ? 'not-allowed' : 'pointer', flexShrink: 0 }}
-            />
-            <div>
-              <div style={{ fontSize: 13, color: 'var(--text-primary)', fontFamily: 'var(--font-ui)' }}>
-                Seed starter monsters
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                {system === 'Other'
-                  ? 'Not available for custom systems'
-                  : `Adds 10 standard ${system} creatures to your wiki`}
-              </div>
+            {SYSTEMS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="input-group">
+          <label className="input-label">Description</label>
+          <textarea className="input" placeholder="A brief overview of this campaign…" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
+        </div>
+        <label style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          cursor: 'pointer', userSelect: 'none',
+          padding: '10px 12px',
+          background: seedMonsters ? 'var(--bg-active)' : 'var(--bg-elevated)',
+          border: `1px solid ${seedMonsters ? 'var(--border-gold)' : 'var(--border-light)'}`,
+          borderRadius: 'var(--radius-md)',
+          transition: 'all 120ms ease',
+        }}>
+          <input
+            type="checkbox"
+            checked={seedMonsters}
+            disabled={system === 'Other'}
+            onChange={e => setSeedMonsters(e.target.checked)}
+            style={{ width: 15, height: 15, accentColor: 'var(--gold)', cursor: system === 'Other' ? 'not-allowed' : 'pointer', flexShrink: 0 }}
+          />
+          <div>
+            <div style={{ fontSize: 13, color: 'var(--text-primary)', fontFamily: 'var(--font-ui)' }}>
+              Seed starter monsters
             </div>
-          </label>
-        </div>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
-            {saving ? 'Creating…' : 'Create Campaign'}
-          </button>
-        </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+              {system === 'Other'
+                ? 'Not available for custom systems'
+                : `Adds 10 standard ${system} creatures to your wiki`}
+            </div>
+          </div>
+        </label>
       </div>
-    </div>
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
+          {saving ? 'Creating…' : 'Create Campaign'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -116,33 +116,30 @@ function EditCampaignModal({ campaign, onClose }: { campaign: Campaign; onClose:
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Edit Campaign</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="input-group">
-            <label className="input-label">Campaign Name</label>
-            <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
-          </div>
-          <div className="input-group">
-            <label className="input-label">System</label>
-            <select className="input" value={system} onChange={e => setSystem(e.target.value)}>
-              {SYSTEMS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="input-group">
-            <label className="input-label">Description</label>
-            <textarea className="input" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
-          </div>
+    <Modal title="Edit Campaign" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="input-group">
+          <label className="input-label">Campaign Name</label>
+          <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
         </div>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+        <div className="input-group">
+          <label className="input-label">System</label>
+          <select className="input" value={system} onChange={e => setSystem(e.target.value)}>
+            {SYSTEMS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="input-group">
+          <label className="input-label">Description</label>
+          <textarea className="input" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
         </div>
       </div>
-    </div>
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -197,26 +194,11 @@ function DeleteCampaignModal({ campaign, onClose }: { campaign: Campaign; onClos
   )
 }
 
-const menuItemStyle: React.CSSProperties = {
-  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-  padding: '8px 14px', background: 'none', border: 'none',
-  color: 'var(--text-secondary)', fontSize: 13, fontFamily: 'var(--font-ui)',
-  cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease',
-}
-
 function CampaignMenu({ campaign, onEdit, onDelete }: { campaign: Campaign; onEdit: () => void; onDelete: () => void }) {
   const { selectCampaign } = useStore()
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  useMenuClose(open, menuRef, setOpen)
 
   return (
     <div ref={menuRef} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
@@ -238,14 +220,14 @@ function CampaignMenu({ campaign, onEdit, onDelete }: { campaign: Campaign; onEd
           boxShadow: 'var(--shadow-md)',
           minWidth: 160, zIndex: 50, overflow: 'hidden',
         }}>
-          <button onClick={() => { selectCampaign(campaign); setOpen(false) }} style={menuItemStyle}>
+          <button onClick={() => { selectCampaign(campaign); setOpen(false) }} className="menu-item">
             <ChevronRight size={13} /> Open
           </button>
-          <button onClick={() => { onEdit(); setOpen(false) }} style={menuItemStyle}>
+          <button onClick={() => { onEdit(); setOpen(false) }} className="menu-item">
             <Pencil size={13} /> Edit
           </button>
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-          <button onClick={() => { onDelete(); setOpen(false) }} style={{ ...menuItemStyle, color: '#e05555' }}>
+          <button onClick={() => { onDelete(); setOpen(false) }} className="menu-item menu-item-danger">
             <Trash2 size={13} /> Delete
           </button>
         </div>
@@ -323,16 +305,13 @@ export default function CampaignsPage() {
 
       <div style={{ flex: 1, overflow: 'auto', padding: '28px 32px' }}>
         {campaigns.length === 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16, color: 'var(--text-muted)' }}>
-            <Sword size={48} strokeWidth={1} color="var(--border-light)" />
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 18, fontFamily: 'var(--font-display)', color: 'var(--text-secondary)', marginBottom: 6 }}>No campaigns yet</div>
-              <div style={{ fontSize: 13 }}>Create your first campaign to begin your adventure</div>
-            </div>
-            <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-              <Plus size={15} /> Create Campaign
-            </button>
-          </div>
+          <EmptyState
+            style={{ height: '100%' }}
+            icon={<Sword size={48} strokeWidth={1} color="var(--border-light)" />}
+            title="No campaigns yet"
+            description="Create your first campaign to begin your adventure"
+            action={<button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> Create Campaign</button>}
+          />
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, alignContent: 'start' }}>
             {campaigns.map(c => <CampaignCard key={c.id} campaign={c} />)}

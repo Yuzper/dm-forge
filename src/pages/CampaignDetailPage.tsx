@@ -10,6 +10,11 @@ import {
 } from 'lucide-react'
 import type { Session, Arc, GameMap, POI } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
+import { useMenuClose } from '../hooks/useMenuClose'
+import { parseDay } from '../utils/dates'
+import { ARTICLE_TYPE_COLORS } from '../constants/articleTypes'
+import Modal from '../components/Modal'
+import EmptyState from '../components/EmptyState'
 import MapPickerModal from '../components/MapPickerModal'
 import { InWorldDatePicker } from '../components/InWorldDatePicker'
 import TimelineEmbed from '../components/TimelineEmbed'
@@ -27,13 +32,6 @@ const ARC_COLORS = [
 const MIN_SCALE = 0.2
 const MAX_SCALE = 8
 const ZOOM_SPEED = 0.001
-
-const menuItemStyle: React.CSSProperties = {
-  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-  padding: '8px 14px', background: 'none', border: 'none',
-  color: 'var(--text-secondary)', fontSize: 13, fontFamily: 'var(--font-ui)',
-  cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease',
-}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -689,20 +687,14 @@ function HubWorldMap() {
               )}
               {editMode && menuOpenId === map.id && (
                 <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 36, left: 0, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 130, zIndex: 100, overflow: 'hidden' }}>
-                  <button onClick={() => { setRenamingMap(map); setMenuOpenId(null) }} style={menuItemStyle}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                  <button onClick={() => { setRenamingMap(map); setMenuOpenId(null) }} className="menu-item">
                     <Pencil size={12} /> Rename
                   </button>
-                  <button onClick={() => { handleReplaceMapImage(map); setMenuOpenId(null) }} style={menuItemStyle}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                  <button onClick={() => { handleReplaceMapImage(map); setMenuOpenId(null) }} className="menu-item">
                     <ImageIcon size={12} /> Replace image
                   </button>
                   <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-                  <button onClick={() => { handleDeleteMap(map.id); setMenuOpenId(null) }} style={{ ...menuItemStyle, color: '#e05555' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                  <button onClick={() => { handleDeleteMap(map.id); setMenuOpenId(null) }} className="menu-item menu-item-danger">
                     <Trash2 size={12} /> Delete
                   </button>
                 </div>
@@ -731,17 +723,18 @@ function HubWorldMap() {
 
         {/* Empty state */}
         {maps.length === 0 && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: 'var(--text-muted)' }}>
-            <Map size={44} strokeWidth={1} color="var(--border-light)" />
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontFamily: 'var(--font-display)', color: 'var(--text-secondary)', marginBottom: 4 }}>No world map yet</div>
-              <div style={{ fontSize: 13 }}>Import a PNG or JPEG to get started</div>
-            </div>
-            <button className="btn btn-primary" onClick={e => { e.stopPropagation(); setShowPicker(true) }} disabled={importing}
-              style={{ background: '#c8733a', borderColor: '#c8733a' }}>
-              <Upload size={14} /> {importing ? 'Importing…' : 'Import Map'}
-            </button>
-          </div>
+          <EmptyState
+            style={{ position: 'absolute', inset: 0, gap: 14 }}
+            icon={<Map size={44} strokeWidth={1} color="var(--border-light)" />}
+            title="No world map yet"
+            description="Import a PNG or JPEG to get started"
+            action={
+              <button className="btn btn-primary" onClick={e => { e.stopPropagation(); setShowPicker(true) }} disabled={importing}
+                style={{ background: '#c8733a', borderColor: '#c8733a' }}>
+                <Upload size={14} /> {importing ? 'Importing…' : 'Import Map'}
+              </button>
+            }
+          />
         )}
 
         {/* Transformable content layer (below tab strip) */}
@@ -857,24 +850,21 @@ function HubWorldMap() {
       )}
 
       {renamingMap && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setRenamingMap(null)}>
-          <div className="modal">
-            <div className="modal-title">Rename map</div>
-            <div className="input-group">
-              <label className="input-label">Name</label>
-              <input className="input" defaultValue={renamingMap.name} autoFocus
-                onKeyDown={e => { if (e.key === 'Enter') handleRenameMap(renamingMap, (e.target as HTMLInputElement).value) }}
-                id="rename-map-input" />
-            </div>
-            <div className="modal-actions">
-              <button className="btn" onClick={() => setRenamingMap(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => {
-                const val = (document.getElementById('rename-map-input') as HTMLInputElement)?.value || ''
-                handleRenameMap(renamingMap, val)
-              }}>Save</button>
-            </div>
+        <Modal title="Rename map" onClose={() => setRenamingMap(null)}>
+          <div className="input-group">
+            <label className="input-label">Name</label>
+            <input className="input" defaultValue={renamingMap.name} autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') handleRenameMap(renamingMap, (e.target as HTMLInputElement).value) }}
+              id="rename-map-input" />
           </div>
-        </div>
+          <div className="modal-actions">
+            <button className="btn" onClick={() => setRenamingMap(null)}>Cancel</button>
+            <button className="btn btn-primary" onClick={() => {
+              const val = (document.getElementById('rename-map-input') as HTMLInputElement)?.value || ''
+              handleRenameMap(renamingMap, val)
+            }}>Save</button>
+          </div>
+        </Modal>
       )}
 
       {editingPOI && (
@@ -957,28 +947,25 @@ function CreateArcModal({ onClose }: { onClose: () => void }) {
     await createArc({ name: name.trim(), color }); onClose()
   }
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">New Arc</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="input-group">
-            <label className="input-label">Arc Name</label>
-            <input className="input" placeholder="Northern Expedition…" value={name}
-              onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
-          </div>
-          <div className="input-group">
-            <label className="input-label">Colour</label>
-            <ColorPicker value={color} onChange={setColor} />
-          </div>
+    <Modal title="New Arc" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="input-group">
+          <label className="input-label">Arc Name</label>
+          <input className="input" placeholder="Northern Expedition…" value={name}
+            onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
         </div>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
-            {saving ? 'Creating…' : 'Create Arc'}
-          </button>
+        <div className="input-group">
+          <label className="input-label">Colour</label>
+          <ColorPicker value={color} onChange={setColor} />
         </div>
       </div>
-    </div>
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
+          {saving ? 'Creating…' : 'Create Arc'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -992,27 +979,24 @@ function EditArcModal({ arc, onClose }: { arc: Arc; onClose: () => void }) {
     await updateArc(arc.id, { name: name.trim(), color }); onClose()
   }
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Edit Arc</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="input-group">
-            <label className="input-label">Arc Name</label>
-            <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
-          </div>
-          <div className="input-group">
-            <label className="input-label">Colour</label>
-            <ColorPicker value={color} onChange={setColor} />
-          </div>
+    <Modal title="Edit Arc" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="input-group">
+          <label className="input-label">Arc Name</label>
+          <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
         </div>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+        <div className="input-group">
+          <label className="input-label">Colour</label>
+          <ColorPicker value={color} onChange={setColor} />
         </div>
       </div>
-    </div>
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -1035,8 +1019,6 @@ function EditSessionModal({ session, onClose }: { session: SessionExt; onClose: 
   const subClean = sessionSub.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 3)
   const isDuplicate = sessions.some(s => s.id !== session.id && s.session_number === sessionNumber && s.session_sub === subClean)
 
-  const parseDay = (raw: string) => { try { const d = JSON.parse(raw); return d?.day ?? null } catch { return null } }
-
   const handleSubmit = async () => {
     if (!name.trim() || isDuplicate) return
     setSaving(true)
@@ -1055,73 +1037,70 @@ function EditSessionModal({ session, onClose }: { session: SessionExt; onClose: 
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Edit Session</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-            <div className="input-group" style={{ flex: '0 0 80px' }}>
-              <label className="input-label">Session #</label>
-              <input className="input" type="number" min={1} value={sessionNumber}
-                onChange={e => setSessionNumber(Math.max(1, parseInt(e.target.value) || 1))}
-                style={{ textAlign: 'center', color: 'var(--gold)', fontWeight: 600 }} />
-            </div>
-            <div className="input-group" style={{ flex: '0 0 72px' }}>
-              <label className="input-label">Sub (opt.)</label>
-              <input className="input" placeholder="a, b…" value={sessionSub}
-                onChange={e => setSessionSub(e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3))}
-                style={{ textAlign: 'center' }} />
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--gold)', fontFamily: 'var(--font-display)', paddingBottom: 6 }}>
-              → Session {sessionNumber}{subClean}
-            </div>
+    <Modal title="Edit Session" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+          <div className="input-group" style={{ flex: '0 0 80px' }}>
+            <label className="input-label">Session #</label>
+            <input className="input" type="number" min={1} value={sessionNumber}
+              onChange={e => setSessionNumber(Math.max(1, parseInt(e.target.value) || 1))}
+              style={{ textAlign: 'center', color: 'var(--gold)', fontWeight: 600 }} />
           </div>
-          {isDuplicate && <div style={{ fontSize: 12, color: '#e05555' }}>Session {sessionNumber}{subClean} already exists</div>}
-          <div className="input-group">
-            <label className="input-label">Session Name</label>
-            <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
+          <div className="input-group" style={{ flex: '0 0 72px' }}>
+            <label className="input-label">Sub (opt.)</label>
+            <input className="input" placeholder="a, b…" value={sessionSub}
+              onChange={e => setSessionSub(e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3))}
+              style={{ textAlign: 'center' }} />
           </div>
-          {arcs.length > 1 && (
-            <div className="input-group">
-              <label className="input-label">Arc</label>
-              <select className="input" value={arcId ?? ''} onChange={e => setArcId(e.target.value ? parseInt(e.target.value) : null)}>
-                {arcs.map(a => <option key={a.id} value={a.id}>{a.name}{a.is_default ? ' (default)' : ''}</option>)}
-              </select>
-            </div>
-          )}
-          <div className="input-group">
-            <label className="input-label">Real-world date</label>
-            <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
+          <div style={{ fontSize: 13, color: 'var(--gold)', fontFamily: 'var(--font-display)', paddingBottom: 6 }}>
+            → Session {sessionNumber}{subClean}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <InWorldDatePicker value={inWorldDayStart} onChange={raw => {
-              setInWorldDayStart(raw)
-              const sd = parseDay(raw)
-              const ed = parseDay(inWorldDayEnd)
-              if (sd !== null && (ed === null || ed < sd)) setInWorldDayEnd(raw)
-            }} label="In-world start" />
-            <InWorldDatePicker value={inWorldDayEnd} onChange={raw => {
-              const sd = parseDay(inWorldDayStart)
-              const ed = parseDay(raw)
-              setInWorldDayEnd(sd !== null && ed !== null && ed < sd ? inWorldDayStart : raw)
-            }} label="In-world end (optional)" />
-          </div>
-          {(() => {
-            const s = parseDay(inWorldDayStart), e = parseDay(inWorldDayEnd)
-            if (!s) return null
-            const label = e && e > s ? `Day ${s}–${e}, Year 1507 (${e - s + 1} days)` : `Day ${s}, Year 1507`
-            return <div style={{ fontSize: 11, color: 'var(--gold)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', padding: '6px 10px' }}>{label}</div>
-          })()}
         </div>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving || isDuplicate}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+        {isDuplicate && <div style={{ fontSize: 12, color: '#e05555' }}>Session {sessionNumber}{subClean} already exists</div>}
+        <div className="input-group">
+          <label className="input-label">Session Name</label>
+          <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus
+            onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
         </div>
+        {arcs.length > 1 && (
+          <div className="input-group">
+            <label className="input-label">Arc</label>
+            <select className="input" value={arcId ?? ''} onChange={e => setArcId(e.target.value ? parseInt(e.target.value) : null)}>
+              {arcs.map(a => <option key={a.id} value={a.id}>{a.name}{a.is_default ? ' (default)' : ''}</option>)}
+            </select>
+          </div>
+        )}
+        <div className="input-group">
+          <label className="input-label">Real-world date</label>
+          <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <InWorldDatePicker value={inWorldDayStart} onChange={raw => {
+            setInWorldDayStart(raw)
+            const sd = parseDay(raw)
+            const ed = parseDay(inWorldDayEnd)
+            if (sd !== null && (ed === null || ed < sd)) setInWorldDayEnd(raw)
+          }} label="In-world start" />
+          <InWorldDatePicker value={inWorldDayEnd} onChange={raw => {
+            const sd = parseDay(inWorldDayStart)
+            const ed = parseDay(raw)
+            setInWorldDayEnd(sd !== null && ed !== null && ed < sd ? inWorldDayStart : raw)
+          }} label="In-world end (optional)" />
+        </div>
+        {(() => {
+          const s = parseDay(inWorldDayStart), e = parseDay(inWorldDayEnd)
+          if (!s) return null
+          const label = e && e > s ? `Day ${s}–${e}, Year 1507 (${e - s + 1} days)` : `Day ${s}, Year 1507`
+          return <div style={{ fontSize: 11, color: 'var(--gold)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', padding: '6px 10px' }}>{label}</div>
+        })()}
       </div>
-    </div>
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving || isDuplicate}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -1132,15 +1111,7 @@ function SessionRow({ session, arc }: { session: Session; arc: Arc }) {
   const [editOpen, setEditOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
-
-  useEffect(() => {
-    if (!menuOpen) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [menuOpen])
+  useMenuClose(menuOpen, menuRef, setMenuOpen)
 
   return (
     <>
@@ -1182,20 +1153,14 @@ function SessionRow({ session, arc }: { session: Session; arc: Arc }) {
           </button>
           {menuOpen && (
             <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 140, zIndex: 50, overflow: 'hidden' }}>
-              <button onClick={() => { selectSession(session); setMenuOpen(false) }} style={menuItemStyle}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+              <button onClick={() => { selectSession(session); setMenuOpen(false) }} className="menu-item">
                 <ChevronRight size={13} /> Select
               </button>
-              <button onClick={() => { setEditOpen(true); setMenuOpen(false) }} style={menuItemStyle}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+              <button onClick={() => { setEditOpen(true); setMenuOpen(false) }} className="menu-item">
                 <Pencil size={13} /> Edit
               </button>
               <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteSession(session.id); setMenuOpen(false) }) }}
-                style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                className="menu-item menu-item-danger" style={confirmDelete ? { color: '#ff7777' } : undefined}>
                 <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
               </button>
             </div>
@@ -1213,13 +1178,7 @@ function ArcMenu({ arc, onEdit }: { arc: Arc; onEdit: () => void }) {
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  useMenuClose(open, menuRef, setOpen)
   return (
     <div ref={menuRef} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
       <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setOpen(o => !o)} style={{ color: 'var(--text-muted)' }}>
@@ -1227,18 +1186,14 @@ function ArcMenu({ arc, onEdit }: { arc: Arc; onEdit: () => void }) {
       </button>
       {open && (
         <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 140, zIndex: 50, overflow: 'hidden' }}>
-          <button onClick={() => { onEdit(); setOpen(false) }} style={menuItemStyle}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+          <button onClick={() => { onEdit(); setOpen(false) }} className="menu-item">
             <Pencil size={13} /> Rename
           </button>
           {!arc.is_default && (
             <>
               <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
               <button onClick={() => triggerDelete(() => { deleteArc(arc.id); setOpen(false) })}
-                style={{ ...menuItemStyle, color: confirmDelete ? '#ff7777' : '#e05555' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                className="menu-item menu-item-danger" style={confirmDelete ? { color: '#ff7777' } : undefined}>
                 <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
               </button>
             </>
@@ -1319,43 +1274,40 @@ function CreateSessionModal({ defaultArcId, onClose }: { defaultArcId: number | 
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">New Session</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '80px 60px 1fr', gap: 10 }}>
-            <div className="input-group">
-              <label className="input-label">Session #</label>
-              <input className="input" type="number" value={sessionNumber} onChange={e => setSessionNumber(parseInt(e.target.value) || 1)} min={1} />
-            </div>
-            <div className="input-group">
-              <label className="input-label">Sub</label>
-              <input className="input" placeholder="a…" value={sessionSub} onChange={e => setSessionSub(e.target.value)} maxLength={4} />
-            </div>
-            <div className="input-group">
-              <label className="input-label">Name</label>
-              <input className="input" placeholder="The Iron Gate…" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
-            </div>
+    <Modal title="New Session" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '80px 60px 1fr', gap: 10 }}>
+          <div className="input-group">
+            <label className="input-label">Session #</label>
+            <input className="input" type="number" value={sessionNumber} onChange={e => setSessionNumber(parseInt(e.target.value) || 1)} min={1} />
           </div>
           <div className="input-group">
-            <label className="input-label">Arc</label>
-            <select className="input" value={arcId ?? ''} onChange={e => setArcId(e.target.value ? parseInt(e.target.value) : null)}>
-              {arcs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+            <label className="input-label">Sub</label>
+            <input className="input" placeholder="a…" value={sessionSub} onChange={e => setSessionSub(e.target.value)} maxLength={4} />
           </div>
           <div className="input-group">
-            <label className="input-label">Date <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-            <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
+            <label className="input-label">Name</label>
+            <input className="input" placeholder="The Iron Gate…" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
           </div>
         </div>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
-            {saving ? 'Creating…' : 'Create Session'}
-          </button>
+        <div className="input-group">
+          <label className="input-label">Arc</label>
+          <select className="input" value={arcId ?? ''} onChange={e => setArcId(e.target.value ? parseInt(e.target.value) : null)}>
+            {arcs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+        <div className="input-group">
+          <label className="input-label">Date <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+          <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
         </div>
       </div>
-    </div>
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
+          {saving ? 'Creating…' : 'Create Session'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -1414,14 +1366,13 @@ function SessionsView({ onBack }: { onBack: () => void }) {
           </button>
         </div>
         {sessions.length === 0 && arcs.length <= 1 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 300, gap: 12, color: 'var(--text-muted)' }}>
-            <BookOpen size={40} strokeWidth={1} color="var(--border-light)" />
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontFamily: 'var(--font-display)', color: 'var(--text-secondary)', marginBottom: 4 }}>No sessions yet</div>
-              <div style={{ fontSize: 13 }}>Add your first session to start planning</div>
-            </div>
-            <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> Add Session</button>
-          </div>
+          <EmptyState
+            style={{ height: 300, gap: 12 }}
+            icon={<BookOpen size={40} strokeWidth={1} color="var(--border-light)" />}
+            title="No sessions yet"
+            description="Add your first session to start planning"
+            action={<button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> Add Session</button>}
+          />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 680 }}>
             {sortedArcs.map(arc => (
@@ -1472,14 +1423,7 @@ function HubSettingsMenu({ panels, onChange }: {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  useMenuClose(open, ref, setOpen)
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -1530,14 +1474,6 @@ function RecentlyUpdatedPanel() {
     })
   }, [currentCampaign?.id])
 
-  const TYPE_COLORS: Record<string, string> = {
-    character: '#5bbfb0', playerCharacter: '#49c185', creature: '#36a502',
-    location: '#c8a84b', faction: '#e88c3a', organization: '#e8a23a',
-    culture: '#4da6ff', religion: '#b07de8', item: '#9b7de8',
-    vendor: '#49c185', note: '#776d92', quest: '#5b9fe8',
-    event: '#e05555', lore: '#e05555', other: '#8a8a8a',
-  }
-
   function timeAgo(dateStr: string) {
     const diff = Date.now() - new Date(dateStr).getTime()
     const mins = Math.floor(diff / 60000)
@@ -1559,10 +1495,9 @@ function RecentlyUpdatedPanel() {
         {items.map((item, i) => (
           <button key={item.id} onClick={() => { openArticle(item.id); setView('wiki') }}
             style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', background: 'none', border: 'none', borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.75'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
+            className="hover-opacity"
           >
-            <div style={{ width: 7, height: 7, borderRadius: '50%', background: TYPE_COLORS[item.article_type] ?? 'var(--text-muted)', flexShrink: 0 }} />
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: ARTICLE_TYPE_COLORS[item.article_type] ?? 'var(--text-muted)', flexShrink: 0 }} />
             <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{timeAgo(item.updated_at)}</span>
           </button>
@@ -1610,7 +1545,7 @@ function ActiveQuestsPanel() {
     })
   }, [currentCampaign?.id])
 
-  const TYPE_COLORS: Record<string, string> = {
+  const QUEST_TYPE_COLORS: Record<string, string> = {
     Main: '#e88c3a', Side: '#5b9fe8', Personal: '#9b7de8', Faction: '#49c185',
   }
 
@@ -1627,7 +1562,7 @@ function ActiveQuestsPanel() {
           const total = q.substeps.length
           const done  = q.substeps.filter(s => s.status === 'complete').length
           const pct   = total > 0 ? Math.round((done / total) * 100) : 0
-          const color = TYPE_COLORS[q.type] ?? 'var(--text-muted)'
+          const color = QUEST_TYPE_COLORS[q.type] ?? 'var(--text-muted)'
 
           return (
             <button key={q.id} onClick={() => { openArticle(q.id); setView('wiki') }}
@@ -1672,21 +1607,13 @@ function ArticlesByTypePanel() {
   const { currentCampaign } = useStore()
   const [counts, setCounts] = useState<{ type: string; count: number; color: string }[]>([])
 
-  const TYPE_COLORS: Record<string, string> = {
-    character: '#5bbfb0', playerCharacter: '#49c185', creature: '#36a502',
-    location: '#c8a84b', faction: '#e88c3a', organization: '#e8a23a',
-    culture: '#4da6ff', religion: '#b07de8', item: '#9b7de8',
-    vendor: '#49c185', note: '#776d92', quest: '#5b9fe8',
-    event: '#e05555', lore: '#e05555', other: '#8a8a8a',
-  }
-
   useEffect(() => {
     if (!currentCampaign) return
     window.api.getArticlesList({ campaignId: currentCampaign.id }).then((list: any[]) => {
       const map: Record<string, number> = {}
       list.forEach((a: any) => { map[a.article_type] = (map[a.article_type] ?? 0) + 1 })
       const sorted = Object.entries(map)
-        .map(([type, count]) => ({ type, count, color: TYPE_COLORS[type] ?? '#8a8a8a' }))
+        .map(([type, count]) => ({ type, count, color: ARTICLE_TYPE_COLORS[type] ?? '#8a8a8a' }))
         .sort((a, b) => b.count - a.count)
       setCounts(sorted)
     })
