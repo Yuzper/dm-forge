@@ -245,6 +245,7 @@ export function InWorldDatePicker({ value, onChange, baseYear = 1507, label = 'I
   const { currentCampaign, sessions, arcs } = useStore()
   const [open, setOpen] = useState(false)
   const [dropUp, setDropUp] = useState(false)
+  const [dropLeft, setDropLeft] = useState(false)
   const [day, setDay] = useState<number>(() => parseInWorldDate(value)?.day ?? 0)
   const [year, setYear] = useState<number>(() => parseInWorldDate(value)?.year ?? baseYear)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -268,8 +269,8 @@ export function InWorldDatePicker({ value, onChange, baseYear = 1507, label = 'I
   const handleToggleOpen = () => {
     if (!open && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect()
-      const spaceBelow = window.innerHeight - rect.bottom
-      setDropUp(spaceBelow < 340)
+      setDropUp(window.innerHeight - rect.bottom < 340)
+      setDropLeft(window.innerWidth - rect.left < 360)
     }
     setOpen(o => !o)
   }
@@ -318,7 +319,7 @@ export function InWorldDatePicker({ value, onChange, baseYear = 1507, label = 'I
 
       {open && (
         <div style={{
-          position: 'absolute', ...(dropUp ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }), left: 0, right: 0,
+          position: 'absolute', ...(dropUp ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }), ...(dropLeft ? { right: 0 } : { left: 0 }),
           background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
           borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
           zIndex: 200, overflow: 'hidden', minWidth: 360,
