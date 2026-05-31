@@ -1084,7 +1084,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
         }}
         onClick={() => editor.chain().focus().run()}
       >
-        <EditorContent editor={editor} style={{ height: '100%' }} />
+        <EditorContent editor={editor} style={{ height: '100%' }} spellCheck />
       </div>
 
       {/* ── Popovers ── */}

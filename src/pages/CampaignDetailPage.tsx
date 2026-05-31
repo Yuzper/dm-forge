@@ -1,5 +1,5 @@
 // path: src/pages/CampaignDetailPage.tsx
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useStore } from '../store/store'
 import {
   Plus, Calendar, Map, BookOpen, MoreHorizontal, Trash2, Pencil,
@@ -59,6 +59,13 @@ function extractPoiDescription(contentJson: string): string {
     }
   } catch {}
   return ''
+}
+
+function extractAllText(json: string): string {
+  try {
+    const walk = (node: any): string => node.type === 'text' ? (node.text ?? '') : (node.content ?? []).map(walk).join(' ')
+    return walk(JSON.parse(json)).replace(/\s+/g, ' ').trim().toLowerCase()
+  } catch { return '' }
 }
 
 function makePoiContent(description: string): string {
@@ -1320,6 +1327,44 @@ function SessionsView({ onBack }: { onBack: () => void }) {
   const [sortAsc, setSortAsc] = useState<boolean>(() => {
     try { return localStorage.getItem('dmforge:session-sort') !== 'desc' } catch { return true }
   })
+
+  // ── Search ────────────────────────────────────────────────────────────────────
+  const [query, setQuery] = useState('')
+  const [searchTitle, setSearchTitle] = useState(true)
+  const [searchNotes, setSearchNotes] = useState(true)
+  const [searchPOIs, setSearchPOIs] = useState(true)
+  const [poiIndex, setPoiIndex] = useState<Record<number, string[]>>({})
+  const [poiIndexLoaded, setPoiIndexLoaded] = useState(false)
+
+  // Load POI texts lazily the first time POI search is active with a query
+  useEffect(() => {
+    if (!searchPOIs || poiIndexLoaded || !currentCampaign || !query.trim()) return
+    window.api.getSessionPoiTexts(currentCampaign.id).then(rows => {
+      const idx: Record<number, string[]> = {}
+      rows.forEach(row => {
+        const text = [row.label?.toLowerCase(), extractAllText(row.content)].filter(Boolean).join(' ')
+        if (!idx[row.session_id]) idx[row.session_id] = []
+        idx[row.session_id].push(text)
+      })
+      setPoiIndex(idx)
+      setPoiIndexLoaded(true)
+    })
+  }, [searchPOIs, poiIndexLoaded, currentCampaign?.id, query])
+
+  // Invalidate POI index when campaign changes
+  useEffect(() => { setPoiIndex({}); setPoiIndexLoaded(false) }, [currentCampaign?.id])
+
+  const filteredSessions = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return sessions
+    return sessions.filter(s => {
+      if (searchTitle && s.name.toLowerCase().includes(q)) return true
+      if (searchNotes && extractAllText(s.notes).includes(q)) return true
+      if (searchPOIs && poiIndex[s.id]?.some(t => t.includes(q))) return true
+      return false
+    })
+  }, [sessions, query, searchTitle, searchNotes, searchPOIs, poiIndex])
+
   const toggleSort = () => {
     const next = !sortAsc; setSortAsc(next)
     try { localStorage.setItem('dmforge:session-sort', next ? 'asc' : 'desc') } catch {}
@@ -1329,7 +1374,11 @@ function SessionsView({ onBack }: { onBack: () => void }) {
   const defaultArc = arcs.find(a => a.is_default)
   const sortedArcs = [...arcs].sort((a, b) => a.name.localeCompare(b.name))
   const sessionsForArc = (arcId: number) =>
-    sessions.filter(s => s.arc_id === arcId || (s.arc_id === null && arcId === defaultArc?.id))
+    filteredSessions.filter(s => s.arc_id === arcId || (s.arc_id === null && arcId === defaultArc?.id))
+
+  const isSearching = query.trim().length > 0
+  const arcsWithResults = isSearching ? sortedArcs.filter(arc => sessionsForArc(arc.id).length > 0) : sortedArcs
+
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -1352,10 +1401,54 @@ function SessionsView({ onBack }: { onBack: () => void }) {
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
+
+        {/* Search bar */}
+        <div style={{ marginBottom: 20, maxWidth: 680 }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search size={13} style={{ position: 'absolute', left: 10, color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search sessions…"
+              style={{
+                width: '100%', paddingLeft: 30, paddingRight: query ? 28 : 10,
+                paddingTop: 7, paddingBottom: 7, background: 'var(--bg-elevated)',
+                border: `1px solid ${query ? 'var(--border-gold)' : 'var(--border-light)'}`,
+                borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--text-primary)',
+                outline: 'none', transition: 'border-color 120ms',
+              }}
+            />
+            {query && (
+              <button onClick={() => setQuery('')} style={{
+                position: 'absolute', right: 8, background: 'none', border: 'none',
+                cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2,
+              }}><X size={12} /></button>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 2 }}>Search in:</span>
+            {(['Title', 'Notes', 'POIs'] as const).map(label => {
+              const active = label === 'Title' ? searchTitle : label === 'Notes' ? searchNotes : searchPOIs
+              const toggle = label === 'Title' ? () => setSearchTitle(v => !v) : label === 'Notes' ? () => setSearchNotes(v => !v) : () => setSearchPOIs(v => !v)
+              return (
+                <button key={label} onClick={toggle} style={{
+                  padding: '2px 10px', borderRadius: 99, fontSize: 11, cursor: 'pointer', transition: 'all 100ms',
+                  background: active ? 'rgba(200,168,75,0.09)' : 'transparent',
+                  border: `1px solid ${active ? 'var(--border-gold)' : 'var(--border-light)'}`,
+                  color: active ? 'var(--gold)' : 'var(--text-muted)',
+                }}>{label}</button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Count + sort row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
           <BookOpen size={16} color="var(--text-muted)" />
           <span style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, flex: 1 }}>
-            {sessions.length} Session{sessions.length !== 1 ? 's' : ''}
+            {isSearching
+              ? `${filteredSessions.length} of ${sessions.length} session${sessions.length !== 1 ? 's' : ''}`
+              : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
           </span>
           <button onClick={toggleSort}
             style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 99, fontSize: 11, background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}
@@ -1364,6 +1457,7 @@ function SessionsView({ onBack }: { onBack: () => void }) {
             <ArrowUpDown size={11} /> Sessions {sortAsc ? '↑' : '↓'}
           </button>
         </div>
+
         {sessions.length === 0 && arcs.length <= 1 ? (
           <EmptyState
             style={{ height: 300, gap: 12 }}
@@ -1372,9 +1466,13 @@ function SessionsView({ onBack }: { onBack: () => void }) {
             description="Add your first session to start planning"
             action={<button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> Add Session</button>}
           />
+        ) : isSearching && filteredSessions.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)', fontSize: 14 }}>
+            No sessions match <span style={{ color: 'var(--text-secondary)' }}>"{query}"</span>
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 680 }}>
-            {sortedArcs.map(arc => (
+            {arcsWithResults.map(arc => (
               <ArcSection key={arc.id} arc={arc} sessions={sessionsForArc(arc.id)} sortAsc={sortAsc} onAddSession={handleAddSession} />
             ))}
           </div>

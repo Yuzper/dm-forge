@@ -1,6 +1,8 @@
 // path: src/utils/timelineGeometry.ts
 // Pure coordinate math shared by TimelinePage, TimelineEmbed, and InWorldDatePicker.
 
+export const DEFAULT_BASE_YEAR = 1507
+
 export type ZoomLevel = 'full' | 'decade' | 'year' | 'day'
 
 export const ZOOM_LABEL: Record<ZoomLevel, string> = {
@@ -28,7 +30,8 @@ export interface BinChip {
   endYear: number
   syCount: number
   evCount: number
-  items: BinItem[]   // all items in the bin, for tooltip listing
+  items: BinItem[]
+  zone: 'pre' | 'campaign'
 }
 
 export function computeBins(
@@ -37,24 +40,42 @@ export function computeBins(
   sessions: { in_world_day?: number | null; name?: string; session_number?: number; session_sub?: string | null }[],
   events: { day: number; title?: string; kind?: string }[],
 ): BinChip[] {
+  if (zoom === 'day') return []
   const binSize = ZOOM_BIN[zoom]
-  const preDays = [
-    ...sessions.map(s => s.in_world_day).filter((d): d is number => d != null && d < 1),
-    ...events.filter(e => e.day < 1).map(e => e.day),
+
+  const allItems = [
+    ...sessions
+      .filter(s => s.in_world_day != null)
+      .map(s => ({
+        wy: dayToWorldYear(s.in_world_day!, baseYear),
+        title: s.name ? `S${s.session_number}${s.session_sub ?? ''} ${s.name}` : `Session ${s.session_number}`,
+        kind: 'session' as const,
+      })),
+    ...events.map(e => ({
+      wy: dayToWorldYear(e.day, baseYear),
+      title: e.title ?? 'Untitled',
+      kind: (e.kind ?? 'event') as 'event' | 'death',
+    })),
   ]
-  if (!preDays.length) return []
-  const startBin = Math.floor(Math.floor(dayToWorldYear(Math.min(...preDays), baseYear)) / binSize) * binSize
+
+  if (!allItems.length) return []
+
+  const minBin = Math.floor(Math.min(...allItems.map(i => i.wy)) / binSize) * binSize
+  const maxBin = Math.ceil(Math.max(...allItems.map(i => i.wy)) / binSize) * binSize
+
   const chips: BinChip[] = []
-  for (let by = startBin; by < baseYear; by += binSize) {
-    const end = Math.min(by + binSize, baseYear)
-    const inBin = (d: number) => { const wy = dayToWorldYear(d, baseYear); return wy >= by && wy < end }
-    const binSessions = sessions.filter(s => s.in_world_day != null && inBin(s.in_world_day))
-    const binEvents = events.filter(e => inBin(e.day))
-    const items: BinItem[] = [
-      ...binSessions.map(s => ({ title: s.name ? `S${s.session_number}${s.session_sub ?? ''} ${s.name}` : `Session ${s.session_number}`, kind: 'session' as const })),
-      ...binEvents.map(e => ({ title: e.title ?? 'Untitled', kind: (e.kind ?? 'event') as 'event' | 'death' })),
-    ]
-    chips.push({ startYear: by, endYear: end, syCount: binSessions.length, evCount: binEvents.length, items })
+  for (let by = minBin; by < maxBin; by += binSize) {
+    const end = by + binSize
+    const binItems = allItems.filter(i => i.wy >= by && i.wy < end)
+    if (!binItems.length) continue
+    chips.push({
+      startYear: by,
+      endYear: end,
+      syCount: binItems.filter(i => i.kind === 'session').length,
+      evCount: binItems.filter(i => i.kind !== 'session').length,
+      items: binItems.map(i => ({ title: i.title, kind: i.kind })),
+      zone: by + binSize <= baseYear ? 'pre' : 'campaign',
+    })
   }
   return chips
 }
@@ -72,7 +93,7 @@ export interface AxisGeo {
 
 // px per world year in campaign zone, per zoom level
 const PAGE_PPY: Record<ZoomLevel, number> = { full: 14, decade: 30, year: 90, day: 0 }
-const PICK_PPY: Record<ZoomLevel, number> = { full: 14, decade: 22, year: 0, day: 0 }
+const PICK_PPY: Record<ZoomLevel, number> = { full: 14, decade: 22, year: 90, day: 0 }
 
 function buildAxisGeo(
   zoom: ZoomLevel,

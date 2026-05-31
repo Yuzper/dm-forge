@@ -1,8 +1,6 @@
-Add a session search?
 
 Look at more placeses where date is relevant
 
 Better visual for multi day session
 
-Article date picker cropped
 

@@ -8,7 +8,7 @@ import { ARTICLE_TYPE_COLORS } from '../constants/articleTypes'
 import {
   ZoomLevel, ZOOM_LABEL, ZOOM_ORDER, YEAR_LENGTH,
   isYearMode, dayToWorldYear, computeBins,
-  makePageAxisGeo,
+  makePageAxisGeo, DEFAULT_BASE_YEAR,
 } from '../utils/timelineGeometry'
 import {
   renderAxis, renderDayTicks, renderLogBreak,
@@ -333,6 +333,7 @@ export default function TimelinePage() {
   const svgRef = useRef<SVGSVGElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const filterRef = useRef<HTMLDivElement>(null)
+  const scrollToBinRef = useRef<number | null>(null)
 
   const [items, setItems] = useState<TimelineEventItem[]>([])
   const [undatedEvents, setUndatedEvents] = useState<{ id: number; title: string }[]>([])
@@ -343,13 +344,13 @@ export default function TimelinePage() {
   const [showFilter, setShowFilter] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [showYearConfig, setShowYearConfig] = useState(false)
-  const [baseYear, setBaseYear] = useState<number>((currentCampaign as any)?.timeline_base_year ?? 1507)
+  const [baseYear, setBaseYear] = useState<number>((currentCampaign as any)?.timeline_base_year ?? DEFAULT_BASE_YEAR)
   const [binTooltip, setBinTooltip] = useState<BinTooltip | null>(null)
   const [dayTooltip, setDayTooltip] = useState<DayTooltip | null>(null)
 
   const pxPerDay = DAY_ZOOM_LEVELS[dayZoomIdx]
 
-  useEffect(() => { setBaseYear((currentCampaign as any)?.timeline_base_year ?? 1507) }, [currentCampaign?.id])
+  useEffect(() => { setBaseYear((currentCampaign as any)?.timeline_base_year ?? DEFAULT_BASE_YEAR) }, [currentCampaign?.id])
 
   useEffect(() => {
     if (!showFilter) return
@@ -426,76 +427,77 @@ export default function TimelinePage() {
     svg.setAttribute('width', String(CANVAS_W))
     svg.setAttribute('height', String(TOTAL_H))
 
-    // Pre-campaign bins + log break — shown at all zoom levels when history exists
-    if (bins.length > 0) {
-      renderLogBreak(svg, PAD_L + geo.campaignOffX, TOTAL_H)
+    // In year modes render all items as bins; in day mode render individual items
+    if (isYearMode(zoom)) {
+      // Log-break line only when there are pre-campaign bins
+      if (bins.some(b => b.zone === 'pre')) renderLogBreak(svg, PAD_L + geo.campaignOffX, TOTAL_H)
+
+      renderYearBands(svg, AXIS_Y, baseYear, maxWY, worldYearToX)
+      renderAxis(svg, PAD_L - 10, AXIS_Y, CANVAS_W - PAD_R + 8)
+      renderYearTicks(svg, baseYear, maxWY, AXIS_Y, worldYearToX, PAD_L + geo.campaignOffX, CANVAS_W - PAD_R)
+      renderArcTubes(svg, arcSpans, dx, ARC_Y, ARC_H)
+
       renderBinChips(svg, bins, worldYearToX, PAD_L, {
         axisY: AXIS_Y, arcY: ARC_Y,
         onHover: (chip, cx, cy) => {
           const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
           const rect = scrollRef.current?.getBoundingClientRect()
-          setBinTooltip({ label: `${chip.startYear}–${chip.endYear}`, syCount: chip.syCount, evCount: chip.evCount, items: chip.items, x: cx - (rect?.left ?? 0) + (scrollRef.current?.scrollLeft ?? 0), y: cy - (rect?.top ?? 0), nextZoom })
+          setBinTooltip({ label: `${chip.startYear}–${chip.endYear}`, syCount: chip.syCount, evCount: chip.evCount, items: chip.items, x: cx - (rect?.left ?? 0), y: cy - (rect?.top ?? 0), nextZoom })
         },
         onLeave: () => setBinTooltip(null),
-        onClick: () => {
+        onClick: (chip) => {
+          const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
+          if (nextZoom !== zoom) {
+            scrollToBinRef.current = (chip.startYear + chip.endYear) / 2
+            setZoom(nextZoom)
+          }
+        },
+      })
+    } else {
+      renderAxis(svg, PAD_L - 10, AXIS_Y, CANVAS_W - PAD_R + 8)
+      renderDayTicks(svg, minDay, maxDay, AXIS_Y, dx, pxPerDay)
+      renderArcTubes(svg, arcSpans, dx, ARC_Y, ARC_H)
+
+      const clusterItems: ClusterItem[] = [
+        ...(filters.sessions ? sessionItems.map(s => ({
+          id: s.id, title: s.name, kind: 'session' as const,
+          day: s.in_world_day, color: arcMap[s.arc_id ?? 0]?.color ?? '#8a8a8a',
+          session_number: s.session_number, session_sub: s.session_sub,
+          arc_id: s.arc_id, in_world_day_end: s.in_world_day_end,
+        })) : []),
+        ...(filters.events ? items.filter(i => i.kind === 'event').map(i => ({
+          id: i.id, title: i.title, kind: 'event' as const,
+          day: i.day, color: i.color, article_type: i.article_type,
+        })) : []),
+        ...(filters.deaths ? items.filter(i => i.kind === 'death').map(i => ({
+          id: i.id, title: i.title, kind: 'death' as const,
+          day: i.day, color: i.color, article_type: i.article_type,
+        })) : []),
+      ]
+
+      renderClusters(svg, clusterItems, dx, arcMap, {
+        axisY: AXIS_Y, sessionDotY: SESSION_DOT_Y, eventY: EVENT_Y, deathY: DEATH_Y, arcY: ARC_Y,
+        onHover: (cluster, cx, cy, container) => {
+          const rect = (container as HTMLElement).getBoundingClientRect()
+          setDayTooltip({ items: cluster, x: cx - rect.left, y: cy - rect.top })
+        },
+        onLeave: () => setDayTooltip(null),
+        onClickSingle: item => {
+          if (item.kind === 'session') {
+            const s = datedSessions.find(s => s.id === item.id)
+            if (s) setSelected({ kind: 'session', id: s.id, title: s.name, day: s.in_world_day!, dayEnd: s.in_world_day_end ?? s.in_world_day!, year: Math.floor(dayToWorldYear(s.in_world_day!, baseYear)), arcColor: arcMap[s.arc_id ?? 0]?.color, arcName: arcMap[s.arc_id ?? 0]?.name, sessionNum: `${s.session_number}${s.session_sub ?? ''}` })
+          } else {
+            const ev = items.find(i => i.id === item.id && i.kind === item.kind)
+            if (ev) setSelected({ kind: ev.kind, id: ev.id, title: ev.title, day: ev.day, year: ev.year, articleType: ev.article_type, arcColor: ev.color })
+          }
+        },
+        onClickCluster: () => {
           const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
           if (nextZoom !== zoom) setZoom(nextZoom)
         },
       })
     }
-
-    if (isYearMode(zoom)) {
-      renderYearBands(svg, AXIS_Y, baseYear, maxWY, worldYearToX)
-      renderAxis(svg, PAD_L - 10, AXIS_Y, CANVAS_W - PAD_R + 8)
-      renderYearTicks(svg, baseYear, maxWY, AXIS_Y, worldYearToX, PAD_L + geo.campaignOffX, CANVAS_W - PAD_R)
-    } else {
-      renderAxis(svg, PAD_L - 10, AXIS_Y, CANVAS_W - PAD_R + 8)
-      renderDayTicks(svg, minDay, maxDay, AXIS_Y, dx, pxPerDay)
-    }
-
-    renderArcTubes(svg, arcSpans, dx, ARC_Y, ARC_H)
-
-    // Build combined item list and cluster by pixel proximity
-    const clusterItems: ClusterItem[] = [
-      ...(filters.sessions ? sessionItems.map(s => ({
-        id: s.id, title: s.name, kind: 'session' as const,
-        day: s.in_world_day, color: arcMap[s.arc_id ?? 0]?.color ?? '#8a8a8a',
-        session_number: s.session_number, session_sub: s.session_sub,
-        arc_id: s.arc_id, in_world_day_end: s.in_world_day_end,
-      })) : []),
-      ...(filters.events ? items.filter(i => i.kind === 'event').map(i => ({
-        id: i.id, title: i.title, kind: 'event' as const,
-        day: i.day, color: i.color, article_type: i.article_type,
-      })) : []),
-      ...(filters.deaths ? items.filter(i => i.kind === 'death').map(i => ({
-        id: i.id, title: i.title, kind: 'death' as const,
-        day: i.day, color: i.color, article_type: i.article_type,
-      })) : []),
-    ]
-
-    renderClusters(svg, clusterItems, dx, arcMap, {
-      axisY: AXIS_Y, sessionDotY: SESSION_DOT_Y, eventY: EVENT_Y, deathY: DEATH_Y, arcY: ARC_Y,
-      onHover: (cluster, cx, cy, container) => {
-        const rect = (container as HTMLElement).getBoundingClientRect()
-        setDayTooltip({ items: cluster, x: cx - rect.left, y: cy - rect.top })
-      },
-      onLeave: () => setDayTooltip(null),
-      onClickSingle: item => {
-        if (item.kind === 'session') {
-          const s = datedSessions.find(s => s.id === item.id)
-          if (s) setSelected({ kind: 'session', id: s.id, title: s.name, day: s.in_world_day!, dayEnd: s.in_world_day_end ?? s.in_world_day!, year: baseYear, arcColor: arcMap[s.arc_id ?? 0]?.color, arcName: arcMap[s.arc_id ?? 0]?.name, sessionNum: `${s.session_number}${s.session_sub ?? ''}` })
-        } else {
-          const ev = items.find(i => i.id === item.id && i.kind === item.kind)
-          if (ev) setSelected({ kind: ev.kind, id: ev.id, title: ev.title, day: ev.day, year: ev.year, articleType: ev.article_type, arcColor: ev.color })
-        }
-      },
-      onClickCluster: cluster => {
-        // Zoom in one level; if already at Day, open first item
-        const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
-        if (nextZoom !== zoom) setZoom(nextZoom)
-      },
-    })
-  }, [datedSessions, arcs, items, selected, filters, CANVAS_W, baseYear, zoom, pxPerDay, minDay, maxDay, bins])
+  }, [datedSessions, arcs, items, filters, CANVAS_W, baseYear, zoom, pxPerDay, minDay, maxDay, bins])
 
   // Scroll to latest session on mount/data change
   useEffect(() => {
@@ -507,10 +509,19 @@ export default function TimelinePage() {
     scrollRef.current.scrollLeft = Math.max(0, x - scrollRef.current.clientWidth * 0.6)
   }, [sessions, items.length, zoom, pxPerDay])
 
-  // Scroll to campaign start when entering year mode
+  // Scroll to campaign start (or pending bin center) when zoom changes
   useEffect(() => {
-    if (!scrollRef.current || !isYearMode(zoom)) return
-    scrollRef.current.scrollLeft = Math.max(0, (PAD_L + geo.campaignOffX) - scrollRef.current.clientWidth * 0.4)
+    if (!scrollRef.current) return
+    if (scrollToBinRef.current != null) {
+      const targetWY = scrollToBinRef.current
+      scrollToBinRef.current = null
+      const x = geo.worldYearToX(targetWY)
+      scrollRef.current.scrollLeft = Math.max(0, x - scrollRef.current.clientWidth / 2)
+      return
+    }
+    if (isYearMode(zoom)) {
+      scrollRef.current.scrollLeft = Math.max(0, (PAD_L + geo.campaignOffX) - scrollRef.current.clientWidth * 0.4)
+    }
   }, [zoom])
 
   const handleSessionDateSet = useCallback(async (sessionId: number, startRaw: string, endRaw: string) => {
@@ -634,7 +645,10 @@ export default function TimelinePage() {
       {/* Timeline scroll area */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <div ref={scrollRef} style={{ overflowX: 'auto', overflowY: 'hidden', padding: '32px 0 0', background: 'var(--bg-base)' }}>
-          <svg ref={svgRef} style={{ display: 'block', overflow: 'visible' }} />
+          <svg ref={svgRef} style={{ display: 'block', overflow: 'visible', pointerEvents: 'all' }}
+            onMouseMove={e => { if (e.target === e.currentTarget) { setDayTooltip(null); setBinTooltip(null) } }}
+            onMouseLeave={() => { setDayTooltip(null); setBinTooltip(null) }}
+          />
           <div style={{ height: 20 }} />
         </div>
 

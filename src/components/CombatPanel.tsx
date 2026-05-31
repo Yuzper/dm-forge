@@ -84,6 +84,15 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
     }
   }, [])
 
+  // ── Debounced general auto-save (1500ms after last change) ───────────────
+  useEffect(() => {
+    if (!dirty || !selectedPOI) return
+    const timer = setTimeout(() => {
+      updatePOI(selectedPOI.id, { label, content }).then(() => setDirty(false))
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [dirty, label, content, selectedPOI])
+
   // ── Debounced combat auto-save (1500ms after last change) ─────────────────
   useEffect(() => {
     if (!creaturesDirty || !encounter || !creatures.length) return

@@ -96,15 +96,28 @@ export function renderBinChips(
     const x2 = worldYearToX(bin.endYear)
     const w = Math.max(x2 - x1, 8)
     const hasItems = bin.syCount > 0 || bin.evCount > 0
+    const isCampaign = bin.zone === 'campaign'
     const top = arcY - 2, h = axisY - top
     const g = svgEl('g', { style: 'cursor:pointer' }, svg)
-    svgEl('rect', { x: x1, y: top, width: w, height: h, rx: '3',
-      fill: hasItems ? '#2a2820' : '#1a1810', stroke: hasItems ? '#3a3828' : '#222018', 'stroke-width': '1' }, g)
-    if (w > 18 && hasItems) {
-      const label = [bin.syCount > 0 && `${bin.syCount}s`, bin.evCount > 0 && `${bin.evCount}ev`].filter(Boolean).join(' · ')
-      svgTxt(label, { x: x1 + w / 2, y: top + h / 2 + 3.5, 'text-anchor': 'middle', fill: '#c8a84b88', 'font-size': '8', 'font-family': 'sans-serif' }, g)
+
+    if (isCampaign) {
+      svgEl('rect', { x: x1, y: top, width: w, height: h, rx: '3',
+        fill: '#c8a84b12', stroke: '#c8a84b44', 'stroke-width': '1' }, g)
+      if (w > 18 && hasItems) {
+        const label = [bin.syCount > 0 && `${bin.syCount}s`, bin.evCount > 0 && `${bin.evCount}ev`].filter(Boolean).join(' · ')
+        svgTxt(label, { x: x1 + w / 2, y: top + h / 2 + 3.5, 'text-anchor': 'middle', fill: '#c8a84baa', 'font-size': '8', 'font-family': 'sans-serif' }, g)
+      }
+      if (w > 34) svgTxt(String(bin.startYear), { x: x1 + w / 2, y: top - 4, 'text-anchor': 'middle', fill: '#c8a84b77', 'font-size': '7', 'font-family': 'sans-serif' }, g)
+    } else {
+      svgEl('rect', { x: x1, y: top, width: w, height: h, rx: '3',
+        fill: hasItems ? '#2a2820' : '#1a1810', stroke: hasItems ? '#3a3828' : '#222018', 'stroke-width': '1' }, g)
+      if (w > 18 && hasItems) {
+        const label = [bin.syCount > 0 && `${bin.syCount}s`, bin.evCount > 0 && `${bin.evCount}ev`].filter(Boolean).join(' · ')
+        svgTxt(label, { x: x1 + w / 2, y: top + h / 2 + 3.5, 'text-anchor': 'middle', fill: '#c8a84b88', 'font-size': '8', 'font-family': 'sans-serif' }, g)
+      }
+      if (w > 34) svgTxt(String(bin.startYear), { x: x1 + w / 2, y: top - 4, 'text-anchor': 'middle', fill: '#3a3628', 'font-size': '7', 'font-family': 'sans-serif' }, g)
     }
-    if (w > 34) svgTxt(String(bin.startYear), { x: x1 + w / 2, y: top - 4, 'text-anchor': 'middle', fill: '#3a3628', 'font-size': '7', 'font-family': 'sans-serif' }, g)
+
     if (onHover) g.addEventListener('mouseenter', e => onHover(bin, (e as MouseEvent).clientX, (e as MouseEvent).clientY))
     if (onLeave) g.addEventListener('mouseleave', onLeave)
     if (onClick) g.addEventListener('click', e => { e.stopPropagation(); onClick(bin) })
@@ -303,13 +316,18 @@ export function renderClusters(
     const item = cluster[0]
     const color = isSingle ? item.color : '#c8a84b'
 
-    const g = svgEl('g', { style: 'cursor:pointer', 'pointer-events': 'bounding-box' }, svg)
+    const g = svgEl('g', { style: 'cursor:pointer' }, svg)
     const container = svg.parentElement!
 
-    g.addEventListener('mouseenter', e => opts.onHover(cluster, (e as MouseEvent).clientX, (e as MouseEvent).clientY, container))
-    g.addEventListener('mousemove',  e => opts.onHover(cluster, (e as MouseEvent).clientX, (e as MouseEvent).clientY, container))
-    g.addEventListener('mouseleave', opts.onLeave)
-    g.addEventListener('click', () => isSingle ? opts.onClickSingle(item) : opts.onClickCluster(cluster))
+    // attachHit renders a transparent overlay as the last child of g.
+    // Transparent fill (not 'none') + pointer-events:all = reliable cross-platform hit target.
+    const attachHit = (cx: number, cy: number, r: number) => {
+      const hit = svgEl('circle', { cx, cy, r, fill: 'transparent', 'pointer-events': 'all' }, g)
+      hit.addEventListener('mouseenter', e => opts.onHover(cluster, (e as MouseEvent).clientX, (e as MouseEvent).clientY, container))
+      hit.addEventListener('mousemove',  e => opts.onHover(cluster, (e as MouseEvent).clientX, (e as MouseEvent).clientY, container))
+      hit.addEventListener('mouseleave', opts.onLeave)
+      hit.addEventListener('click', e => { e.stopPropagation(); isSingle ? opts.onClickSingle(item) : opts.onClickCluster(cluster) })
+    }
 
     if (isSingle && item.kind === 'session') {
       // Single session — full render
@@ -329,6 +347,7 @@ export function renderClusters(
       const words = item.title.split(' '), half = Math.ceil(words.length / 2)
       svgTxt(words.slice(0, half).join(' '), { x: px, y: opts.sessionDotY - R - 10, 'text-anchor': 'middle', fill: '#6b6558', 'font-size': '8', 'font-family': 'sans-serif', 'pointer-events': 'none' }, g)
       if (words.length > half) svgTxt(words.slice(half).join(' '), { x: px, y: opts.sessionDotY - R - 2, 'text-anchor': 'middle', fill: '#6b6558', 'font-size': '8', 'font-family': 'sans-serif', 'pointer-events': 'none' }, g)
+      attachHit(px, opts.sessionDotY, R + 4)
 
     } else if (isSingle && (item.kind === 'event' || item.kind === 'death')) {
       // Single event/death — full render
@@ -340,6 +359,7 @@ export function renderClusters(
         fill: item.color + '1a', stroke: item.color, 'stroke-width': '1.5', 'pointer-events': 'none' }, g)
       if (item.kind === 'death') svgTxt('☠', { x: px, y: yPos + 3.5, 'text-anchor': 'middle', fill: item.color, 'font-size': '7', 'font-family': 'sans-serif', 'pointer-events': 'none' }, g)
       svgTxt(item.title, { x: px, y: item.kind === 'death' ? yPos + S + 10 : yPos - S - 5, 'text-anchor': 'middle', fill: item.color, 'font-size': '8', 'font-family': 'sans-serif', 'pointer-events': 'none' }, g)
+      attachHit(px, yPos, S + 6)
 
     } else {
       // Cluster of multiple items — stacked diamond badge
@@ -352,6 +372,7 @@ export function renderClusters(
         fill: color + '22', stroke: color, 'stroke-width': '1.5', 'pointer-events': 'none' }, g)
       svgTxt(String(cluster.length), { x: px, y: yPos + 3.5, 'text-anchor': 'middle', fill: color, 'font-size': '8', 'font-weight': '700', 'font-family': 'sans-serif', 'pointer-events': 'none' }, g)
       svgEl('line', { x1: px, y1: yPos + S, x2: px, y2: opts.axisY, stroke: color + '33', 'stroke-width': '1', 'stroke-dasharray': '2 3', 'pointer-events': 'none' }, g)
+      attachHit(px, yPos, S + 4)
     }
   })
 }

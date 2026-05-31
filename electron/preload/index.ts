@@ -10,7 +10,8 @@ contextBridge.exposeInMainWorld('api', {
   deleteCampaign:  (id: number)   => ipcRenderer.invoke('campaigns:delete', id),
 
   // Sessions
-  getSessions:     (campaignId: number) => ipcRenderer.invoke('sessions:get-all', campaignId),
+  getSessions:        (campaignId: number) => ipcRenderer.invoke('sessions:get-all', campaignId),
+  getSessionPoiTexts: (campaignId: number) => ipcRenderer.invoke('sessions:get-poi-texts', campaignId),
   createSession:   (data: any)    => ipcRenderer.invoke('sessions:create', data),
   updateSession:   (id: number, data: any) => ipcRenderer.invoke('sessions:update', id, data),
   deleteSession:   (id: number)   => ipcRenderer.invoke('sessions:delete', id),

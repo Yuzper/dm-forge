@@ -338,7 +338,8 @@ export interface ElectronAPI {
   updateCampaign:  (id: number, data: Partial<CreateCampaignInput>) => Promise<Campaign>
   deleteCampaign:  (id: number)                   => Promise<void>
 
-  getSessions:     (campaignId: number)            => Promise<Session[]>
+  getSessions:        (campaignId: number)           => Promise<Session[]>
+  getSessionPoiTexts: (campaignId: number)           => Promise<{ session_id: number; label: string; content: string }[]>
   createSession:   (data: CreateSessionInput)      => Promise<Session>
   updateSession:   (id: number, data: Partial<CreateSessionInput>) => Promise<Session>
   deleteSession:   (id: number)                    => Promise<void>

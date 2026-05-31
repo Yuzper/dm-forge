@@ -5,7 +5,7 @@ import { Calendar, X } from 'lucide-react'
 import {
   ZoomLevel, ZOOM_LABEL, ZOOM_BIN, ZOOM_ORDER, YEAR_LENGTH,
   isYearMode, dayToWorldYear, worldYearToDay, computeBins,
-  makePickerAxisGeo,
+  makePickerAxisGeo, DEFAULT_BASE_YEAR,
 } from '../utils/timelineGeometry'
 
 export interface InWorldDate {
@@ -46,20 +46,32 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
   const svgRef = useRef<SVGSVGElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
-  const [zoom, setZoom] = useState<ZoomLevel>('year')
+  const [zoom, setZoom] = useState<ZoomLevel>('day')
   const [hoverBin, setHoverBin] = useState<{ label: string; sx: number; syCount: number; evCount: number; nextZoom: ZoomLevel; centerYear: number } | null>(null)
-  const [events, setEvents] = useState<{ day: number }[]>([])
+  const [events, setEvents] = useState<{ day: number; kind: 'event' | 'death' }[]>([])
 
   useEffect(() => {
     if (!campaignId) return
-    window.api.getArticlesList({ campaignId, type: 'event' }).then((list: any[]) => {
-      setEvents(list.flatMap((a: any) => {
+    Promise.all([
+      window.api.getArticlesList({ campaignId, type: 'event' }),
+      window.api.getArticlesList({ campaignId, type: 'character' }),
+      window.api.getArticlesList({ campaignId, type: 'playerCharacter' }),
+    ]).then(([evList, charList, pcList]: any[][]) => {
+      const evItems = evList.flatMap((a: any) => {
         try {
           const t = JSON.parse(a.tracks ?? '{}')
           const d = parseInWorldDate(t.In_World_Date)
-          return d ? [{ day: d.day }] : []
+          return d ? [{ day: d.day, kind: 'event' as const }] : []
         } catch { return [] }
-      }))
+      })
+      const deathItems = [...charList, ...pcList].flatMap((a: any) => {
+        try {
+          const t = JSON.parse(a.tracks ?? '{}')
+          const d = parseInWorldDate(t.Death_Date)
+          return d ? [{ day: d.day, kind: 'death' as const }] : []
+        } catch { return [] }
+      })
+      setEvents([...evItems, ...deathItems])
     })
   }, [campaignId])
 
@@ -87,22 +99,22 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
     if (!scrollRef.current) return
     const targetX = selectedDay ? dx(selectedDay) : (isYearMode(zoom) ? PAD_L + geo.campaignOffX : PAD_L + (1 - MIN_DAY) * PX_PER_DAY)
     scrollRef.current.scrollLeft = targetX - (scrollRef.current.clientWidth / 2)
-  }, [zoom])
+  }, [zoom, selectedDay])
 
   // ── Shared data ──────────────────────────────────────────────────────────────
   const arcMap = Object.fromEntries(arcs.map(a => [a.id, a]))
   const arcSpans = arcs.map(arc => {
     const days = sessions.filter(s => s.arc_id === arc.id).map(s => (s as any).in_world_day ?? 0).filter(d => d > 0)
     if (!days.length) return null
-    return { arc, start: Math.min(...days), end: Math.max(...days) + 8 }
+    return { arc, start: Math.min(...days), end: Math.max(...days) }
   }).filter(Boolean) as { arc: typeof arcs[0]; start: number; end: number }[]
 
   const sessionDots = sessions
     .filter(s => (s as any).in_world_day)
     .map(s => ({ day: (s as any).in_world_day as number, color: arcMap[s.arc_id ?? 0]?.color ?? '#555' }))
 
-  // ── Bin chips ────────────────────────────────────────────────────────────────
-  const bins = computeBins(zoom, baseYear, sessions as any[], events)
+  // ── Bin chips (pre-campaign context only) ───────────────────────────────────
+  const bins = computeBins(zoom, baseYear, sessions as any[], events).filter(b => b.zone === 'pre')
 
   // ── Mouse → day ──────────────────────────────────────────────────────────────
   const mouseToDay = (e: MouseEvent | React.MouseEvent): number | null => {
@@ -129,8 +141,8 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
   const sx = hasMarker ? dx(selectedDay) : null
   const markerLabel = isYearMode(zoom) ? `${Math.round(dayToWorldYear(selectedDay, baseYear))}` : `D${selectedDay}`
 
-  // ── Year-mode campaign year ticks ────────────────────────────────────────────
-  const campaignYears = isYearMode(zoom) ? (() => {
+  // ── Year-mode campaign year ticks (guard: pxPerYear=0 means no campaign zone) ─
+  const campaignYears = isYearMode(zoom) && geo.pxPerYear > 0 ? (() => {
     const years = []
     for (let wy = baseYear; worldYearToX(wy) < W_YEAR - PAD_R; wy++) years.push(wy)
     return years
@@ -224,9 +236,9 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
               )
             })}
 
-            {/* Session / event dots */}
+            {/* Session / event / death dots */}
             {sessionDots.map((s, i) => <circle key={i} cx={dx(s.day)} cy={AXIS_Y} r="3" fill={s.color} opacity={0.7} />)}
-            {events.filter(e => e.day >= 1).map((e, i) => <circle key={i} cx={dx(e.day)} cy={AXIS_Y} r="2.5" fill="#e05555" opacity={0.7} />)}
+            {events.map((e, i) => <circle key={i} cx={dx(e.day)} cy={AXIS_Y} r="2.5" fill={e.kind === 'death' ? '#9b7de8' : '#e05555'} opacity={0.7} />)}
 
           </>}
 
@@ -281,8 +293,9 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
               )
             })}
 
-            {/* Session dots */}
+            {/* Session / event / death dots */}
             {sessionDots.map((s, i) => <circle key={i} cx={dx(s.day)} cy={AXIS_Y} r="3" fill={s.color} opacity={0.7} />)}
+            {events.map((e, i) => <circle key={i} cx={dx(e.day)} cy={AXIS_Y} r="2.5" fill={e.kind === 'death' ? '#9b7de8' : '#e05555'} opacity={0.7} />)}
           </>}
 
           {/* Draggable marker — shared */}
@@ -360,7 +373,7 @@ interface InWorldDatePickerProps {
 
 const deriveYear = (day: number, baseYear: number) => baseYear + Math.floor((day - 1) / YEAR_LENGTH)
 
-export function InWorldDatePicker({ value, onChange, baseYear = 1507, label = 'In-world date' }: InWorldDatePickerProps) {
+export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEAR, label = 'In-world date' }: InWorldDatePickerProps) {
   const { currentCampaign, sessions, arcs } = useStore()
   const [open, setOpen] = useState(false)
   const [dropUp, setDropUp] = useState(false)

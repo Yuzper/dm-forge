@@ -1,5 +1,5 @@
 // path: electron/main/index.ts
-import { app, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeImage, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import Database from 'better-sqlite3'
@@ -510,6 +510,11 @@ function createWindow() {
     },
   })
 
+  const systemLocale = app.getLocale()
+  const available = mainWindow.webContents.session.availableSpellCheckerLanguages
+  const language = available.includes(systemLocale) ? systemLocale : 'en-US'
+  mainWindow.webContents.session.setSpellCheckerLanguages([language])
+
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
 //    mainWindow.webContents.openDevTools()
@@ -518,6 +523,23 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => { mainWindow = null })
+
+  mainWindow.webContents.on('context-menu', (_, params) => {
+    if (!params.misspelledWord) return
+    const menu = Menu.buildFromTemplate([
+      ...(params.dictionarySuggestions ?? []).map(word => ({
+        label: word,
+        click: () => mainWindow!.webContents.replaceMisspelling(word),
+      })),
+      ...((params.dictionarySuggestions ?? []).length > 0 ? [{ type: 'separator' as const }] : []),
+      {
+        label: 'Add to dictionary',
+        click: () => mainWindow!.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
+      },
+    ])
+    menu.popup()
+  })
+
   return mainWindow
 }
 
@@ -601,6 +623,16 @@ function registerIPC(imagesPath: string) {
     const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE sessions SET ${fields} WHERE id = @id`).run({ ...data, id })
     return db.prepare('SELECT * FROM sessions WHERE id = ?').get(id)
+  })
+
+  ipcMain.handle('sessions:get-poi-texts', (_e, campaignId: number) => {
+    return db.prepare(`
+      SELECT p.label, p.content, m.session_id
+      FROM pois p
+      JOIN maps m ON m.id = p.map_id
+      JOIN sessions s ON s.id = m.session_id
+      WHERE s.campaign_id = ?
+    `).all(campaignId)
   })
 
   ipcMain.handle('sessions:delete', (_e, id: number) => {
