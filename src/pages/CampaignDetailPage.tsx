@@ -1177,7 +1177,6 @@ function ArcMenu({ arc, onEdit }: { arc: Arc; onEdit: () => void }) {
   const [open, setOpen] = useState(false)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
   const menuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
   useMenuClose(open, menuRef, setOpen)
   return (
     <div ref={menuRef} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
