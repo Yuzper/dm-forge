@@ -38,19 +38,19 @@ interface MiniTimelineProps {
 function MiniTimeline({ campaignId, selectedDay, baseYear, onPickDay }: MiniTimelineProps) {
   const { sessions, arcs } = useStore()
   const svgRef = useRef<SVGSVGElement>(null)
-  const [events, setEvents] = useState<{ id: number; title: string; day: number; color: string }[]>([])
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const dragging = useRef(false)
 
   const PX_PER_DAY = 6
   const PAD_L = 20
   const PAD_R = 24
-  const AXIS_Y = 68
-  const ARC_H = 9
-  const ARC_Y = AXIS_Y - ARC_H / 2
-  const SESSION_Y = AXIS_Y - ARC_H / 2 - 24
+  const H = 52
+  const AXIS_Y = 32
+  const ARC_H = 8
+  const ARC_Y = AXIS_Y - ARC_H - 4
 
   const allDays = [
     ...sessions.map(s => (s as any).in_world_day).filter(Boolean),
-    ...events.map(e => e.day),
     selectedDay || 1,
     1,
   ]
@@ -59,96 +59,105 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, onPickDay }: MiniTime
   const TOTAL_DAYS = MAX_DAY - MIN_DAY
   const W = PAD_L + TOTAL_DAYS * PX_PER_DAY + PAD_R
 
-  const dx = useCallback((day: number) => PAD_L + (day - MIN_DAY) * PX_PER_DAY, [MIN_DAY, PX_PER_DAY, PAD_L])
+  const dx = useCallback((day: number) => PAD_L + (day - MIN_DAY) * PX_PER_DAY, [MIN_DAY])
+  const xToDay = useCallback((x: number) => Math.round((x - PAD_L) / PX_PER_DAY) + MIN_DAY, [MIN_DAY])
 
+  // Scroll selected day into view when opening
   useEffect(() => {
-    if (!campaignId) return
-    window.api.getArticlesList({ campaignId, type: 'event' }).then((list: any[]) => {
-      const evs = list
-        .filter((a: any) => {
-          if (!a.tracks) return false
-          try { const t = JSON.parse(a.tracks); return t.In_World_Date } catch { return false }
-        })
-        .map((a: any) => {
-          try {
-            const t = JSON.parse(a.tracks)
-            const d = parseInWorldDate(t.In_World_Date)
-            return d ? { id: a.id, title: a.title, day: d.day, color: '#e05555' } : null
-          } catch { return null }
-        })
-        .filter(Boolean) as { id: number; title: string; day: number; color: string }[]
-      setEvents(evs)
-    })
-  }, [campaignId])
+    if (!scrollRef.current || !selectedDay) return
+    const targetX = dx(selectedDay)
+    const containerW = scrollRef.current.clientWidth
+    scrollRef.current.scrollLeft = targetX - containerW / 2
+  }, [])
 
-  const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!svgRef.current) return
-    const rect = svgRef.current.getBoundingClientRect()
-    const rawX = e.clientX - rect.left
-    const day = Math.min(TOTAL_DAYS, Math.round((rawX - PAD_L) / PX_PER_DAY) + MIN_DAY)
-    onPickDay(day)
-  }
-
-  // Group sessions by arc
+  // Arc spans
   const arcMap = Object.fromEntries(arcs.map(a => [a.id, a]))
-
-  // Compute arc spans from session days
   const arcSpans = arcs.map(arc => {
-    const arcSessions = sessions.filter(s => s.arc_id === arc.id)
-      .map(s => (s as any).in_world_day ?? 0)
-      .filter(d => d > 0)
-    if (arcSessions.length === 0) return null
-    return { arc, start: Math.min(...arcSessions), end: Math.max(...arcSessions) + 8 }
+    const days = sessions.filter(s => s.arc_id === arc.id)
+      .map(s => (s as any).in_world_day ?? 0).filter(d => d > 0)
+    if (!days.length) return null
+    return { arc, start: Math.min(...days), end: Math.max(...days) + 8 }
   }).filter(Boolean) as { arc: typeof arcs[0]; start: number; end: number }[]
 
-  const sessionList = sessions
+  // Session dots
+  const sessionDots = sessions
     .filter(s => (s as any).in_world_day)
-    .map(s => ({ ...s, day: (s as any).in_world_day as number, arc: arcMap[s.arc_id ?? 0] }))
-    .filter(s => s.arc)
-    .sort((a, b) => a.day - b.day)
+    .map(s => ({ day: (s as any).in_world_day as number, color: arcMap[s.arc_id ?? 0]?.color ?? '#555' }))
+
+  const dayFromEvent = (e: MouseEvent | React.MouseEvent) => {
+    if (!svgRef.current) return null
+    const scrollX = scrollRef.current?.scrollLeft ?? 0
+    const rect = svgRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left + scrollX
+    return Math.max(MIN_DAY, Math.min(MAX_DAY, xToDay(x)))
+  }
+
+  const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (dragging.current) return
+    const d = dayFromEvent(e)
+    if (d !== null) onPickDay(d)
+  }
+
+  const handleHandleMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    dragging.current = true
+    const onMove = (ev: MouseEvent) => {
+      const d = dayFromEvent(ev)
+      if (d !== null) onPickDay(d)
+    }
+    const onUp = () => {
+      dragging.current = false
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  const hasMarker = selectedDay !== 0
+  const sx = hasMarker ? dx(selectedDay) : null
 
   return (
-    <div style={{ overflowX: 'auto', overflowY: 'hidden', paddingBottom: 4 }}>
+    <div ref={scrollRef} style={{ overflowX: 'auto', overflowY: 'hidden' }}>
       <svg
         ref={svgRef}
         width={W}
-        height={100}
+        height={H}
         style={{ display: 'block', cursor: 'crosshair', overflow: 'visible' }}
-        onClick={handleClick}
+        onClick={handleSvgClick}
       >
         {/* Axis */}
         <line x1={PAD_L} y1={AXIS_Y} x2={W - PAD_R + 8} y2={AXIS_Y} stroke="#3a3828" strokeWidth="1.5" />
         <polygon points={`${W - PAD_R + 8},${AXIS_Y} ${W - PAD_R + 2},${AXIS_Y - 3} ${W - PAD_R + 2},${AXIS_Y + 3}`} fill="#3a3828" />
 
-        {/* Ticks — step every 10 days, starting from rounded MIN_DAY */}
+        {/* Ticks */}
         {Array.from({ length: Math.ceil(TOTAL_DAYS / 10) + 2 }, (_, i) => {
           const day = Math.ceil(MIN_DAY / 10) * 10 + i * 10
           if (day > MAX_DAY) return null
           const x = dx(day)
-          const label = day <= 0 ? `D${day}` : `D${day}`
           return (
             <g key={day}>
-              <line x1={x} y1={AXIS_Y} x2={x} y2={AXIS_Y + 5} stroke="#2a2820" strokeWidth="1" />
-              <text x={x} y={AXIS_Y + 14} textAnchor="middle" fill={day <= 0 ? '#6b5050' : '#3a3628'} fontSize="7" fontFamily="sans-serif">{label}</text>
+              <line x1={x} y1={AXIS_Y} x2={x} y2={AXIS_Y + 4} stroke="#2a2820" strokeWidth="1" />
+              <text x={x} y={AXIS_Y + 13} textAnchor="middle" fill={day <= 0 ? '#6b5050' : '#3a3628'} fontSize="7" fontFamily="sans-serif">{`D${day}`}</text>
             </g>
           )
         })}
 
-        {/* Day 1 reference line */}
+        {/* Day 1 reference */}
         {MIN_DAY < 1 && (
-          <line x1={dx(1)} y1={AXIS_Y - 30} x2={dx(1)} y2={AXIS_Y + 8} stroke="#c8a84b33" strokeWidth="1" strokeDasharray="2 2" />
+          <line x1={dx(1)} y1={0} x2={dx(1)} y2={AXIS_Y + 4} stroke="#c8a84b22" strokeWidth="1" strokeDasharray="2 2" />
         )}
 
         {/* Arc tubes */}
         {arcSpans.map(({ arc, start, end }) => {
-          const x1 = dx(start), x2 = dx(end), w = x2 - x1
+          const x1 = dx(start), x2 = dx(end), w = Math.max(x2 - x1, 6)
           return (
             <g key={arc.id}>
-              <rect x={x1} y={ARC_Y} width={Math.max(w, 6)} height={ARC_H} rx="5"
+              <rect x={x1} y={ARC_Y} width={w} height={ARC_H} rx="4"
                 fill={arc.color + '28'} stroke={arc.color + '55'} strokeWidth="1" />
-              {w > 40 && (
-                <text x={x1 + Math.max(w, 6) / 2} y={ARC_Y + ARC_H / 2 + 3.5}
-                  textAnchor="middle" fill={arc.color} fontSize="7" fontFamily="sans-serif" fontWeight="600">
+              {w > 30 && (
+                <text x={x1 + w / 2} y={ARC_Y + ARC_H / 2 + 3}
+                  textAnchor="middle" fill={arc.color} fontSize="6" fontFamily="sans-serif" fontWeight="600">
                   {arc.name}
                 </text>
               )}
@@ -156,48 +165,27 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, onPickDay }: MiniTime
           )
         })}
 
-        {/* Sessions */}
-        {sessionList.map(s => {
-          const x = dx(s.day)
-          const color = s.arc?.color ?? '#8a8a8a'
-          return (
-            <g key={s.id}>
-              <line x1={x} y1={SESSION_Y + 8} x2={x} y2={ARC_Y} stroke={color + '44'} strokeWidth="1" strokeDasharray="2 2" />
-              <circle cx={x} cy={SESSION_Y} r="8" fill={color + '22'} stroke={color} strokeWidth="1.2" />
-              <text x={x} y={SESSION_Y + 3.5} textAnchor="middle" fill={color} fontSize="7" fontFamily="sans-serif" fontWeight="600">
-                {s.session_number}{s.session_sub ?? ''}
-              </text>
-            </g>
-          )
-        })}
+        {/* Session dots on axis */}
+        {sessionDots.map((s, i) => (
+          <circle key={i} cx={dx(s.day)} cy={AXIS_Y} r="3" fill={s.color} opacity={0.7} />
+        ))}
 
-        {/* Events */}
-        {events.map(ev => {
-          const x = dx(ev.day)
-          const S = 5
-          return (
-            <g key={ev.id}>
-              <polygon
-                points={`${x},${SESSION_Y - 16 - S} ${x + S},${SESSION_Y - 16} ${x},${SESSION_Y - 16 + S} ${x - S},${SESSION_Y - 16}`}
-                fill={ev.color + '22'} stroke={ev.color} strokeWidth="1.2"
-              />
-            </g>
-          )
-        })}
-
-        {/* Selected day marker */}
-        {selectedDay > 0 && (() => {
-          const sx = dx(selectedDay)
-          return (
-            <g>
-              <line x1={sx} y1={SESSION_Y - 28} x2={sx} y2={AXIS_Y + 18} stroke="#c8a84b" strokeWidth="1.5" />
-              <rect x={sx - 16} y={SESSION_Y - 42} width={32} height={14} rx="4" fill="#c8a84b" />
-              <text x={sx} y={SESSION_Y - 32} textAnchor="middle" fill="#131210" fontSize="8" fontFamily="sans-serif" fontWeight="700">
-                D{selectedDay}
-              </text>
-            </g>
-          )
-        })()}
+        {/* Draggable selected day handle */}
+        {hasMarker && sx !== null && (
+          <g
+            onMouseDown={handleHandleMouseDown}
+            style={{ cursor: 'ew-resize' }}
+          >
+            <line x1={sx} y1={0} x2={sx} y2={AXIS_Y + 4} stroke="#c8a84b" strokeWidth="1.5" />
+            {/* Grip pill */}
+            <rect x={sx - 14} y={1} width={28} height={13} rx="3" fill="#c8a84b" />
+            <text x={sx} y={10} textAnchor="middle" fill="#131210" fontSize="7" fontFamily="sans-serif" fontWeight="700">
+              D{selectedDay}
+            </text>
+            {/* Invisible wider hit area */}
+            <rect x={sx - 10} y={0} width={20} height={H} fill="transparent" />
+          </g>
+        )}
       </svg>
     </div>
   )
