@@ -157,26 +157,28 @@ export default function TimelineEmbed() {
     svg.setAttribute('width', String(CANVAS_W))
     svg.setAttribute('height', String(TOTAL_H))
 
-    if (isYearMode(zoom)) {
-      renderYearBands(svg, AXIS_Y, baseYear, maxWY, worldYearToX)
+    if (bins.length > 0) {
       renderLogBreak(svg, PAD_L + geo.campaignOffX, TOTAL_H)
       renderBinChips(svg, bins, worldYearToX, PAD_L, {
         axisY: AXIS_Y, arcY: ARC_Y,
         onHover: (chip, cx, cy) => {
-          const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? 'day'
+          const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
           const rect = scrollRef.current?.getBoundingClientRect()
           setBinTooltip({ label: `${chip.startYear}–${chip.endYear}`, syCount: chip.syCount, evCount: chip.evCount, x: cx - (rect?.left ?? 0), y: cy - (rect?.top ?? 0), nextZoom })
         },
         onLeave: () => setBinTooltip(null),
         onClick: () => {
-          const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? 'day'
-          setZoom(nextZoom)
+          const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
+          if (nextZoom !== zoom) setZoom(nextZoom)
         },
       })
+    }
+
+    if (isYearMode(zoom)) {
+      renderYearBands(svg, AXIS_Y, baseYear, maxWY, worldYearToX)
       renderAxis(svg, PAD_L - 10, AXIS_Y, CANVAS_W - PAD_R + 8)
       renderYearTicks(svg, baseYear, maxWY, AXIS_Y, worldYearToX, PAD_L + geo.campaignOffX, CANVAS_W - PAD_R)
     } else {
-      if (minDay < 1) renderPreCampaignShade(svg, dx(minDay), dx(1), TOTAL_H, AXIS_Y)
       renderAxis(svg, PAD_L - 10, AXIS_Y, CANVAS_W - PAD_R + 8)
       renderDayTicks(svg, minDay, maxDay, AXIS_Y, dx, pxPerDay)
     }

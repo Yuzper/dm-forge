@@ -6,8 +6,8 @@ export type ZoomLevel = 'full' | 'decade' | 'year' | 'day'
 export const ZOOM_LABEL: Record<ZoomLevel, string> = {
   full: 'Full', decade: '10yr', year: '1yr', day: 'Day',
 }
-export const ZOOM_BIN: Record<ZoomLevel, number | null> = {
-  full: 50, decade: 10, year: null, day: null,
+export const ZOOM_BIN: Record<ZoomLevel, number> = {
+  full: 50, decade: 10, year: 1, day: 1,
 }
 export const ZOOM_ORDER: ZoomLevel[] = ['full', 'decade', 'year', 'day']
 export const YEAR_LENGTH = 365
@@ -32,7 +32,6 @@ export function computeBins(
   events: { day: number }[],
 ): BinChip[] {
   const binSize = ZOOM_BIN[zoom]
-  if (binSize === null) return []
   const preDays = [
     ...sessions.map(s => s.in_world_day).filter((d): d is number => d != null && d < 1),
     ...events.filter(e => e.day < 1).map(e => e.day),

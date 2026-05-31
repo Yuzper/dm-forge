@@ -160,17 +160,17 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
           style={{ display: 'block', cursor: 'crosshair', overflow: 'visible' }}
           onClick={handleSvgClick}
         >
-          {isYearMode(zoom) ? <>
-            {/* Pre-campaign bin chips */}
+          {/* Pre-campaign bin chips — all zoom levels */}
+          {bins.length > 0 && <>
             {bins.map(bin => {
               const x1 = Math.max(worldYearToX(bin.startYear), PAD_L)
               const x2 = worldYearToX(bin.endYear)
               const w = Math.max(x2 - x1, 8)
               const hasItems = bin.syCount > 0 || bin.evCount > 0
-              const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? 'year'
+              const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
               return (
-                <g key={bin.startYear} style={{ cursor: 'pointer' }}
-                  onClick={e => { e.stopPropagation(); setZoom(nextZoom); setHoverBin(null) }}
+                <g key={bin.startYear} style={{ cursor: nextZoom !== zoom ? 'pointer' : 'default' }}
+                  onClick={e => { e.stopPropagation(); if (nextZoom !== zoom) { setZoom(nextZoom); setHoverBin(null) } }}
                   onMouseEnter={() => setHoverBin({ label: `${bin.startYear}–${bin.endYear}`, sx: (x1 + x2) / 2, syCount: bin.syCount, evCount: bin.evCount, nextZoom, centerYear: (bin.startYear + bin.endYear) / 2 })}
                   onMouseLeave={() => setHoverBin(null)}>
                   <rect x={x1} y={AXIS_Y - 18} width={w} height={18} rx="2"
@@ -180,9 +180,11 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
                 </g>
               )
             })}
-
             {/* Log-linear break */}
             <line x1={PAD_L + geo.campaignOffX} y1={0} x2={PAD_L + geo.campaignOffX} y2={AXIS_Y + 5} stroke="#c8a84b33" strokeWidth="1.5" strokeDasharray="3 2" />
+          </>}
+
+          {isYearMode(zoom) && <>
 
             {/* Campaign year bands */}
             {campaignYears.map((wy, i) => {
@@ -253,11 +255,11 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
             <polygon points={`${W_DAY - PAD_R + 8},${AXIS_Y} ${W_DAY - PAD_R + 2},${AXIS_Y - 3} ${W_DAY - PAD_R + 2},${AXIS_Y + 3}`} fill="#3a3828" />
 
             {/* Day ticks */}
-            {Array.from({ length: Math.ceil(TOTAL_DAYS / (zoom === 'day' ? 10 : 30)) + 2 }, (_, i) => {
+            {Array.from({ length: Math.ceil((MAX_DAY - MIN_DAY) / (zoom === 'day' ? 10 : 30)) + 2 }, (_, i) => {
               const step = zoom === 'day' ? 10 : 30
               const day = Math.ceil(MIN_DAY / step) * step + i * step
               if (day > MAX_DAY) return null
-              const x = dxDay(day)
+              const x = dx(day)
               return (
                 <g key={day}>
                   <line x1={x} y1={AXIS_Y} x2={x} y2={AXIS_Y + 4} stroke="#2a2820" strokeWidth="1" />
@@ -268,7 +270,7 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
 
             {/* Arc tubes */}
             {arcSpans.map(({ arc, start, end }) => {
-              const x1 = dxDay(start), x2 = dxDay(end), w = Math.max(x2 - x1, 6)
+              const x1 = dx(start), x2 = dx(end), w = Math.max(x2 - x1, 6)
               return (
                 <g key={arc.id}>
                   <rect x={x1} y={ARC_Y} width={w} height={ARC_H} rx="4" fill={arc.color + '28'} stroke={arc.color + '55'} strokeWidth="1" />
@@ -278,7 +280,7 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
             })}
 
             {/* Session dots */}
-            {sessionDots.map((s, i) => <circle key={i} cx={dxDay(s.day)} cy={AXIS_Y} r="3" fill={s.color} opacity={0.7} />)}
+            {sessionDots.map((s, i) => <circle key={i} cx={dx(s.day)} cy={AXIS_Y} r="3" fill={s.color} opacity={0.7} />)}
           </>}
 
           {/* Draggable marker — shared */}
