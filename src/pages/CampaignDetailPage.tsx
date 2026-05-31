@@ -422,23 +422,51 @@ function HubWorldMap() {
     )
     window.api.getMapsForCampaign(currentCampaign.id).then((fetched: GameMap[]) => {
       setMaps(fetched)
-      const first = fetched[0] ?? null
+      const savedId = Number(localStorage.getItem(`worldmap-selected-${currentCampaign.id}`))
+      const first = fetched.find(m => m.id === savedId) ?? fetched[0] ?? null
       setCurrentMap(first)
       if (first) window.api.getPOIs(first.id).then(setPois)
     })
   }, [currentCampaign?.id])
 
-  // ── Load image + reset view when map changes ──────────────────────────────
+  // ── Load image + restore saved view when map changes ──────────────────────
   useEffect(() => {
     if (!currentMap) { setImageUrl(null); return }
-    setScale(1)
-    setOffset({ x: 0, y: 0 })
+    const saved = localStorage.getItem(`worldmap-view-${currentMap.id}`)
+    if (saved) {
+      try {
+        const { scale: s, offset: o } = JSON.parse(saved)
+        setScale(s); setOffset(o)
+      } catch { setScale(1); setOffset({ x: 0, y: 0 }) }
+    } else {
+      setScale(1); setOffset({ x: 0, y: 0 })
+    }
     setImgNatural(null)
     window.api.getImagePath(currentMap.image_path).then(setImageUrl)
   }, [currentMap?.id, currentMap?.image_path])
 
-  // ── Wheel zoom ────────────────────────────────────────────────────────────
+  // ── Persist viewport (scale + offset) per map, debounced; flush on unmount ──
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!currentMap) return
+    const id = currentMap.id
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      localStorage.setItem(`worldmap-view-${id}`, JSON.stringify({ scale, offset }))
+      saveTimerRef.current = null
+    }, 300)
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+        localStorage.setItem(`worldmap-view-${id}`, JSON.stringify({ scale, offset }))
+      }
+    }
+  }, [scale, offset, currentMap?.id])
+
+  // ── Wheel zoom (hold Ctrl/Cmd; otherwise let the page scroll) ──────────────
   const handleWheel = useCallback((e: WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return
     e.preventDefault()
     if (!mapRef.current) return
     const rect = mapRef.current.getBoundingClientRect()
@@ -505,6 +533,7 @@ function HubWorldMap() {
   // ── Map interactions ──────────────────────────────────────────────────────
   const handleSelectMap = (map: GameMap) => {
     setCurrentMap(map)
+    if (currentCampaign) localStorage.setItem(`worldmap-selected-${currentCampaign.id}`, String(map.id))
     setPois([])
     setSelectedPOI(null)
     window.api.getPOIs(map.id).then(setPois)
@@ -822,6 +851,8 @@ function HubWorldMap() {
         {maps.length > 0 && mapVisible && (
           <div style={{ position: 'absolute', bottom: 10, right: 10, zIndex: 15, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 4, padding: '4px 8px' }}
             onMouseDown={e => e.stopPropagation()}>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginRight: 2, whiteSpace: 'nowrap' }}>Ctrl + scroll</span>
+            <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.12)', margin: '0 2px' }} />
             <button onClick={zoomOut} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 2px', fontWeight: 300 }}>−</button>
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 36, textAlign: 'center' }}>{Math.round(scale * 100)}%</span>
             <button onClick={zoomIn} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 2px', fontWeight: 300 }}>+</button>

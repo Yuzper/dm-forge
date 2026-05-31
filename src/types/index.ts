@@ -9,6 +9,9 @@ export interface Campaign {
   created_at: string
   updated_at: string
   session_count?: number
+  timeline_base_year?: number
+  timeline_eras?: string | null
+  timeline_show_lifespans?: number
 }
 
 export interface Session {

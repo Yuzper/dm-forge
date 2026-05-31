@@ -1,21 +1,19 @@
 // path: src/pages/TimelinePage.tsx
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useStore } from '../store/store'
-import { Clock, Plus, ArrowLeft, ExternalLink, Filter, ZoomIn, ZoomOut, Settings, X } from 'lucide-react'
+import { Clock, Plus, ArrowLeft, Filter, ZoomIn, ZoomOut, Settings, X } from 'lucide-react'
 import { parseInWorldDate, InWorldDatePicker } from '../components/InWorldDatePicker'
-import type { ArticleType, Session } from '../types'
+import type { ArticleType, Session, Article } from '../types'
 import { ARTICLE_TYPE_COLORS } from '../constants/articleTypes'
+import { buildArticleTimeline, type Lifespan } from '../constants/timelineDates'
+import TimelineCanvas from '../components/TimelineCanvas'
+import { ArticleEditor } from './WikiPage'
 import {
-  ZoomLevel, ZOOM_LABEL, ZOOM_ORDER, YEAR_LENGTH,
-  isYearMode, dayToWorldYear, computeBins,
+  ZoomLevel, ZOOM_LABEL, ZOOM_ORDER,
+  isYearMode, dayToWorldYear, worldYearToDay, computeBins,
   makePageAxisGeo, DEFAULT_BASE_YEAR,
+  type TimelineEventItem, type ClusterItem, type SessionRenderItem, type BinChip, type Era,
 } from '../utils/timelineGeometry'
-import {
-  renderAxis, renderDayTicks, renderLogBreak,
-  renderYearBands, renderYearTicks, renderBinChips,
-  renderArcTubes, renderClusters,
-  type TimelineEventItem, type ClusterItem, type SessionRenderItem,
-} from '../utils/timelineSvg'
 
 // ── Layout constants ───────────────────────────────────────────────────────────
 
@@ -24,8 +22,6 @@ const PAD_R = 80
 const AXIS_Y = 190
 const ARC_H = 14
 const ARC_Y = AXIS_Y - ARC_H / 2
-const SESSION_PILL_H = 10
-const SESSION_PILL_Y = AXIS_Y - ARC_H / 2 - 22
 const SESSION_DOT_Y = AXIS_Y - ARC_H / 2 - 54
 const EVENT_Y = AXIS_Y - ARC_H / 2 - 110
 const DEATH_Y = AXIS_Y + 30
@@ -38,8 +34,9 @@ const DEFAULT_DAY_ZOOM = 4
 
 interface TimelineFilters {
   sessions: boolean; events: boolean; deaths: boolean
+  quests: boolean; articles: boolean; eras: boolean
 }
-const DEFAULT_FILTERS: TimelineFilters = { sessions: true, events: true, deaths: true }
+const DEFAULT_FILTERS: TimelineFilters = { sessions: true, events: true, deaths: true, quests: true, articles: true, eras: true }
 
 function loadFilters(id: number): TimelineFilters {
   try { const s = localStorage.getItem(`timeline-filters-${id}`); if (s) return { ...DEFAULT_FILTERS, ...JSON.parse(s) } } catch {}
@@ -49,10 +46,8 @@ function saveFilters(id: number, f: TimelineFilters) {
   localStorage.setItem(`timeline-filters-${id}`, JSON.stringify(f))
 }
 
-interface SelectedItem {
-  kind: 'session' | 'event' | 'death'
-  id: number; title: string; day: number; dayEnd?: number; year: number
-  arcColor?: string; arcName?: string; sessionNum?: string; articleType?: string
+function parseEras(raw: any): Era[] {
+  try { const a = JSON.parse(raw ?? '[]'); return Array.isArray(a) ? a : [] } catch { return [] }
 }
 
 interface BinTooltip { label: string; syCount: number; evCount: number; items: { title: string; kind: string }[]; x: number; y: number; nextZoom: ZoomLevel }
@@ -67,6 +62,9 @@ function FilterPanel({ filters, onChange, onClose }: {
     { key: 'sessions' as const, label: 'Sessions', color: 'var(--gold)', icon: '○' },
     { key: 'events'   as const, label: 'Events',   color: '#e05555',    icon: '◆' },
     { key: 'deaths'   as const, label: 'Deaths',   color: '#9b7de8',    icon: '☠' },
+    { key: 'quests'   as const, label: 'Quests',   color: '#5b9fe8',    icon: '◆' },
+    { key: 'articles' as const, label: 'Other articles', color: '#8a8a8a', icon: '◆' },
+    { key: 'eras'     as const, label: 'Era bands', color: '#c8a84b',  icon: '▭' },
   ]
   return (
     <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 200, zIndex: 100, overflow: 'hidden' }}>
@@ -90,25 +88,63 @@ function FilterPanel({ filters, onChange, onClose }: {
   )
 }
 
-// ── Year Config Modal ──────────────────────────────────────────────────────────
+// ── Timeline Settings Modal (base year + era bands) ──────────────────────────────
 
-function YearConfigModal({ currentYear, onSave, onClose }: { currentYear: number; onSave: (y: number) => void; onClose: () => void }) {
+function TimelineSettingsModal({ currentYear, eras, showLifespans, onSave, onClose }: {
+  currentYear: number; eras: Era[]; showLifespans: boolean
+  onSave: (year: number, eras: Era[], showLifespans: boolean) => void; onClose: () => void
+}) {
   const [year, setYear] = useState(currentYear)
+  const [list, setList] = useState<Era[]>(eras)
+  const [lifespansOn, setLifespansOn] = useState(showLifespans)
+
+  const addEra = () => setList(l => [...l, { id: `era_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: 'New Era', startYear: year, endYear: year + 10, color: '#c8a84b' }])
+  const updateEra = (id: string, patch: Partial<Era>) => setList(l => l.map(e => e.id === id ? { ...e, ...patch } : e))
+  const removeEra = (id: string) => setList(l => l.filter(e => e.id !== id))
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 320 }}>
-        <div className="modal-title">Timeline base year</div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
-          This sets the in-world year shown on all timeline dates. "Day 1" of the campaign is in this year.
-        </div>
+      <div className="modal" style={{ maxWidth: 480 }}>
+        <div className="modal-title">Timeline settings</div>
+
         <div className="input-group">
-          <label className="input-label">Year</label>
+          <label className="input-label">Base year</label>
           <input className="input" type="number" value={year} onChange={e => setYear(parseInt(e.target.value) || currentYear)}
-            style={{ color: 'var(--gold)', fontWeight: 600 }} autoFocus onKeyDown={e => e.key === 'Enter' && onSave(year)} />
+            style={{ color: 'var(--gold)', fontWeight: 600 }} />
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>"Day 1" of the campaign falls in this year.</div>
         </div>
+
+        <div style={{ marginTop: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <label className="input-label" style={{ margin: 0 }}>Era bands</label>
+            <button className="btn btn-sm" onClick={addEra}><Plus size={12} /> Add era</button>
+          </div>
+          {list.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0 8px' }}>No eras yet. Add named periods (e.g. "The Long Winter") to show as background bands.</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
+            {list.map(era => (
+              <div key={era.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input type="color" value={era.color} onChange={e => updateEra(era.id, { color: e.target.value })}
+                  title="Band color" style={{ width: 28, height: 28, padding: 0, border: '1px solid var(--border-light)', borderRadius: 4, background: 'none', cursor: 'pointer', flexShrink: 0 }} />
+                <input className="input" value={era.name} onChange={e => updateEra(era.id, { name: e.target.value })} placeholder="Era name" style={{ flex: 1, minWidth: 0 }} />
+                <input className="input" type="number" value={era.startYear} onChange={e => updateEra(era.id, { startYear: parseInt(e.target.value) || 0 })} title="Start year" style={{ width: 74, flexShrink: 0 }} />
+                <span style={{ color: 'var(--text-muted)' }}>–</span>
+                <input className="input" type="number" value={era.endYear} onChange={e => updateEra(era.id, { endYear: parseInt(e.target.value) || 0 })} title="End year" style={{ width: 74, flexShrink: 0 }} />
+                <button onClick={() => removeEra(era.id)} title="Remove era" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2, flexShrink: 0, display: 'flex' }}><X size={14} /></button>
+              </div>
+            ))}
+          </div>
+          {list.some(e => e.endYear <= e.startYear) && <div style={{ fontSize: 11, color: '#e88c3a', marginTop: 6 }}>Eras with end ≤ start year will be skipped.</div>}
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 18, cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)' }}>
+          <input type="checkbox" checked={lifespansOn} onChange={e => setLifespansOn(e.target.checked)} style={{ cursor: 'pointer' }} />
+          Show lifespan bands
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>— faint bands between start/end dates (Founded→Destroyed, Born→Died…)</span>
+        </label>
+
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onSave(year)}>Save</button>
+          <button className="btn btn-primary" onClick={() => onSave(year, list.filter(e => e.endYear > e.startYear), lifespansOn)}>Save</button>
         </div>
       </div>
     </div>
@@ -117,10 +153,10 @@ function YearConfigModal({ currentYear, onSave, onClose }: { currentYear: number
 
 // ── Create Event Modal ─────────────────────────────────────────────────────────
 
-function CreateEventModal({ onClose, onCreated, baseYear }: { onClose: () => void; onCreated: () => void; baseYear: number }) {
+function CreateEventModal({ onClose, onCreated, baseYear, initialDateRaw }: { onClose: () => void; onCreated: () => void; baseYear: number; initialDateRaw?: string }) {
   const { createArticle } = useStore()
   const [title, setTitle] = useState('')
-  const [dateRaw, setDateRaw] = useState('')
+  const [dateRaw, setDateRaw] = useState(initialDateRaw ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -245,114 +281,40 @@ function UnplacedBanner({ undatedSessions, undatedEvents, baseYear, onSessionDat
   )
 }
 
-// ── Detail Panel ───────────────────────────────────────────────────────────────
-
-function DetailPanel({ item, baseYear, onOpenArticle, onOpenSession, onSaveSessionDate, onSaveItemDate }: {
-  item: SelectedItem | null; baseYear: number
-  onOpenArticle: (id: number) => void; onOpenSession: (id: number) => void
-  onSaveSessionDate: (id: number, start: string, end: string) => Promise<void>
-  onSaveItemDate: (id: number, dateRaw: string, kind: 'event' | 'death') => Promise<void>
-}) {
-  const [editing, setEditing] = useState(false)
-  const [startRaw, setStartRaw] = useState('')
-  const [endRaw, setEndRaw] = useState('')
-  const [dateRaw, setDateRaw] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  useEffect(() => { setEditing(false); setStartRaw(''); setEndRaw(''); setDateRaw('') }, [item?.id, item?.kind])
-
-  if (!item) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 13 }}>
-      Click any session, event, or death to see details
-    </div>
-  )
-
-  const color = item.kind === 'session' ? (item.arcColor ?? 'var(--gold)')
-    : item.kind === 'death' ? '#9b7de8'
-    : (ARTICLE_TYPE_COLORS[item.articleType ?? 'event'] ?? '#e05555')
-
-  const dateLabel = item.dayEnd && item.dayEnd > item.day
-    ? `Day ${item.day}–${item.dayEnd}, Year ${item.year} (${item.dayEnd - item.day + 1} days)`
-    : `Day ${item.day}, Year ${item.year}${item.day <= 0 ? ' (pre-campaign)' : ''}`
-
-  const handleSave = async () => {
-    setSaving(true)
-    if (item.kind === 'session') {
-      await onSaveSessionDate(item.id, startRaw || JSON.stringify({ day: item.day, year: item.year, label: '' }), endRaw || (item.dayEnd ? JSON.stringify({ day: item.dayEnd, year: item.year, label: '' }) : ''))
-    } else {
-      await onSaveItemDate(item.id, dateRaw || JSON.stringify({ day: item.day, year: item.year, label: '' }), item.kind)
-    }
-    setSaving(false); setEditing(false)
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: color + '18', color, border: `0.5px solid ${color}44` }}>
-              {item.kind === 'session' ? `Session ${item.sessionNum}` : item.kind === 'death' ? `Death · ${item.articleType}` : `Event · ${item.articleType}`}
-            </span>
-            {item.kind === 'session' && item.arcName && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.arcName}</span>}
-            <button onClick={() => { setEditing(v => !v); if (!editing) { setStartRaw(JSON.stringify({ day: item.day, year: item.year, label: dateLabel })); setEndRaw(item.dayEnd && item.dayEnd > item.day ? JSON.stringify({ day: item.dayEnd, year: item.year, label: '' }) : ''); setDateRaw(JSON.stringify({ day: item.day, year: item.year, label: dateLabel })) } }}
-              style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, background: 'none', border: `1px solid ${editing ? color + '55' : 'var(--border-light)'}`, borderRadius: 'var(--radius-sm)', padding: '2px 8px', color: editing ? color : item.day <= 0 ? '#e88c3a' : 'var(--text-muted)', cursor: 'pointer' }}>
-              ✎ {dateLabel}
-            </button>
-          </div>
-          <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
-        </div>
-        <button onClick={() => item.kind === 'session' ? onOpenSession(item.id) : onOpenArticle(item.id)}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', fontSize: 11, background: color + '18', border: `0.5px solid ${color}44`, borderRadius: 'var(--radius-sm)', color, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-          <ExternalLink size={11} /> {item.kind === 'session' ? 'Open session' : 'Open article'}
-        </button>
-      </div>
-      {editing && (
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', padding: '10px 14px', background: 'var(--bg-surface)', borderRadius: 'var(--radius-md)', border: `1px solid ${color}33` }}>
-          {item.kind === 'session' ? (
-            <>
-              <div style={{ flex: '0 0 200px' }}><InWorldDatePicker value={startRaw} onChange={raw => { setStartRaw(raw); try { const sd = JSON.parse(raw)?.day; const ed = endRaw ? JSON.parse(endRaw)?.day : null; if (sd != null && (ed == null || ed < sd)) setEndRaw(raw) } catch {} }} label="Start date" baseYear={baseYear} /></div>
-              <div style={{ flex: '0 0 200px' }}><InWorldDatePicker value={endRaw} onChange={raw => { try { const sd = startRaw ? JSON.parse(startRaw)?.day : null; const ed = JSON.parse(raw)?.day; setEndRaw(sd != null && ed != null && ed < sd ? startRaw : raw) } catch { setEndRaw(raw) } }} label="End date (optional)" baseYear={baseYear} /></div>
-            </>
-          ) : (
-            <div style={{ flex: '0 0 200px' }}><InWorldDatePicker value={dateRaw} onChange={setDateRaw} label="Date" baseYear={baseYear} /></div>
-          )}
-          <div style={{ display: 'flex', gap: 8, alignSelf: 'flex-end' }}>
-            <button className="btn btn-sm" onClick={() => setEditing(false)}>Cancel</button>
-            <button className="btn btn-sm btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save date'}</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Main Timeline Page ─────────────────────────────────────────────────────────
 
 export default function TimelinePage() {
-  const { currentCampaign, sessions, arcs, setView, openArticle, selectSession, setCampaignSubView, updateSession, updateCampaign } = useStore()
-  const svgRef = useRef<SVGSVGElement>(null)
+  const { currentCampaign, sessions, arcs, setView, selectSession, setCampaignSubView, updateSession, updateCampaign } = useStore()
   const scrollRef = useRef<HTMLDivElement>(null)
   const filterRef = useRef<HTMLDivElement>(null)
   const clusterPickerRef = useRef<HTMLDivElement>(null)
   const scrollToBinRef = useRef<number | null>(null)
 
   const [items, setItems] = useState<TimelineEventItem[]>([])
+  const [lifespans, setLifespans] = useState<Lifespan[]>([])
   const [undatedEvents, setUndatedEvents] = useState<{ id: number; title: string }[]>([])
-  const [selected, setSelected] = useState<SelectedItem | null>(null)
   const [zoom, setZoom] = useState<ZoomLevel>('day')
   const [dayZoomIdx, setDayZoomIdx] = useState(DEFAULT_DAY_ZOOM)
   const [filters, setFilters] = useState<TimelineFilters>(() => currentCampaign ? loadFilters(currentCampaign.id) : DEFAULT_FILTERS)
   const [showFilter, setShowFilter] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
-  const [showYearConfig, setShowYearConfig] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [baseYear, setBaseYear] = useState<number>((currentCampaign as any)?.timeline_base_year ?? DEFAULT_BASE_YEAR)
+  const [eras, setEras] = useState<Era[]>(() => parseEras((currentCampaign as any)?.timeline_eras))
+  const [showLifespans, setShowLifespans] = useState<boolean>(!!(currentCampaign as any)?.timeline_show_lifespans)
   const [binTooltip, setBinTooltip] = useState<BinTooltip | null>(null)
   const [dayTooltip, setDayTooltip] = useState<DayTooltip | null>(null)
   const [clusterPicker, setClusterPicker] = useState<{ items: ClusterItem[]; x: number; y: number } | null>(null)
+  const [embeddedArticle, setEmbeddedArticle] = useState<Article | null>(null)
+  const [createDateRaw, setCreateDateRaw] = useState('')
 
   const pxPerDay = DAY_ZOOM_LEVELS[dayZoomIdx]
 
-  useEffect(() => { setBaseYear((currentCampaign as any)?.timeline_base_year ?? DEFAULT_BASE_YEAR) }, [currentCampaign?.id])
+  useEffect(() => {
+    setBaseYear((currentCampaign as any)?.timeline_base_year ?? DEFAULT_BASE_YEAR)
+    setEras(parseEras((currentCampaign as any)?.timeline_eras))
+    setShowLifespans(!!(currentCampaign as any)?.timeline_show_lifespans)
+  }, [currentCampaign?.id])
 
   useEffect(() => {
     if (!showFilter) return
@@ -383,6 +345,7 @@ export default function TimelinePage() {
     const list = await window.api.getArticlesList({ campaignId: currentCampaign.id })
     const result: TimelineEventItem[] = []
     const undated: { id: number; title: string }[] = []
+    const spans: Lifespan[] = []
     list.forEach((a: any) => {
       try {
         const t = JSON.parse(a.tracks ?? '{}')
@@ -395,9 +358,14 @@ export default function TimelinePage() {
           const d = parseInWorldDate(t.Death_Date)
           if (d) result.push({ id: a.id, title: a.title, day: d.day, year: d.year, kind: 'death', article_type: a.article_type, color: '#9b7de8', articleId: a.id })
         }
+        // Semantic dates (founded/destroyed/born…), freeform milestones, and any
+        // legacy Timeline_Date → point markers + an optional lifespan.
+        const { markers, lifespan } = buildArticleTimeline(a, t, parseInWorldDate)
+        result.push(...markers)
+        if (lifespan) spans.push(lifespan)
       } catch {}
     })
-    setItems(result); setUndatedEvents(undated)
+    setItems(result); setUndatedEvents(undated); setLifespans(spans)
   }, [currentCampaign?.id])
 
   useEffect(() => { loadItems() }, [loadItems])
@@ -410,11 +378,15 @@ export default function TimelinePage() {
     ...datedSessions.flatMap(s => [s.in_world_day!, s.in_world_day_end ?? s.in_world_day!]),
     ...items.map(e => e.day), 1,
   ]
-  const minDay = Math.min(...allDays) - 5
+  // Day-mode axis stays anchored to the campaign era. Ancient article dates (a
+  // founding centuries back) shouldn't stretch it — they remain reachable in the
+  // year/decade/full views (which use a log-compressed pre-campaign zone).
+  const coreMin = Math.min(1, ...datedSessions.map(s => s.in_world_day!), ...items.filter(i => i.kind === 'event' || i.kind === 'death').map(i => i.day))
+  const minDay = Math.max(Math.min(...allDays), coreMin - 365) - 5
   const maxDay = Math.max(...allDays) + 20
 
   const geo = makePageAxisGeo(zoom, PAD_L, minDay, pxPerDay, baseYear)
-  const { dx, worldYearToX, canvasWidth } = geo
+  const { dx, canvasWidth } = geo
   const CANVAS_W = canvasWidth(PAD_R, maxDay)
 
   const arcSpans = arcs.map(arc => {
@@ -431,92 +403,70 @@ export default function TimelinePage() {
   const bins = computeBins(zoom, baseYear, datedSessions, items)
   const maxWY = Math.ceil(dayToWorldYear(maxDay, baseYear)) + 1
 
-  // Select a clicked timeline item into the detail panel (shared by single-item
-  // clicks and the cluster picker).
-  const selectItem = (item: ClusterItem) => {
-    if (item.kind === 'session') {
-      const s = datedSessions.find(s => s.id === item.id)
-      if (s) setSelected({ kind: 'session', id: s.id, title: s.name, day: s.in_world_day!, dayEnd: s.in_world_day_end ?? s.in_world_day!, year: Math.floor(dayToWorldYear(s.in_world_day!, baseYear)), arcColor: arcMap[s.arc_id ?? 0]?.color, arcName: arcMap[s.arc_id ?? 0]?.name, sessionNum: `${s.session_number}${s.session_sub ?? ''}` })
-    } else {
-      setSelected({ kind: item.kind as 'event' | 'death', id: item.id, title: item.title, day: item.day, year: Math.floor(dayToWorldYear(item.day, baseYear)), articleType: item.article_type, arcColor: item.color })
-    }
+  // Marks for day mode (respecting filters). In year mode the canvas renders bins.
+  const clusterItems: ClusterItem[] = isYearMode(zoom) ? [] : [
+    ...(filters.sessions ? sessionItems.map(s => ({
+      id: s.id, title: s.name, kind: 'session' as const,
+      day: s.in_world_day, color: arcMap[s.arc_id ?? 0]?.color ?? '#8a8a8a',
+      session_number: s.session_number, session_sub: s.session_sub,
+      arc_id: s.arc_id, in_world_day_end: s.in_world_day_end,
+    })) : []),
+    ...(filters.events ? items.filter(i => i.kind === 'event').map(i => ({
+      id: i.id, title: i.title, kind: 'event' as const,
+      day: i.day, color: i.color, article_type: i.article_type,
+    })) : []),
+    ...(filters.deaths ? items.filter(i => i.kind === 'death').map(i => ({
+      id: i.id, title: i.title, kind: 'death' as const,
+      day: i.day, color: i.color, article_type: i.article_type,
+    })) : []),
+    ...(filters.quests ? items.filter(i => i.kind === 'quest').map(i => ({
+      id: i.id, title: i.title, kind: 'quest' as const,
+      day: i.day, color: i.color, article_type: i.article_type,
+    })) : []),
+    ...(filters.articles ? items.filter(i => i.kind === 'article').map(i => ({
+      id: i.id, title: i.title, kind: 'article' as const,
+      day: i.day, color: i.color, article_type: i.article_type,
+    })) : []),
+  ]
+
+  // Convert a viewport coordinate to one relative to the scroll container, used
+  // for positioning hover tooltips / the cluster picker.
+  const toLocal = (cx: number, cy: number) => {
+    const rect = scrollRef.current?.getBoundingClientRect()
+    return { x: cx - (rect?.left ?? 0), y: cy - (rect?.top ?? 0) }
   }
 
-  // Render SVG
-  useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-    svg.innerHTML = ''
-    svg.setAttribute('width', String(CANVAS_W))
-    svg.setAttribute('height', String(TOTAL_H))
+  const handleItemHover = (cluster: ClusterItem[], cx: number, cy: number) => {
+    const { x, y } = toLocal(cx, cy)
+    setDayTooltip({ items: cluster, x, y })
+  }
 
-    // In year modes render all items as bins; in day mode render individual items
-    if (isYearMode(zoom)) {
-      // Log-break line only when there are pre-campaign bins
-      if (bins.some(b => b.zone === 'pre')) renderLogBreak(svg, PAD_L + geo.campaignOffX, TOTAL_H)
+  const handleClusterClick = (cluster: ClusterItem[], cx: number, cy: number) => {
+    setDayTooltip(null)
+    setClusterPicker({ items: cluster, ...toLocal(cx, cy) })
+  }
 
-      renderYearBands(svg, AXIS_Y, baseYear, maxWY, worldYearToX)
-      renderAxis(svg, PAD_L - 10, AXIS_Y, CANVAS_W - PAD_R + 8)
-      renderYearTicks(svg, baseYear, maxWY, AXIS_Y, worldYearToX, PAD_L + geo.campaignOffX, CANVAS_W - PAD_R)
-      renderArcTubes(svg, arcSpans, dx, ARC_Y, ARC_H)
+  const handleBinHover = (chip: BinChip, cx: number, cy: number) => {
+    const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
+    const { x, y } = toLocal(cx, cy)
+    setBinTooltip({ label: `${chip.startYear}–${chip.endYear}`, syCount: chip.syCount, evCount: chip.evCount, items: chip.items, x, y, nextZoom })
+  }
 
-      renderBinChips(svg, bins, worldYearToX, PAD_L, {
-        axisY: AXIS_Y, arcY: ARC_Y,
-        onHover: (chip, cx, cy) => {
-          const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
-          const rect = scrollRef.current?.getBoundingClientRect()
-          setBinTooltip({ label: `${chip.startYear}–${chip.endYear}`, syCount: chip.syCount, evCount: chip.evCount, items: chip.items, x: cx - (rect?.left ?? 0), y: cy - (rect?.top ?? 0), nextZoom })
-        },
-        onLeave: () => setBinTooltip(null),
-        onClick: (chip) => {
-          const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
-          if (nextZoom !== zoom) {
-            scrollToBinRef.current = (chip.startYear + chip.endYear) / 2
-            setZoom(nextZoom)
-          }
-        },
-      })
-    } else {
-      renderAxis(svg, PAD_L - 10, AXIS_Y, CANVAS_W - PAD_R + 8)
-      renderDayTicks(svg, minDay, maxDay, AXIS_Y, dx, pxPerDay)
-      renderArcTubes(svg, arcSpans, dx, ARC_Y, ARC_H)
+  const handleBinClick = (chip: BinChip) => {
+    const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
+    if (nextZoom !== zoom) { scrollToBinRef.current = (chip.startYear + chip.endYear) / 2; setZoom(nextZoom) }
+  }
 
-      const clusterItems: ClusterItem[] = [
-        ...(filters.sessions ? sessionItems.map(s => ({
-          id: s.id, title: s.name, kind: 'session' as const,
-          day: s.in_world_day, color: arcMap[s.arc_id ?? 0]?.color ?? '#8a8a8a',
-          session_number: s.session_number, session_sub: s.session_sub,
-          arc_id: s.arc_id, in_world_day_end: s.in_world_day_end,
-        })) : []),
-        ...(filters.events ? items.filter(i => i.kind === 'event').map(i => ({
-          id: i.id, title: i.title, kind: 'event' as const,
-          day: i.day, color: i.color, article_type: i.article_type,
-        })) : []),
-        ...(filters.deaths ? items.filter(i => i.kind === 'death').map(i => ({
-          id: i.id, title: i.title, kind: 'death' as const,
-          day: i.day, color: i.color, article_type: i.article_type,
-        })) : []),
-      ]
-
-      renderClusters(svg, clusterItems, dx, arcMap, {
-        axisY: AXIS_Y, sessionDotY: SESSION_DOT_Y, eventY: EVENT_Y, deathY: DEATH_Y, arcY: ARC_Y,
-        onHover: (cluster, cx, cy, container) => {
-          const rect = (container as HTMLElement).getBoundingClientRect()
-          setDayTooltip({ items: cluster, x: cx - rect.left, y: cy - rect.top })
-        },
-        onLeave: () => setDayTooltip(null),
-        onClickSingle: item => { setClusterPicker(null); selectItem(item) },
-        onClickCluster: (cluster, cx, cy, container) => {
-          // Clusters only ever render in day mode (the finest zoom), so there is
-          // no finer level to zoom into — show a picker so every overlapping
-          // entry stays reachable.
-          const rect = (container as HTMLElement).getBoundingClientRect()
-          setDayTooltip(null)
-          setClusterPicker({ items: cluster, x: cx - rect.left, y: cy - rect.top })
-        },
-      })
-    }
-  }, [datedSessions, arcs, items, filters, CANVAS_W, baseYear, zoom, pxPerDay, minDay, maxDay, bins])
+  // Click on empty timeline space (day mode) → quick-create an event at that day.
+  // Marks stop propagation, so this only fires for background clicks.
+  const handleBackgroundClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (isYearMode(zoom)) return
+    const x = e.clientX - e.currentTarget.getBoundingClientRect().left
+    const day = Math.round((x - PAD_L) / pxPerDay) + minDay
+    const year = Math.floor(dayToWorldYear(day, baseYear))
+    setCreateDateRaw(JSON.stringify({ day, year, label: `Day ${day}, Year ${year}` }))
+    setShowCreate(true)
+  }
 
   // Scroll to latest session on mount/data change
   useEffect(() => {
@@ -534,7 +484,9 @@ export default function TimelinePage() {
     if (scrollToBinRef.current != null) {
       const targetWY = scrollToBinRef.current
       scrollToBinRef.current = null
-      const x = geo.worldYearToX(targetWY)
+      // In day mode pxPerYear is 0, so worldYearToX collapses every year to the
+      // same x — convert the target year to a day and use the day axis instead.
+      const x = isYearMode(zoom) ? geo.worldYearToX(targetWY) : geo.dx(worldYearToDay(targetWY, baseYear))
       scrollRef.current.scrollLeft = Math.max(0, x - scrollRef.current.clientWidth / 2)
       return
     }
@@ -557,28 +509,24 @@ export default function TimelinePage() {
     loadItems()
   }, [loadItems])
 
-  const handleSaveYear = useCallback(async (y: number) => {
+  const handleSaveSettings = useCallback(async (y: number, newEras: Era[], lifespansOn: boolean) => {
     if (!currentCampaign) return
-    await updateCampaign(currentCampaign.id, { timeline_base_year: y } as any)
-    setBaseYear(y); setShowYearConfig(false)
+    await updateCampaign(currentCampaign.id, { timeline_base_year: y, timeline_eras: JSON.stringify(newEras), timeline_show_lifespans: lifespansOn ? 1 : 0 } as any)
+    setBaseYear(y); setEras(newEras); setShowLifespans(lifespansOn); setShowSettings(false)
   }, [currentCampaign, updateCampaign])
-
-  const handleSaveItemDate = useCallback(async (id: number, dateRaw: string, kind: 'event' | 'death') => {
-    const article = await window.api.getArticle(id)
-    const t = (() => { try { return JSON.parse(article?.tracks ?? '{}') } catch { return {} } })()
-    const trackKey = kind === 'death' ? 'Death_Date' : 'In_World_Date'
-    const patch = kind === 'death' ? { ...t, [trackKey]: dateRaw, Vitality: 'Dead' } : { ...t, [trackKey]: dateRaw }
-    await window.api.updateArticle(id, { tracks: JSON.stringify(patch) })
-    setSelected(null); loadItems()
-  }, [loadItems])
 
   const handleOpenSession = useCallback((id: number) => {
     const s = sessions.find(s => s.id === id); if (!s) return; selectSession(s); setView('session')
   }, [sessions, selectSession, setView])
 
-  const handleOpenArticle = useCallback(async (id: number) => {
-    await openArticle(id); setView('wiki')
-  }, [openArticle, setView])
+  // Single-click on a timeline entry: sessions open their full page; events and
+  // deaths (which are articles) embed inline in the panel below the timeline.
+  const navigateToItem = useCallback(async (item: ClusterItem) => {
+    setClusterPicker(null)
+    if (item.kind === 'session') { handleOpenSession(item.id); return }
+    const article = await window.api.getArticle(item.id)
+    if (article) setEmbeddedArticle(article)
+  }, [handleOpenSession])
 
   const activeFilterCount = Object.values(filters).filter(v => !v).length
 
@@ -604,7 +552,7 @@ export default function TimelinePage() {
             </button>
             <Clock size={20} color='#e88c3a' />
             <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, letterSpacing: '0.03em', color: 'var(--text-primary)', margin: 0 }}>Timeline</h1>
-            <button onClick={() => setShowYearConfig(true)} title="Configure base year"
+            <button onClick={() => setShowSettings(true)} title="Timeline settings (base year, era bands)"
               style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 11, color: 'var(--gold)', cursor: 'pointer' }}>
               <Settings size={10} /> Year {baseYear}
             </button>
@@ -651,7 +599,7 @@ export default function TimelinePage() {
               {showFilter && <FilterPanel filters={filters} onChange={handleFiltersChange} onClose={() => setShowFilter(false)} />}
             </div>
 
-            <button onClick={() => setShowCreate(true)}
+            <button onClick={() => { setCreateDateRaw(''); setShowCreate(true) }}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', transition: 'all 120ms' }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--gold)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-gold)' }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)' }}>
@@ -664,10 +612,21 @@ export default function TimelinePage() {
       {/* Timeline scroll area */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <div ref={scrollRef} style={{ overflowX: 'auto', overflowY: 'hidden', padding: '32px 0 0', background: 'var(--bg-base)' }}>
-          <svg ref={svgRef} style={{ display: 'block', overflow: 'visible', pointerEvents: 'all' }}
-            onMouseMove={e => { if (e.target === e.currentTarget) { setDayTooltip(null); setBinTooltip(null) } }}
-            onMouseLeave={() => { setDayTooltip(null); setBinTooltip(null) }}
-          />
+          <svg width={CANVAS_W} height={TOTAL_H} style={{ display: 'block', overflow: 'visible' }}
+            onClick={handleBackgroundClick}
+            onMouseLeave={() => { setDayTooltip(null); setBinTooltip(null) }}>
+            <TimelineCanvas
+              zoom={zoom} geo={geo} width={CANVAS_W}
+              layout={{ axisY: AXIS_Y, arcY: ARC_Y, arcH: ARC_H, sessionDotY: SESSION_DOT_Y, eventY: EVENT_Y, deathY: DEATH_Y, totalH: TOTAL_H }}
+              padL={PAD_L} padR={PAD_R} minDay={minDay} maxDay={maxDay} maxWY={maxWY} baseYear={baseYear} pxPerDay={pxPerDay}
+              arcSpans={arcSpans} arcMap={arcMap} clusterItems={clusterItems} bins={bins}
+              eras={eras} showEras={filters.eras}
+              lifespans={lifespans} showLifespans={showLifespans}
+              onItemClick={navigateToItem} onClusterClick={handleClusterClick}
+              onItemHover={handleItemHover} onLeave={() => { setDayTooltip(null); setBinTooltip(null) }}
+              onBinClick={handleBinClick} onBinHover={handleBinHover}
+            />
+          </svg>
           <div style={{ height: 20 }} />
         </div>
 
@@ -709,7 +668,7 @@ export default function TimelinePage() {
           <div ref={clusterPickerRef} style={{ position: 'absolute', zIndex: 30, left: Math.max(8, clusterPicker.x - 70), top: Math.max(8, clusterPicker.y - 12), background: 'var(--bg-surface)', border: '1px solid var(--border-gold)', borderRadius: 'var(--radius-sm)', padding: '5px 4px', fontSize: 12, color: 'var(--text-secondary)', boxShadow: 'var(--shadow-lg)', minWidth: 180, maxHeight: 220, overflowY: 'auto' }}>
             <div style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: 10, padding: '2px 8px 5px' }}>Day {clusterPicker.items[0]?.day} · {clusterPicker.items.length} entries</div>
             {clusterPicker.items.map((it, i) => (
-              <button key={`${it.kind}-${it.id}-${i}`} onClick={() => { selectItem(it); setClusterPicker(null) }}
+              <button key={`${it.kind}-${it.id}-${i}`} onClick={() => navigateToItem(it)}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', background: 'none', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left', color: 'var(--text-secondary)' }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
@@ -755,12 +714,19 @@ export default function TimelinePage() {
 
       <UnplacedBanner undatedSessions={undatedSessions} undatedEvents={undatedEvents} baseYear={baseYear} onSessionDateSet={handleSessionDateSet} onEventDateSet={handleEventDateSet} />
 
-      <div style={{ flex: 1, padding: '14px 32px', background: 'var(--bg-elevated)', minHeight: 0, overflow: 'auto' }}>
-        <DetailPanel item={selected} baseYear={baseYear} onOpenArticle={handleOpenArticle} onOpenSession={handleOpenSession} onSaveSessionDate={handleSessionDateSet} onSaveItemDate={handleSaveItemDate} />
+      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', background: 'var(--bg-elevated)' }}>
+        {embeddedArticle ? (
+          <ArticleEditor key={embeddedArticle.id} article={embeddedArticle}
+            backLabel="Close" onBack={() => { setEmbeddedArticle(null); loadItems() }} />
+        ) : (
+          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 32px', color: 'var(--text-muted)', fontSize: 13 }}>
+            Click an event or death to read it here · sessions open their full page
+          </div>
+        )}
       </div>
 
-      {showCreate && <CreateEventModal onClose={() => setShowCreate(false)} onCreated={loadItems} baseYear={baseYear} />}
-      {showYearConfig && <YearConfigModal currentYear={baseYear} onSave={handleSaveYear} onClose={() => setShowYearConfig(false)} />}
+      {showCreate && <CreateEventModal onClose={() => setShowCreate(false)} onCreated={loadItems} baseYear={baseYear} initialDateRaw={createDateRaw} />}
+      {showSettings && <TimelineSettingsModal currentYear={baseYear} eras={eras} showLifespans={showLifespans} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />}
     </div>
   )
 }

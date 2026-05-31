@@ -5,17 +5,14 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useStore } from '../store/store'
 import { ZoomIn, ZoomOut, Filter, X, ExternalLink } from 'lucide-react'
 import { parseInWorldDate } from '../components/InWorldDatePicker'
+import { buildArticleTimeline, type Lifespan } from '../constants/timelineDates'
+import TimelineCanvas from '../components/TimelineCanvas'
 import {
   ZoomLevel, ZOOM_LABEL, ZOOM_ORDER,
-  isYearMode, dayToWorldYear, computeBins,
+  isYearMode, dayToWorldYear, worldYearToDay, computeBins,
   makePageAxisGeo, DEFAULT_BASE_YEAR,
+  type TimelineEventItem, type ClusterItem, type SessionRenderItem, type BinChip, type Era,
 } from '../utils/timelineGeometry'
-import {
-  renderAxis, renderDayTicks, renderLogBreak,
-  renderYearBands, renderYearTicks, renderBinChips,
-  renderArcTubes, renderClusters,
-  type TimelineEventItem, type ClusterItem, type SessionRenderItem,
-} from '../utils/timelineSvg'
 
 // ── Layout constants ───────────────────────────────────────────────────────────
 
@@ -24,8 +21,6 @@ const PAD_R = 80
 const AXIS_Y = 120
 const ARC_H = 14
 const ARC_Y = AXIS_Y - ARC_H / 2
-const SESSION_PILL_H = 10
-const SESSION_PILL_Y = AXIS_Y - ARC_H / 2 - 22
 const SESSION_DOT_Y = AXIS_Y - ARC_H / 2 - 54
 const EVENT_Y = AXIS_Y - ARC_H / 2 - 110
 const DEATH_Y = AXIS_Y + 30
@@ -36,7 +31,7 @@ const DEFAULT_DAY_ZOOM = 4
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface Filters { sessions: boolean; events: boolean; deaths: boolean }
+interface Filters { sessions: boolean; events: boolean; deaths: boolean; quests: boolean; articles: boolean; eras: boolean }
 interface Tooltip { x: number; y: number; label: string; sub?: string; color: string }
 interface BinTooltip { label: string; syCount: number; evCount: number; items: { title: string; kind: string }[]; x: number; y: number; nextZoom: ZoomLevel }
 interface DayTooltip { items: ClusterItem[]; x: number; y: number }
@@ -48,6 +43,9 @@ function FilterPanel({ filters, onChange, onClose }: { filters: Filters; onChang
     { key: 'sessions' as const, label: 'Sessions', color: 'var(--gold)', icon: '○' },
     { key: 'events'   as const, label: 'Events',   color: '#e05555',    icon: '◆' },
     { key: 'deaths'   as const, label: 'Deaths',   color: '#9b7de8',    icon: '☠' },
+    { key: 'quests'   as const, label: 'Quests',   color: '#5b9fe8',    icon: '◆' },
+    { key: 'articles' as const, label: 'Other articles', color: '#8a8a8a', icon: '◆' },
+    { key: 'eras'     as const, label: 'Era bands', color: '#c8a84b',  icon: '▭' },
   ]
   return (
     <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 180, zIndex: 100, overflow: 'hidden' }}>
@@ -76,16 +74,16 @@ function FilterPanel({ filters, onChange, onClose }: { filters: Filters; onChang
 export default function TimelineEmbed() {
   const { currentCampaign, sessions, arcs, setView, selectSession, openArticle } = useStore()
 
-  const svgRef = useRef<SVGSVGElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const filterRef = useRef<HTMLDivElement>(null)
   const clusterPickerRef = useRef<HTMLDivElement>(null)
   const scrollToBinRef = useRef<number | null>(null)
 
   const [items, setItems] = useState<TimelineEventItem[]>([])
+  const [lifespans, setLifespans] = useState<Lifespan[]>([])
   const [zoom, setZoom] = useState<ZoomLevel>('day')
   const [dayZoomIdx, setDayZoomIdx] = useState(DEFAULT_DAY_ZOOM)
-  const [filters, setFilters] = useState<Filters>({ sessions: true, events: true, deaths: true })
+  const [filters, setFilters] = useState<Filters>({ sessions: true, events: true, deaths: true, quests: true, articles: true, eras: true })
   const [showFilter, setShowFilter] = useState(false)
   const [tooltip, setTooltip] = useState<Tooltip | null>(null)
   const [binTooltip, setBinTooltip] = useState<BinTooltip | null>(null)
@@ -125,6 +123,7 @@ export default function TimelineEmbed() {
     if (!currentCampaign) return
     const list = await window.api.getArticlesList({ campaignId: currentCampaign.id })
     const result: TimelineEventItem[] = []
+    const spans: Lifespan[] = []
     list.forEach((a: any) => {
       try {
         const t = JSON.parse(a.tracks ?? '{}')
@@ -136,9 +135,12 @@ export default function TimelineEmbed() {
           const d = parseInWorldDate(t.Death_Date)
           if (d) result.push({ id: a.id, title: a.title, day: d.day, year: d.year, kind: 'death', article_type: a.article_type, color: '#9b7de8' })
         }
+        const { markers, lifespan } = buildArticleTimeline(a, t, parseInWorldDate)
+        result.push(...markers)
+        if (lifespan) spans.push(lifespan)
       } catch {}
     })
-    setItems(result)
+    setItems(result); setLifespans(spans)
   }, [currentCampaign?.id])
 
   useEffect(() => { loadItems() }, [loadItems])
@@ -151,11 +153,13 @@ export default function TimelineEmbed() {
     ...datedSessions.flatMap(s => [s.in_world_day!, s.in_world_day_end ?? s.in_world_day!]),
     ...items.map(e => e.day), 1,
   ]
-  const minDay = Math.min(...allDays) - 5
+  // Keep day mode anchored to the campaign era; ancient article dates stay in the year views.
+  const coreMin = Math.min(1, ...datedSessions.map(s => s.in_world_day!), ...items.filter(i => i.kind === 'event' || i.kind === 'death').map(i => i.day))
+  const minDay = Math.max(Math.min(...allDays), coreMin - 365) - 5
   const maxDay = Math.max(...allDays) + 20
 
   const geo = makePageAxisGeo(zoom, PAD_L, minDay, pxPerDay, baseYear)
-  const { dx, worldYearToX, canvasWidth } = geo
+  const { dx, canvasWidth } = geo
   const CANVAS_W = canvasWidth(PAD_R, maxDay)
 
   const arcSpans = arcs.map(arc => {
@@ -171,79 +175,55 @@ export default function TimelineEmbed() {
 
   const bins = computeBins(zoom, baseYear, datedSessions, items)
   const maxWY = Math.ceil(dayToWorldYear(maxDay, baseYear)) + 1
+  const eras: Era[] = (() => {
+    try { const a = JSON.parse((currentCampaign as any)?.timeline_eras ?? '[]'); return Array.isArray(a) ? a : [] } catch { return [] }
+  })()
+  const showLifespans = !!(currentCampaign as any)?.timeline_show_lifespans
 
-  // Render SVG
-  useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-    svg.innerHTML = ''
-    svg.setAttribute('width', String(CANVAS_W))
-    svg.setAttribute('height', String(TOTAL_H))
+  // Marks for day mode (respecting filters). In year mode the canvas renders bins.
+  const clusterItems: ClusterItem[] = isYearMode(zoom) ? [] : [
+    ...(filters.sessions ? sessionItems.map(s => ({
+      id: s.id, title: s.name, kind: 'session' as const,
+      day: s.in_world_day, color: arcMap[s.arc_id ?? 0]?.color ?? '#8a8a8a',
+      session_number: s.session_number, session_sub: s.session_sub,
+      arc_id: s.arc_id, in_world_day_end: s.in_world_day_end,
+    })) : []),
+    ...(filters.events ? items.filter(i => i.kind === 'event').map(i => ({ id: i.id, title: i.title, kind: 'event' as const, day: i.day, color: i.color, article_type: i.article_type })) : []),
+    ...(filters.deaths ? items.filter(i => i.kind === 'death').map(i => ({ id: i.id, title: i.title, kind: 'death' as const, day: i.day, color: i.color, article_type: i.article_type })) : []),
+    ...(filters.quests ? items.filter(i => i.kind === 'quest').map(i => ({ id: i.id, title: i.title, kind: 'quest' as const, day: i.day, color: i.color, article_type: i.article_type })) : []),
+    ...(filters.articles ? items.filter(i => i.kind === 'article').map(i => ({ id: i.id, title: i.title, kind: 'article' as const, day: i.day, color: i.color, article_type: i.article_type })) : []),
+  ]
 
-    if (isYearMode(zoom)) {
-      if (bins.some(b => b.zone === 'pre')) renderLogBreak(svg, PAD_L + geo.campaignOffX, TOTAL_H)
+  const toLocal = (cx: number, cy: number) => {
+    const rect = scrollRef.current?.getBoundingClientRect()
+    return { x: cx - (rect?.left ?? 0), y: cy - (rect?.top ?? 0) }
+  }
 
-      renderYearBands(svg, AXIS_Y, baseYear, maxWY, worldYearToX)
-      renderAxis(svg, PAD_L - 10, AXIS_Y, CANVAS_W - PAD_R + 8)
-      renderYearTicks(svg, baseYear, maxWY, AXIS_Y, worldYearToX, PAD_L + geo.campaignOffX, CANVAS_W - PAD_R)
-      renderArcTubes(svg, arcSpans, dx, ARC_Y, ARC_H)
-
-      renderBinChips(svg, bins, worldYearToX, PAD_L, {
-        axisY: AXIS_Y, arcY: ARC_Y,
-        onHover: (chip, cx, cy) => {
-          const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
-          const rect = scrollRef.current?.getBoundingClientRect()
-          setBinTooltip({ label: `${chip.startYear}–${chip.endYear}`, syCount: chip.syCount, evCount: chip.evCount, items: chip.items, x: cx - (rect?.left ?? 0), y: cy - (rect?.top ?? 0), nextZoom })
-        },
-        onLeave: () => setBinTooltip(null),
-        onClick: (chip) => {
-          const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
-          if (nextZoom !== zoom) {
-            scrollToBinRef.current = (chip.startYear + chip.endYear) / 2
-            setZoom(nextZoom)
-          }
-        },
-      })
+  const handleItemHover = (cluster: ClusterItem[], cx: number, cy: number) => {
+    const { x, y } = toLocal(cx, cy)
+    if (cluster.length === 1) {
+      const it = cluster[0]
+      setTooltip({ x, y: y - 10, label: it.title, sub: it.kind === 'session' ? arcMap[it.arc_id ?? 0]?.name : it.kind === 'death' ? 'Death' : 'Event', color: it.color })
     } else {
-      renderAxis(svg, PAD_L - 10, AXIS_Y, CANVAS_W - PAD_R + 8)
-      renderDayTicks(svg, minDay, maxDay, AXIS_Y, dx, pxPerDay)
-      renderArcTubes(svg, arcSpans, dx, ARC_Y, ARC_H)
-
-      const clusterItems: ClusterItem[] = [
-        ...(filters.sessions ? sessionItems.map(s => ({
-          id: s.id, title: s.name, kind: 'session' as const,
-          day: s.in_world_day, color: arcMap[s.arc_id ?? 0]?.color ?? '#8a8a8a',
-          session_number: s.session_number, session_sub: s.session_sub,
-          arc_id: s.arc_id, in_world_day_end: s.in_world_day_end,
-        })) : []),
-        ...(filters.events ? items.filter(i => i.kind === 'event').map(i => ({ id: i.id, title: i.title, kind: 'event' as const, day: i.day, color: i.color, article_type: i.article_type })) : []),
-        ...(filters.deaths ? items.filter(i => i.kind === 'death').map(i => ({ id: i.id, title: i.title, kind: 'death' as const, day: i.day, color: i.color, article_type: i.article_type })) : []),
-      ]
-
-      renderClusters(svg, clusterItems, dx, arcMap, {
-        axisY: AXIS_Y, sessionDotY: SESSION_DOT_Y, eventY: EVENT_Y, deathY: DEATH_Y, arcY: ARC_Y,
-        onHover: (cluster, cx, cy, container) => {
-          const rect = (container as HTMLElement).getBoundingClientRect()
-          if (cluster.length === 1) {
-            const it = cluster[0]
-            setTooltip({ x: cx - rect.left, y: cy - rect.top - 10, label: it.title, sub: it.kind === 'session' ? arcMap[it.arc_id ?? 0]?.name : it.kind === 'death' ? 'Death' : 'Event', color: it.color })
-          } else {
-            setDayTooltip({ items: cluster, x: cx - rect.left, y: cy - rect.top })
-          }
-        },
-        onLeave: () => { setTooltip(null); setDayTooltip(null) },
-        onClickSingle: item => { setClusterPicker(null); openItem(item) },
-        onClickCluster: (cluster, cx, cy, container) => {
-          // Clusters only render in day mode (the finest zoom), so there is no
-          // finer level to zoom into — show a picker so every overlapping entry
-          // stays reachable.
-          const rect = (container as HTMLElement).getBoundingClientRect()
-          setTooltip(null); setDayTooltip(null)
-          setClusterPicker({ items: cluster, x: cx - rect.left, y: cy - rect.top })
-        },
-      })
+      setDayTooltip({ items: cluster, x, y })
     }
-  }, [sessions, datedSessions, arcs, items, filters, CANVAS_W, baseYear, zoom, pxPerDay, minDay, maxDay, bins])
+  }
+
+  const handleClusterClick = (cluster: ClusterItem[], cx: number, cy: number) => {
+    setTooltip(null); setDayTooltip(null)
+    setClusterPicker({ items: cluster, ...toLocal(cx, cy) })
+  }
+
+  const handleBinHover = (chip: BinChip, cx: number, cy: number) => {
+    const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
+    const { x, y } = toLocal(cx, cy)
+    setBinTooltip({ label: `${chip.startYear}–${chip.endYear}`, syCount: chip.syCount, evCount: chip.evCount, items: chip.items, x, y, nextZoom })
+  }
+
+  const handleBinClick = (chip: BinChip) => {
+    const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
+    if (nextZoom !== zoom) { scrollToBinRef.current = (chip.startYear + chip.endYear) / 2; setZoom(nextZoom) }
+  }
 
   // Scroll to latest session on mount/data change
   useEffect(() => {
@@ -258,7 +238,9 @@ export default function TimelineEmbed() {
     if (scrollToBinRef.current != null) {
       const targetWY = scrollToBinRef.current
       scrollToBinRef.current = null
-      const x = geo.worldYearToX(targetWY)
+      // In day mode pxPerYear is 0, so worldYearToX collapses every year to the
+      // same x — convert the target year to a day and use the day axis instead.
+      const x = isYearMode(zoom) ? geo.worldYearToX(targetWY) : geo.dx(worldYearToDay(targetWY, baseYear))
       scrollRef.current.scrollLeft = Math.max(0, x - scrollRef.current.clientWidth / 2)
       return
     }
@@ -331,10 +313,20 @@ export default function TimelineEmbed() {
       <div style={{ position: 'relative' }}>
         <div ref={scrollRef}
           style={{ overflowX: 'auto', overflowY: 'hidden', padding: '24px 0 0', background: 'var(--bg-base)', scrollbarWidth: 'thin' }}>
-          <svg ref={svgRef} style={{ display: 'block', overflow: 'visible', pointerEvents: 'all' }}
-            onMouseMove={e => { if (e.target === e.currentTarget) { setTooltip(null); setDayTooltip(null); setBinTooltip(null) } }}
-            onMouseLeave={() => { setTooltip(null); setDayTooltip(null); setBinTooltip(null) }}
-          />
+          <svg width={CANVAS_W} height={TOTAL_H} style={{ display: 'block', overflow: 'visible' }}
+            onMouseLeave={() => { setTooltip(null); setDayTooltip(null); setBinTooltip(null) }}>
+            <TimelineCanvas
+              zoom={zoom} geo={geo} width={CANVAS_W} compact
+              layout={{ axisY: AXIS_Y, arcY: ARC_Y, arcH: ARC_H, sessionDotY: SESSION_DOT_Y, eventY: EVENT_Y, deathY: DEATH_Y, totalH: TOTAL_H }}
+              padL={PAD_L} padR={PAD_R} minDay={minDay} maxDay={maxDay} maxWY={maxWY} baseYear={baseYear} pxPerDay={pxPerDay}
+              arcSpans={arcSpans} arcMap={arcMap} clusterItems={clusterItems} bins={bins}
+              eras={eras} showEras={filters.eras}
+              lifespans={lifespans} showLifespans={showLifespans}
+              onItemClick={openItem} onClusterClick={handleClusterClick}
+              onItemHover={handleItemHover} onLeave={() => { setTooltip(null); setDayTooltip(null); setBinTooltip(null) }}
+              onBinClick={handleBinClick} onBinHover={handleBinHover}
+            />
+          </svg>
           <div style={{ height: 8 }} />
         </div>
 

@@ -370,6 +370,12 @@ function initDatabase() {
   if (!campaignCols.some(c => c.name === 'timeline_base_year')) {
     db.exec(`ALTER TABLE campaigns ADD COLUMN timeline_base_year INTEGER NOT NULL DEFAULT 1507`)
   }
+  if (!campaignCols.some(c => c.name === 'timeline_eras')) {
+    db.exec(`ALTER TABLE campaigns ADD COLUMN timeline_eras TEXT`)
+  }
+  if (!campaignCols.some(c => c.name === 'timeline_show_lifespans')) {
+    db.exec(`ALTER TABLE campaigns ADD COLUMN timeline_show_lifespans INTEGER NOT NULL DEFAULT 0`)
+  }
 
   const sessionCols = db.pragma('table_info(sessions)') as { name: string }[]
   if (!sessionCols.some(c => c.name === 'session_sub')) {

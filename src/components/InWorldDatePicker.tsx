@@ -1,7 +1,7 @@
 // path: src/components/InWorldDatePicker.tsx
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useStore } from '../store/store'
-import { Calendar, X } from 'lucide-react'
+import { Calendar, X, Trash2 } from 'lucide-react'
 import {
   ZoomLevel, ZOOM_LABEL, ZOOM_BIN, ZOOM_ORDER, YEAR_LENGTH,
   isYearMode, dayToWorldYear, worldYearToDay, computeBins,
@@ -119,7 +119,9 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
   // ── Mouse → day ──────────────────────────────────────────────────────────────
   const mouseToDay = (e: MouseEvent | React.MouseEvent): number | null => {
     if (!svgRef.current) return null
-    const x = e.clientX - svgRef.current.getBoundingClientRect().left + (scrollRef.current?.scrollLeft ?? 0)
+    // svg.getBoundingClientRect() already accounts for the scroll position, so
+    // the click-to-content x is simply clientX minus the svg's left edge.
+    const x = e.clientX - svgRef.current.getBoundingClientRect().left
     return Math.max(MIN_DAY, Math.min(MAX_DAY, xToDay(x)))
   }
 
@@ -130,9 +132,16 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
 
   const handleHandleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation()
+    e.preventDefault()
     dragging.current = true
-    const onMove = (ev: MouseEvent) => { const d = mouseToDay(ev); if (d !== null) onPickDay(d) }
-    const onUp = () => { dragging.current = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
+    document.body.style.userSelect = 'none'   // stop dragging from selecting page text
+    const onMove = (ev: MouseEvent) => { ev.preventDefault(); const d = mouseToDay(ev); if (d !== null) onPickDay(d) }
+    const onUp = () => {
+      dragging.current = false
+      document.body.style.userSelect = ''
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
   }
@@ -143,7 +152,7 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
 
   // ── Year-mode campaign year ticks (guard: pxPerYear=0 means no campaign zone) ─
   const campaignYears = isYearMode(zoom) && geo.pxPerYear > 0 ? (() => {
-    const years = []
+    const years: number[] = []
     for (let wy = baseYear; worldYearToX(wy) < W_YEAR - PAD_R; wy++) years.push(wy)
     return years
   })() : []
@@ -169,7 +178,7 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
           ref={svgRef}
           width={W}
           height={H}
-          style={{ display: 'block', cursor: 'crosshair', overflow: 'visible' }}
+          style={{ display: 'block', cursor: 'crosshair', overflow: 'visible', userSelect: 'none' }}
           onClick={handleSvgClick}
         >
           {/* Pre-campaign bin chips — all zoom levels */}
@@ -245,7 +254,7 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
           {!isYearMode(zoom) && <>
             {/* Day-mode year bands */}
             {(() => {
-              const bands = []
+              const bands: React.ReactNode[] = []
               const firstYi = Math.floor((MIN_DAY - 1) / yearLength)
               for (let yi = firstYi; ; yi++) {
                 const bandStart = 1 + yi * yearLength
@@ -499,14 +508,16 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
 
           {/* Clear */}
           {day !== 0 && (
-            <button
-              onClick={() => { setDay(0); onChange(''); setOpen(false) }}
-              style={{ width: '100%', padding: '7px', background: 'none', border: 'none', borderTop: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', transition: 'background var(--transition)' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
-            >
-              Clear date
-            </button>
+            <div style={{ padding: 8, borderTop: '1px solid var(--border)' }}>
+              <button
+                onClick={() => { setDay(0); onChange(''); setOpen(false) }}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', background: '#e0555518', border: '1px solid #e0555555', borderRadius: 'var(--radius-sm)', color: '#e87070', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all var(--transition)' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#e0555530'; (e.currentTarget as HTMLElement).style.color = '#ff8888' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#e0555518'; (e.currentTarget as HTMLElement).style.color = '#e87070' }}
+              >
+                <Trash2 size={13} /> Clear date
+              </button>
+            </div>
           )}
         </div>
       )}

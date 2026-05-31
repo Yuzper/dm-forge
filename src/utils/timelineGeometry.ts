@@ -80,6 +80,36 @@ export function computeBins(
   return chips
 }
 
+// ── Shared item types ────────────────────────────────────────────────────────
+
+export interface SessionRenderItem {
+  id: number; name: string; session_number: number; session_sub: string | null
+  arc_id: number | null; in_world_day: number; in_world_day_end?: number | null
+}
+
+export interface TimelineEventItem {
+  id: number; title: string; day: number; year: number
+  kind: 'event' | 'death' | 'quest' | 'article'; article_type: string; color: string
+  articleId?: number
+}
+
+export interface ClusterItem {
+  id: number; title: string; kind: 'session' | 'event' | 'death' | 'quest' | 'article'
+  day: number; color: string; article_type?: string
+  // session-specific
+  session_number?: number; session_sub?: string | null; arc_id?: number | null
+  in_world_day_end?: number | null
+}
+
+// Named historical period rendered as a background band on the timeline.
+export interface Era {
+  id: string
+  name: string
+  startYear: number
+  endYear: number
+  color: string
+}
+
 // ── Axis geometry ──────────────────────────────────────────────────────────────
 
 export interface AxisGeo {

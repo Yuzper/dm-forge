@@ -19,6 +19,7 @@ import LootTableView from '../components/LootTableView'
 import { parseLootTable } from '../types'
 import SectionDivider from '../components/SectionDivider'
 import { InWorldDatePicker } from '../components/InWorldDatePicker'
+import { TIMELINE_DATE_FIELDS, parseMilestones, type Milestone } from '../constants/timelineDates'
 import LocationMapSection from '../components/LocationMapSection'
 import QuestSubstepsSection, { parseSubsteps } from '../components/QuestSubstepsSection'
 import type { Substep } from '../components/QuestSubstepsSection'
@@ -733,7 +734,72 @@ function CreatureVariantsSection({
   )
 }
 
-function ArticleEditor({ article, onBack }: { article: Article; onBack: () => void }) {
+function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMode, baseYear }: {
+  articleType: ArticleType
+  tracks: Record<string, string>
+  setTracks: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  setDirty: (v: boolean) => void
+  readMode: boolean
+  baseYear: number
+}) {
+  // Skip semantic fields already shown in Details (e.g. character Death_Date).
+  const typeTracks = ARTICLE_TRACKS[articleType] || {}
+  const fields = (TIMELINE_DATE_FIELDS[articleType] ?? []).filter(f => !(f.key in typeTracks))
+  const milestones = parseMilestones(tracks.Timeline_Milestones)
+
+  const setField = (key: string, v: string) => { setTracks(prev => ({ ...prev, [key]: v })); setDirty(true) }
+  const setMilestones = (list: Milestone[]) => { setTracks(prev => ({ ...prev, Timeline_Milestones: JSON.stringify(list) })); setDirty(true) }
+  const addMilestone = () => setMilestones([...milestones, { id: `ms_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, label: '', date: '' }])
+  const updateMilestone = (id: string, patch: Partial<Milestone>) => setMilestones(milestones.map(m => m.id === id ? { ...m, ...patch } : m))
+  const removeMilestone = (id: string) => setMilestones(milestones.filter(m => m.id !== id))
+
+  const fmt = (raw: string) => { try { const d = JSON.parse(raw); return `Day ${d.day}, Year ${d.year}` } catch { return raw } }
+  const setFields = [...fields.filter(f => tracks[f.key])]
+  const setMs = milestones.filter(m => m.date)
+
+  return (
+    <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+      <div style={sidebarSectionLabel}>Timeline</div>
+      {readMode ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {setFields.map(f => (
+            <div key={f.key} style={{ fontSize: 11 }}><span style={{ color: 'var(--text-muted)' }}>{f.label}: </span><span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmt(tracks[f.key])}</span></div>
+          ))}
+          {setMs.map(m => (
+            <div key={m.id} style={{ fontSize: 11 }}><span style={{ color: 'var(--text-muted)' }}>{m.label || 'Milestone'}: </span><span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmt(m.date)}</span></div>
+          ))}
+          {setFields.length === 0 && setMs.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>— not on timeline —</span>}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {fields.map(f => (
+            <div key={f.key}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{f.label}</div>
+              <InWorldDatePicker value={tracks[f.key] || ''} onChange={v => setField(f.key, v)} label="" baseYear={baseYear} />
+            </div>
+          ))}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Milestones</span>
+              <button onClick={addMilestone} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, background: 'none', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 7px' }}><Plus size={11} /> Add</button>
+            </div>
+            {milestones.map(m => (
+              <div key={m.id} style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8, padding: 8, border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input className="input" value={m.label} onChange={e => updateMilestone(m.id, { label: e.target.value })} placeholder="Label (e.g. Rebuilt)" style={{ flex: 1, minWidth: 0, fontSize: 12, height: 28 }} />
+                  <button onClick={() => removeMilestone(m.id)} title="Remove" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: 2, flexShrink: 0 }}><X size={13} /></button>
+                </div>
+                <InWorldDatePicker value={m.date} onChange={v => updateMilestone(m.id, { date: v })} label="" baseYear={baseYear} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: { article: Article; onBack: () => void; backLabel?: string }) {
   const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, setView, setRelationsOpenWebId } = useStore()
 
   const [factionNames, setFactionNames]       = useState<string[]>([])
@@ -891,7 +957,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
         <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 16px', background: 'transparent', border: 'none', borderRight: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color var(--transition)' }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
           onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}>
-          <ChevronLeft size={14} /> Back to Wiki
+          <ChevronLeft size={14} /> {backLabel}
         </button>
         <div style={{ display: 'flex', alignItems: 'center', padding: '0 20px', flex: 1, minWidth: 0 }}>
           <input value={title} onChange={e => { setTitle(e.target.value); setDirty(true) }} readOnly={readMode}
@@ -1263,6 +1329,15 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                 )}
               </div>
             )}
+
+            <TimelineDatesSection
+              articleType={articleType}
+              tracks={tracks}
+              setTracks={setTracks}
+              setDirty={setDirty}
+              readMode={readMode}
+              baseYear={(currentCampaign as any)?.timeline_base_year ?? 1507}
+            />
 
             <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
               <div style={sidebarSectionLabel}>Tags</div>
