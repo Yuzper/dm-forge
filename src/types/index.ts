@@ -22,6 +22,8 @@ export interface Session {
   notes: string
   created_at: string
   map_count?: number
+  in_world_day?: number | null
+  in_world_day_end?: number | null
 }
 
 export interface GameMap {

@@ -2,6 +2,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useStore } from '../store/store'
 import { Calendar, X } from 'lucide-react'
+import {
+  ZoomLevel, ZOOM_LABEL, ZOOM_BIN, ZOOM_ORDER, YEAR_LENGTH,
+  isYearMode, dayToWorldYear, worldYearToDay, computeBins,
+  makePickerAxisGeo,
+} from '../utils/timelineGeometry'
 
 export interface InWorldDate {
   day: number   // 1-based day offset from campaign start
@@ -36,12 +41,6 @@ interface MiniTimelineProps {
   onPickDay: (day: number) => void
 }
 
-type ZoomLevel = 'full' | 'decade' | 'year' | 'day'
-
-const ZOOM_BIN: Record<ZoomLevel, number | null> = { full: 50, decade: 10, year: null, day: null }
-const ZOOM_LABEL: Record<ZoomLevel, string> = { full: 'Full', decade: '10yr', year: '1yr', day: 'Day' }
-const ZOOM_ORDER: ZoomLevel[] = ['full', 'decade', 'year', 'day']
-
 function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay }: MiniTimelineProps) {
   const { sessions, arcs } = useStore()
   const svgRef = useRef<SVGSVGElement>(null)
@@ -64,49 +63,29 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
     })
   }, [campaignId])
 
-  // ── Constants ───────────────────────────────────────────────────────────────
+  // ── Layout constants ─────────────────────────────────────────────────────────
   const PAD_L = 20
   const PAD_R = 24
   const H = 60
   const AXIS_Y = 40
   const ARC_H = 8
   const ARC_Y = AXIS_Y - ARC_H - 4
-  const isYearMode = zoom === 'full' || zoom === 'decade'
 
-  // ── Day-mode geometry ────────────────────────────────────────────────────────
+  // ── Geometry (shared utility) ────────────────────────────────────────────────
   const PX_PER_DAY = zoom === 'day' ? 6 : 2
   const allDays = [...sessions.map(s => (s as any).in_world_day).filter(Boolean), selectedDay || 1, 1]
   const MIN_DAY = Math.min(...allDays, 1) - 5
   const MAX_DAY = Math.max(...allDays, yearLength + 10) + 10
-  const TOTAL_DAYS = MAX_DAY - MIN_DAY
-  const W_DAY = PAD_L + TOTAL_DAYS * PX_PER_DAY + PAD_R
-  const dxDay = (day: number) => PAD_L + (day - MIN_DAY) * PX_PER_DAY
-  const xToDayLinear = (x: number) => Math.round((x - PAD_L) / PX_PER_DAY) + MIN_DAY
-
-  // ── Year-mode geometry (log-linear) ─────────────────────────────────────────
-  const CAMPAIGN_X = 170
-  const PX_PER_YEAR = zoom === 'full' ? 14 : 22
-  const LOG_K = 55
+  const geo = makePickerAxisGeo(zoom, PAD_L, MIN_DAY, PX_PER_DAY, baseYear)
+  const { dx, xToDay, worldYearToX, canvasWidth } = geo
+  const W_DAY = PAD_L + (MAX_DAY - MIN_DAY) * PX_PER_DAY + PAD_R
   const W_YEAR = 680
-
-  const dxYear = (wy: number) => wy >= baseYear
-    ? CAMPAIGN_X + (wy - baseYear) * PX_PER_YEAR
-    : CAMPAIGN_X - LOG_K * Math.log(1 + (baseYear - wy) / 2)
-
-  const xToWorldYear = (x: number) => x >= CAMPAIGN_X
-    ? baseYear + (x - CAMPAIGN_X) / PX_PER_YEAR
-    : baseYear - 2 * (Math.exp((CAMPAIGN_X - x) / LOG_K) - 1)
-
-  const dayToWorldYear = (d: number) => baseYear + (d - 1) / yearLength
-  const worldYearToDay = (wy: number) => Math.round((wy - baseYear) * yearLength + 1)
-
-  const W = isYearMode ? W_YEAR : W_DAY
-  const dx = isYearMode ? (d: number) => dxYear(dayToWorldYear(d)) : dxDay
+  const W = isYearMode(zoom) ? W_YEAR : W_DAY
 
   // ── Scroll to marker on zoom change ─────────────────────────────────────────
   useEffect(() => {
     if (!scrollRef.current) return
-    const targetX = selectedDay ? dx(selectedDay) : (isYearMode ? CAMPAIGN_X : dxDay(1))
+    const targetX = selectedDay ? dx(selectedDay) : (isYearMode(zoom) ? PAD_L + geo.campaignOffX : PAD_L + (1 - MIN_DAY) * PX_PER_DAY)
     scrollRef.current.scrollLeft = targetX - (scrollRef.current.clientWidth / 2)
   }, [zoom])
 
@@ -122,39 +101,19 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
     .filter(s => (s as any).in_world_day)
     .map(s => ({ day: (s as any).in_world_day as number, color: arcMap[s.arc_id ?? 0]?.color ?? '#555' }))
 
-  // ── Bin chips for year modes ─────────────────────────────────────────────────
-  const binSize = ZOOM_BIN[zoom] ?? 10
-  const bins = isYearMode ? (() => {
-    const allHistoryDays = [...sessions.map(s => (s as any).in_world_day), ...events.map(e => e.day)].filter(d => d && d < 1)
-    const oldestYear = allHistoryDays.length ? Math.floor(dayToWorldYear(Math.min(...allHistoryDays))) : baseYear - binSize
-    const startBin = Math.floor(oldestYear / binSize) * binSize
-    const result = []
-    for (let y = startBin; y < baseYear; y += binSize) {
-      const endY = Math.min(y + binSize, baseYear)
-      const inBin = (d: number) => { const wy = dayToWorldYear(d); return wy >= y && wy < endY }
-      result.push({
-        startYear: y, endYear: endY,
-        syCount: sessions.filter(s => inBin((s as any).in_world_day ?? 0)).length,
-        evCount: events.filter(e => inBin(e.day)).length,
-      })
-    }
-    return result
-  })() : []
+  // ── Bin chips ────────────────────────────────────────────────────────────────
+  const bins = computeBins(zoom, baseYear, sessions as any[], events)
 
   // ── Mouse → day ──────────────────────────────────────────────────────────────
   const mouseToDay = (e: MouseEvent | React.MouseEvent): number | null => {
     if (!svgRef.current) return null
     const x = e.clientX - svgRef.current.getBoundingClientRect().left + (scrollRef.current?.scrollLeft ?? 0)
-    if (isYearMode) {
-      return worldYearToDay(Math.round(xToWorldYear(x)))
-    }
-    return Math.max(MIN_DAY, Math.min(MAX_DAY, xToDayLinear(x)))
+    return Math.max(MIN_DAY, Math.min(MAX_DAY, xToDay(x)))
   }
 
   const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
     if (dragging.current) return
-    const d = mouseToDay(e)
-    if (d !== null) onPickDay(d)
+    const d = mouseToDay(e); if (d !== null) onPickDay(d)
   }
 
   const handleHandleMouseDown = (e: React.MouseEvent) => {
@@ -168,12 +127,12 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
 
   const hasMarker = selectedDay !== 0
   const sx = hasMarker ? dx(selectedDay) : null
-  const markerLabel = isYearMode ? `${Math.round(dayToWorldYear(selectedDay))}` : `D${selectedDay}`
+  const markerLabel = isYearMode(zoom) ? `${Math.round(dayToWorldYear(selectedDay, baseYear))}` : `D${selectedDay}`
 
   // ── Year-mode campaign year ticks ────────────────────────────────────────────
-  const campaignYears = isYearMode ? (() => {
+  const campaignYears = isYearMode(zoom) ? (() => {
     const years = []
-    for (let wy = baseYear; dxYear(wy) < W_YEAR - PAD_R; wy++) years.push(wy)
+    for (let wy = baseYear; worldYearToX(wy) < W_YEAR - PAD_R; wy++) years.push(wy)
     return years
   })() : []
 
@@ -201,43 +160,33 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
           style={{ display: 'block', cursor: 'crosshair', overflow: 'visible' }}
           onClick={handleSvgClick}
         >
-          {isYearMode ? <>
+          {isYearMode(zoom) ? <>
             {/* Pre-campaign bin chips */}
             {bins.map(bin => {
-              const x1 = Math.max(dxYear(bin.startYear), PAD_L)
-              const x2 = dxYear(bin.endYear)
+              const x1 = Math.max(worldYearToX(bin.startYear), PAD_L)
+              const x2 = worldYearToX(bin.endYear)
               const w = Math.max(x2 - x1, 8)
               const hasItems = bin.syCount > 0 || bin.evCount > 0
               const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? 'year'
               return (
-                <g key={bin.startYear}
-                  style={{ cursor: 'pointer' }}
+                <g key={bin.startYear} style={{ cursor: 'pointer' }}
                   onClick={e => { e.stopPropagation(); setZoom(nextZoom); setHoverBin(null) }}
                   onMouseEnter={() => setHoverBin({ label: `${bin.startYear}–${bin.endYear}`, sx: (x1 + x2) / 2, syCount: bin.syCount, evCount: bin.evCount, nextZoom, centerYear: (bin.startYear + bin.endYear) / 2 })}
-                  onMouseLeave={() => setHoverBin(null)}
-                >
+                  onMouseLeave={() => setHoverBin(null)}>
                   <rect x={x1} y={AXIS_Y - 18} width={w} height={18} rx="2"
                     fill={hasItems ? '#2a2820' : '#1a1810'} stroke={hasItems ? '#3a3828' : '#222018'} strokeWidth="1" />
-                  {w > 18 && hasItems && (
-                    <text x={x1 + w / 2} y={AXIS_Y - 7} textAnchor="middle" fill="#c8a84b88" fontSize="6" fontFamily="sans-serif">
-                      {[bin.syCount > 0 && `${bin.syCount}s`, bin.evCount > 0 && `${bin.evCount}ev`].filter(Boolean).join(' · ')}
-                    </text>
-                  )}
-                  {w > 30 && (
-                    <text x={x1 + w / 2} y={AXIS_Y - 20} textAnchor="middle" fill="#3a3628" fontSize="6" fontFamily="sans-serif">
-                      {bin.startYear}
-                    </text>
-                  )}
+                  {w > 18 && hasItems && <text x={x1 + w / 2} y={AXIS_Y - 7} textAnchor="middle" fill="#c8a84b88" fontSize="6" fontFamily="sans-serif">{[bin.syCount > 0 && `${bin.syCount}s`, bin.evCount > 0 && `${bin.evCount}ev`].filter(Boolean).join(' · ')}</text>}
+                  {w > 30 && <text x={x1 + w / 2} y={AXIS_Y - 20} textAnchor="middle" fill="#3a3628" fontSize="6" fontFamily="sans-serif">{bin.startYear}</text>}
                 </g>
               )
             })}
 
             {/* Log-linear break */}
-            <line x1={CAMPAIGN_X} y1={0} x2={CAMPAIGN_X} y2={AXIS_Y + 5} stroke="#c8a84b33" strokeWidth="1.5" strokeDasharray="3 2" />
+            <line x1={PAD_L + geo.campaignOffX} y1={0} x2={PAD_L + geo.campaignOffX} y2={AXIS_Y + 5} stroke="#c8a84b33" strokeWidth="1.5" strokeDasharray="3 2" />
 
             {/* Campaign year bands */}
             {campaignYears.map((wy, i) => {
-              const x1 = dxYear(wy), x2 = dxYear(wy + 1)
+              const x1 = worldYearToX(wy), x2 = worldYearToX(wy + 1)
               return (
                 <g key={wy}>
                   <rect x={x1} y={0} width={x2 - x1} height={AXIS_Y} fill={i % 2 === 0 ? '#c8a84b08' : '#ffffff04'} />
@@ -253,8 +202,8 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
 
             {/* Campaign year ticks */}
             {campaignYears.map(wy => {
-              const x = dxYear(wy)
-              return x >= CAMPAIGN_X && x <= W - PAD_R ? (
+              const x = worldYearToX(wy)
+              return x >= PAD_L + geo.campaignOffX && x <= W - PAD_R ? (
                 <g key={wy}>
                   <line x1={x} y1={AXIS_Y} x2={x} y2={AXIS_Y + 4} stroke="#2a2820" strokeWidth="1" />
                   <text x={x} y={AXIS_Y + 12} textAnchor="middle" fill="#3a3628" fontSize="6" fontFamily="sans-serif">{wy}</text>
@@ -262,7 +211,7 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
               ) : null
             })}
 
-            {/* Arc tubes (campaign zone) */}
+            {/* Arc tubes */}
             {arcSpans.map(({ arc, start, end }) => {
               const x1 = dx(start), x2 = dx(end), w = Math.max(x2 - x1, 6)
               return (
@@ -284,14 +233,14 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
               const firstYi = Math.floor((MIN_DAY - 1) / yearLength)
               for (let yi = firstYi; ; yi++) {
                 const bandStart = 1 + yi * yearLength
-                const x1 = Math.max(dxDay(Math.max(bandStart, MIN_DAY)), PAD_L)
-                const x2 = Math.min(dxDay(Math.min(bandStart + yearLength - 1, MAX_DAY)), W_DAY - PAD_R)
+                const x1 = Math.max(dx(Math.max(bandStart, MIN_DAY)), PAD_L)
+                const x2 = Math.min(dx(Math.min(bandStart + yearLength - 1, MAX_DAY)), W_DAY - PAD_R)
                 if (x1 > W_DAY - PAD_R) break
                 const wy = baseYear + yi
                 bands.push(
                   <g key={yi}>
                     <rect x={x1} y={0} width={Math.max(x2 - x1, 0)} height={AXIS_Y} fill={yi % 2 === 0 ? '#c8a84b08' : '#ffffff04'} />
-                    {dxDay(bandStart) >= PAD_L && yi !== firstYi && <line x1={dxDay(bandStart)} y1={0} x2={dxDay(bandStart)} y2={AXIS_Y} stroke="#c8a84b18" strokeWidth="1" />}
+                    {dx(bandStart) >= PAD_L && yi !== firstYi && <line x1={dx(bandStart)} y1={0} x2={dx(bandStart)} y2={AXIS_Y} stroke="#c8a84b18" strokeWidth="1" />}
                     {x2 - x1 > 20 && <text x={x1 + 4} y={10} fill="#c8a84b55" fontSize="7" fontFamily="sans-serif" fontWeight="600">{wy}</text>}
                   </g>
                 )
@@ -405,11 +354,7 @@ interface InWorldDatePickerProps {
   label?: string
 }
 
-const YEAR_LENGTH = 365
-
-function deriveYear(day: number, baseYear: number): number {
-  return baseYear + Math.floor((day - 1) / YEAR_LENGTH)
-}
+const deriveYear = (day: number, baseYear: number) => baseYear + Math.floor((day - 1) / YEAR_LENGTH)
 
 export function InWorldDatePicker({ value, onChange, baseYear = 1507, label = 'In-world date' }: InWorldDatePickerProps) {
   const { currentCampaign, sessions, arcs } = useStore()
