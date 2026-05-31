@@ -228,7 +228,9 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
             {sessionDots.map((s, i) => <circle key={i} cx={dx(s.day)} cy={AXIS_Y} r="3" fill={s.color} opacity={0.7} />)}
             {events.filter(e => e.day >= 1).map((e, i) => <circle key={i} cx={dx(e.day)} cy={AXIS_Y} r="2.5" fill="#e05555" opacity={0.7} />)}
 
-          </> : <>
+          </>}
+
+          {!isYearMode(zoom) && <>
             {/* Day-mode year bands */}
             {(() => {
               const bands = []
