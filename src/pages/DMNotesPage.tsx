@@ -502,6 +502,8 @@ function PageEditor({ page, onDeleted, onTitleChange }: {
     }
   }
 
+  const { confirming: confirmingDelete, trigger: triggerDelete } = useConfirmDelete()
+
   const handleDelete = async () => {
     setDirty(false)
     await window.api.deleteDMNotePage(page.id)
@@ -534,12 +536,12 @@ function PageEditor({ page, onDeleted, onTitleChange }: {
             : <span style={{ fontSize: 11, color: 'var(--gold-dim)' }}>Saved</span>
           }
           <button
-            onClick={handleDelete}
-            className="btn btn-ghost btn-icon btn-sm"
-            style={{ color: 'var(--text-muted)' }}
+            onClick={() => triggerDelete(handleDelete)}
+            className="btn btn-ghost btn-sm"
+            style={{ color: confirmingDelete ? '#e05555' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}
             title="Delete page"
           >
-            <Trash2 size={13} />
+            <Trash2 size={13} /> {confirmingDelete ? 'Confirm' : ''}
           </button>
         </div>
       </div>
@@ -735,7 +737,7 @@ export default function DMNotesPage() {
           <ArrowLeft size={14} /> Back
         </button>
         <Sparkles size={13} color="#9b7de8" />
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, color: '#9b7de8', letterSpacing: '0.04em', flex: 1 }}>
+        <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '0.03em', flex: 1 }}>
           DM Notes
         </span>
       </div>

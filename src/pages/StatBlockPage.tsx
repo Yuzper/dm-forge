@@ -6,9 +6,11 @@ import { parseStatBlock } from '../types'
 
 interface Props {
   articleId: number
+  statblockOverride?: string | null
+  nameOverride?: string | null
 }
 
-export default function StatBlockPage({ articleId }: Props) {
+export default function StatBlockPage({ articleId, statblockOverride, nameOverride }: Props) {
   const [article, setArticle] = useState<Article | null>(null)
   const [error, setError] = useState('')
 
@@ -43,7 +45,9 @@ export default function StatBlockPage({ articleId }: Props) {
     )
   }
 
-  const statblock = parseStatBlock(article.statblock)
+  // Use override if provided (variant statblock from combat), otherwise parse article statblock
+  const statblock = parseStatBlock(statblockOverride ?? article.statblock)
+  const displayName = nameOverride ?? article.title
 
   return (
     <div style={{
@@ -53,7 +57,7 @@ export default function StatBlockPage({ articleId }: Props) {
     }}>
       <StatBlockView
         statblock={statblock}
-        name={article.title}
+        name={displayName}
         articleType={article.article_type}
       />
     </div>

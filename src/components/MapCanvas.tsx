@@ -154,8 +154,29 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
   const scaleRef = useRef(1)
   const offsetRef = useRef({ x: 0, y: 0 })
 
+  // Simple setters — no save logic here (avoids stale closure issues)
   const setScale = (v: number) => { scaleRef.current = v; setScaleState(v) }
   const setOffset = (v: { x: number; y: number }) => { offsetRef.current = v; setOffsetState(v) }
+
+  // Save viewport to localStorage whenever scale or offset state changes.
+  // Flush synchronously in cleanup so navigating away never cancels an unsaved position.
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!currentMap) return
+    const id = currentMap.id
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      localStorage.setItem(`map-view-${id}`, JSON.stringify({ scale, offset }))
+      saveTimerRef.current = null
+    }, 300)
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+        localStorage.setItem(`map-view-${id}`, JSON.stringify({ scale, offset }))
+      }
+    }
+  }, [scale, offset, currentMap?.id])
 
   const panStart = useRef<{ mouseX: number; mouseY: number; ox: number; oy: number } | null>(null)
   const hasPanned = useRef(false)
@@ -191,12 +212,25 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
   const imgBoundsRef = useRef(imgBounds)
   imgBoundsRef.current = imgBounds
 
+  // Restore saved viewport when switching maps, or default to 1/{0,0}
   useEffect(() => {
-    setScale(1)
-    setOffset({ x: 0, y: 0 })
     setImageLoaded(false)
     setImgNatural(null)
     if (!currentMap) { setImageUrl(null); return }
+    const saved = localStorage.getItem(`map-view-${currentMap.id}`)
+    if (saved) {
+      try {
+        const { scale: s, offset: o } = JSON.parse(saved)
+        scaleRef.current = s; setScaleState(s)
+        offsetRef.current = o; setOffsetState(o)
+      } catch {
+        scaleRef.current = 1; setScaleState(1)
+        offsetRef.current = { x: 0, y: 0 }; setOffsetState({ x: 0, y: 0 })
+      }
+    } else {
+      scaleRef.current = 1; setScaleState(1)
+      offsetRef.current = { x: 0, y: 0 }; setOffsetState({ x: 0, y: 0 })
+    }
     window.api.getImagePath(currentMap.image_path).then(setImageUrl)
   }, [currentMap?.id, currentMap?.image_path])
 

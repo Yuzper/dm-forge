@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../store/store'
 import {
   ChevronLeft, Map, Scroll, Download, Upload, Check,
-  AlertCircle, BookOpen, Clock, ArrowLeft,
-  FileText, Layers, Sparkles, ShoppingBag, Network,
+  AlertCircle, BookOpen, Clock, ArrowLeft, Timer,
+  FileText, Layers, Sparkles, ShoppingBag, Network, Paintbrush,
 } from 'lucide-react'
 import POIList from './POIList'
 import type { HistoryEntry } from '../store/store'
@@ -16,6 +16,8 @@ function historyIcon(entry: HistoryEntry) {
     case 'session':  return <Scroll size={11} />
     case 'wiki':     return <BookOpen size={11} />
     case 'article':  return <FileText size={11} />
+    case 'relations': return <Network size={11} />
+    case 'timeline': return <Clock size={11} />
   }
 }
 
@@ -28,7 +30,7 @@ export default function Sidebar() {
 
   const inCampaignContext =
     view === 'campaign' || view === 'session' || view === 'wiki' ||
-    view === 'dm-notes' || view === 'loot-tables' || view === 'relations'
+    view === 'dm-notes' || view === 'loot-tables' || view === 'relations' || view === 'timeline'
   const canGoBack = navigationHistory.length >= 2
   const [version, setVersion] = useState('')
 
@@ -134,6 +136,17 @@ export default function Sidebar() {
               >
                 <Network size={13} /> Relations
               </button>
+
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{
+                  width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
+                  color: view === 'timeline' ? '#e88c3a' : 'var(--text-secondary)',
+                }}
+                onClick={() => setView('timeline')}
+              >
+                <Clock size={13} /> Timeline
+              </button>
             </div>
           )}
         </div>
@@ -214,11 +227,92 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div style={{ padding: '12px 12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <BackgroundPicker />
         <BackupButton />
         <ImportButton />
         <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.05em', paddingLeft: 4 }}>v{version}</div>
       </div>
     </aside>
+  )
+}
+
+type BgStyle = 'none' | 'parchment' | 'vignette' | 'stone' | 'wood'
+
+const BG_OPTIONS: { value: BgStyle; label: string; preview: string }[] = [
+  { value: 'none',      label: 'None',      preview: '#0d0b09' },
+  { value: 'parchment', label: 'Parchment', preview: 'repeating-linear-gradient(45deg, #141008 0px, #1a1509 4px, #0d0b06 8px)' },
+  { value: 'vignette',  label: 'Vignette',  preview: 'radial-gradient(circle, #1c160f 0%, #050403 100%)' },
+  { value: 'stone',     label: 'Stone',     preview: 'repeating-linear-gradient(0deg, #0d0b09 0px, #0d0b09 9px, #111009 10px), repeating-linear-gradient(90deg, #0d0b09 0px, #0d0b09 14px, #111009 15px)' },
+  { value: 'wood',      label: 'Wood',      preview: 'repeating-linear-gradient(90deg, #0a0806 0px, #100c08 2px, #0a0806 4px, #0a0806 10px)' },
+]
+
+function BackgroundPicker() {
+  const { bgStyle, setBgStyle } = useStore()
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+          padding: '7px 10px', background: open ? 'var(--bg-elevated)' : 'transparent',
+          border: `1px solid ${open ? 'var(--border-gold)' : 'var(--border-light)'}`,
+          borderRadius: 'var(--radius-sm)',
+          color: open ? 'var(--gold)' : 'var(--text-muted)',
+          fontSize: 12, fontFamily: 'var(--font-ui)',
+          cursor: 'pointer', transition: 'all var(--transition)',
+        }}
+        onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
+        onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+      >
+        <Paintbrush size={13} />
+        Background
+        <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7, textTransform: 'capitalize' }}>{bgStyle}</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, right: 0,
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border-light)',
+          borderRadius: 'var(--radius-md)',
+          padding: '10px',
+          boxShadow: 'var(--shadow-lg)',
+          zIndex: 50,
+        }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 2 }}>
+            Background style
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+            {BG_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                title={opt.label}
+                onClick={() => { setBgStyle(opt.value); setOpen(false) }}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+                  background: 'none', border: 'none', cursor: 'pointer', padding: '4px 2px',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+              >
+                <div style={{
+                  width: 36, height: 28,
+                  borderRadius: 4,
+                  background: opt.preview,
+                  border: `2px solid ${bgStyle === opt.value ? 'var(--gold)' : 'var(--border-light)'}`,
+                  boxShadow: bgStyle === opt.value ? 'var(--shadow-gold)' : 'none',
+                  transition: 'border-color var(--transition)',
+                }} />
+                <span style={{ fontSize: 9, color: bgStyle === opt.value ? 'var(--gold)' : 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                  {opt.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

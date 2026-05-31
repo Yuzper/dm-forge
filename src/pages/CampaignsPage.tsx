@@ -314,7 +314,7 @@ export default function CampaignsPage() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Sword size={22} color="var(--gold)" />
-          <h1 style={{ fontSize: 22, letterSpacing: '0.05em' }}>Your Campaigns</h1>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, letterSpacing: '0.03em', color: 'var(--text-primary)', margin: 0 }}>Your Campaigns</h1>
         </div>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
           <Plus size={15} /> New Campaign

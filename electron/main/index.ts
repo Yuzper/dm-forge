@@ -84,6 +84,59 @@ function seedDefaultTables(campaignId: number): any[] {
   return results.map(r => ({ ...r, is_default: r.is_default === 1 }))
 }
 
+// ── Family tree relation derivation ───────────────────────────────────────────
+function deriveRelationsForNode(
+  nodeId: number,
+  nodes: any[],
+  edges: any[],
+  webName: string,
+  webId: number,
+) {
+  const partners: any[] = []
+  const children: any[]  = []
+  const parents: any[]   = []
+  const siblings: any[]  = []
+  const siblingIds = new Set<number>()
+
+  const myUnionEdges = edges.filter(e => e.edge_type === 'person_to_union' && e.from_node_id === nodeId)
+  for (const ue of myUnionEdges) {
+    const unionId = ue.to_node_id
+    edges.filter(e => e.edge_type === 'person_to_union' && e.to_node_id === unionId && e.from_node_id !== nodeId)
+      .forEach(e => {
+        const p = nodes.find(n => n.id === e.from_node_id)
+        if (p) partners.push({ nodeId: p.id, articleId: p.article_id, name: p.article_title || p.label, role: ue.label_from || 'partner', vitality: p.vitality ?? null })
+      })
+    edges.filter(e => e.edge_type === 'union_to_child' && e.from_node_id === unionId)
+      .forEach(e => {
+        const c = nodes.find(n => n.id === e.to_node_id)
+        if (c) children.push({ nodeId: c.id, articleId: c.article_id, name: c.article_title || c.label, vitality: c.vitality ?? null })
+      })
+  }
+
+  const parentUnionEdges = edges.filter(e => e.edge_type === 'union_to_child' && e.to_node_id === nodeId)
+  for (const pe of parentUnionEdges) {
+    const unionId = pe.from_node_id
+    const unionMembers = edges.filter(e => e.edge_type === 'person_to_union' && e.to_node_id === unionId)
+    unionMembers.forEach(e => {
+      const p = nodes.find(n => n.id === e.from_node_id)
+      if (p) parents.push({ nodeId: p.id, articleId: p.article_id, name: p.article_title || p.label, role: (e.label_from || '').replace(/ of$/i, '').trim() || 'parent', vitality: p.vitality ?? null })
+    })
+    if (unionMembers.length < 2) {
+      parents.push({ nodeId: null, articleId: null, name: 'Unknown parent', role: 'parent', vitality: null })
+    }
+    edges.filter(e => e.edge_type === 'union_to_child' && e.from_node_id === unionId && e.to_node_id !== nodeId)
+      .forEach(e => {
+        if (!siblingIds.has(e.to_node_id)) {
+          siblingIds.add(e.to_node_id)
+          const s = nodes.find(n => n.id === e.to_node_id)
+          if (s) siblings.push({ nodeId: s.id, articleId: s.article_id, name: s.article_title || s.label, vitality: s.vitality ?? null })
+        }
+      })
+  }
+
+  return { webId, webName, partners, parents, children, siblings }
+}
+
 function initDatabase() {
   const userDataPath = app.getPath('userData')
   const dbPath = path.join(userDataPath, 'dmforge.db')
@@ -148,20 +201,21 @@ function initDatabase() {
     );
 
     CREATE TABLE IF NOT EXISTS articles (
-      id             INTEGER PRIMARY KEY AUTOINCREMENT,
-      campaign_id    INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-      title          TEXT    NOT NULL,
-      content        TEXT    NOT NULL DEFAULT '{"type":"doc","content":[]}',
-      article_type   TEXT    NOT NULL DEFAULT 'location',
-      tags           TEXT    NOT NULL DEFAULT '[]',
-      cover_image    TEXT,
-      portrait_image TEXT,
-      tracks         TEXT    NOT NULL DEFAULT '{}',
-      statblock      TEXT    NOT NULL DEFAULT '{}',
-      loot_table     TEXT    NOT NULL DEFAULT '{"name":"Loot","items":[]}',
-      status         TEXT    NOT NULL DEFAULT '',
-      created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id      INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      title            TEXT    NOT NULL,
+      content          TEXT    NOT NULL DEFAULT '{"type":"doc","content":[]}',
+      article_type     TEXT    NOT NULL DEFAULT 'location',
+      tags             TEXT    NOT NULL DEFAULT '[]',
+      cover_image      TEXT,
+      portrait_image   TEXT,
+      tracks           TEXT    NOT NULL DEFAULT '{}',
+      statblock        TEXT    NOT NULL DEFAULT '{}',
+      loot_table       TEXT    NOT NULL DEFAULT '{"name":"Loot","items":[]}',
+      status           TEXT    NOT NULL DEFAULT '',
+      derived_relations TEXT   NOT NULL DEFAULT '{}',
+      created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
       UNIQUE(campaign_id, title)
     );
 
@@ -173,17 +227,22 @@ function initDatabase() {
     );
 
     CREATE TABLE IF NOT EXISTS combat_creatures (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      encounter_id    INTEGER NOT NULL REFERENCES combat_encounters(id) ON DELETE CASCADE,
-      article_id      INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
-      instance_number INTEGER NOT NULL DEFAULT 1,
-      max_hp          INTEGER NOT NULL DEFAULT 0,
-      current_hp      INTEGER NOT NULL DEFAULT 0,
-      ac_override     INTEGER,
-      is_dead         INTEGER NOT NULL DEFAULT 0,
-      initiative      INTEGER,
-      loot_result     TEXT,
-      created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      encounter_id          INTEGER NOT NULL REFERENCES combat_encounters(id) ON DELETE CASCADE,
+      article_id            INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+      instance_number       INTEGER NOT NULL DEFAULT 1,
+      max_hp                INTEGER NOT NULL DEFAULT 0,
+      current_hp            INTEGER NOT NULL DEFAULT 0,
+      ac_override           INTEGER,
+      is_dead               INTEGER NOT NULL DEFAULT 0,
+      initiative            INTEGER,
+      loot_result           TEXT,
+      resources             TEXT    NOT NULL DEFAULT '[]',
+      variant_name          TEXT,
+      variant_statblock     TEXT,
+      variant_loot_table_id INTEGER,
+      variant_loot_table    TEXT,
+      created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS dm_notes_groups (
@@ -223,6 +282,7 @@ function initDatabase() {
       campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
       name        TEXT    NOT NULL DEFAULT 'New Web',
       description TEXT    NOT NULL DEFAULT '',
+      template    TEXT    NOT NULL DEFAULT 'custom',
       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
@@ -232,6 +292,7 @@ function initDatabase() {
       web_id     INTEGER NOT NULL REFERENCES relation_webs(id) ON DELETE CASCADE,
       article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
       label      TEXT    NOT NULL DEFAULT 'New node',
+      node_type  TEXT    NOT NULL DEFAULT 'person',
       pos_x      REAL    NOT NULL DEFAULT 100,
       pos_y      REAL    NOT NULL DEFAULT 100,
       created_at TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -244,6 +305,7 @@ function initDatabase() {
       to_node_id   INTEGER NOT NULL REFERENCES relation_nodes(id) ON DELETE CASCADE,
       label_from   TEXT    NOT NULL DEFAULT '',
       label_to     TEXT    NOT NULL DEFAULT '',
+      edge_type    TEXT    NOT NULL DEFAULT 'standard',
       created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
     );
   `)
@@ -262,6 +324,16 @@ function initDatabase() {
   if (!articleCols.some(c => c.name === 'loot_table_id')) {
     db.exec(`ALTER TABLE articles ADD COLUMN loot_table_id INTEGER REFERENCES loot_tables(id) ON DELETE SET NULL`)
   }
+  if (!articleCols.some(c => c.name === 'derived_relations')) {
+    db.exec(`ALTER TABLE articles ADD COLUMN derived_relations TEXT NOT NULL DEFAULT '{}'`)
+  }
+  if (!articleCols.some(c => c.name === 'substeps')) {
+  db.exec(`ALTER TABLE articles ADD COLUMN substeps TEXT NOT NULL DEFAULT '[]'`)
+  }
+  if (!articleCols.some(c => c.name === 'rewards')) {
+    db.exec(`ALTER TABLE articles ADD COLUMN rewards TEXT NOT NULL DEFAULT '[]'`)
+  }
+
 
   const poiCols = db.pragma('table_info(pois)') as { name: string }[]
   if (!poiCols.some(c => c.name === 'loot_table')) {
@@ -270,7 +342,6 @@ function initDatabase() {
   if (!poiCols.some(c => c.name === 'loot_table_id')) {
     db.exec(`ALTER TABLE pois ADD COLUMN loot_table_id INTEGER REFERENCES loot_tables(id) ON DELETE SET NULL`)
   }
-
   if (!poiCols.some(c => c.name === 'hub_links')) {
     db.exec(`ALTER TABLE pois ADD COLUMN hub_links TEXT NOT NULL DEFAULT '[]'`)
   }
@@ -282,6 +353,23 @@ function initDatabase() {
   if (!creatureCols.some(c => c.name === 'resources')) {
     db.exec(`ALTER TABLE combat_creatures ADD COLUMN resources TEXT NOT NULL DEFAULT '[]'`)
   }
+  if (!creatureCols.some(c => c.name === 'variant_name')) {
+    db.exec(`ALTER TABLE combat_creatures ADD COLUMN variant_name TEXT`)
+  }
+  if (!creatureCols.some(c => c.name === 'variant_statblock')) {
+    db.exec(`ALTER TABLE combat_creatures ADD COLUMN variant_statblock TEXT`)
+  }
+  if (!creatureCols.some(c => c.name === 'variant_loot_table_id')) {
+    db.exec(`ALTER TABLE combat_creatures ADD COLUMN variant_loot_table_id INTEGER`)
+  }
+  if (!creatureCols.some(c => c.name === 'variant_loot_table')) {
+    db.exec(`ALTER TABLE combat_creatures ADD COLUMN variant_loot_table TEXT`)
+  }
+
+  const campaignCols = db.pragma('table_info(campaigns)') as { name: string }[]
+  if (!campaignCols.some(c => c.name === 'timeline_base_year')) {
+    db.exec(`ALTER TABLE campaigns ADD COLUMN timeline_base_year INTEGER NOT NULL DEFAULT 1507`)
+  }
 
   const sessionCols = db.pragma('table_info(sessions)') as { name: string }[]
   if (!sessionCols.some(c => c.name === 'session_sub')) {
@@ -290,13 +378,17 @@ function initDatabase() {
   if (!sessionCols.some(c => c.name === 'arc_id')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN arc_id INTEGER`)
   }
+  if (!sessionCols.some(c => c.name === 'in_world_day')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN in_world_day INTEGER`)
+  }
+  if (!sessionCols.some(c => c.name === 'in_world_day_end')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN in_world_day_end INTEGER`)
+  }
 
   const mapCols = db.pragma('table_info(maps)') as { name: string; notnull: number }[]
     if (!mapCols.some(c => c.name === 'campaign_id')) {
       db.exec(`ALTER TABLE maps ADD COLUMN campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE`)
     }
-    // Older databases have session_id NOT NULL, which breaks article-only maps.
-    // SQLite can't ALTER COLUMN, so we recreate the table if needed.
     const sessionIdCol = mapCols.find(c => c.name === 'session_id')
     if (sessionIdCol && sessionIdCol.notnull === 1) {
       db.exec(`
@@ -329,6 +421,20 @@ function initDatabase() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_unique
     ON sessions(campaign_id, session_number, session_sub)
   `)
+
+  // ── Relation table migrations (additive, safe for existing DBs) ───────────
+  const webCols = db.pragma('table_info(relation_webs)') as { name: string }[]
+  if (!webCols.some(c => c.name === 'template')) {
+    db.exec(`ALTER TABLE relation_webs ADD COLUMN template TEXT NOT NULL DEFAULT 'custom'`)
+  }
+  const nodeCols2 = db.pragma('table_info(relation_nodes)') as { name: string }[]
+  if (!nodeCols2.some(c => c.name === 'node_type')) {
+    db.exec(`ALTER TABLE relation_nodes ADD COLUMN node_type TEXT NOT NULL DEFAULT 'person'`)
+  }
+  const edgeCols2 = db.pragma('table_info(relation_edges)') as { name: string }[]
+  if (!edgeCols2.some(c => c.name === 'edge_type')) {
+    db.exec(`ALTER TABLE relation_edges ADD COLUMN edge_type TEXT NOT NULL DEFAULT 'standard'`)
+  }
 
   return { userDataPath, imagesPath }
 }
@@ -769,9 +875,11 @@ function registerIPC(imagesPath: string) {
     return db.prepare(`
       SELECT id, campaign_id, title, article_type, tags, tracks, updated_at
       FROM articles
-      WHERE campaign_id = ? AND content LIKE ? AND title != ?
+      WHERE campaign_id = ?
+        AND title != ?
+        AND (content LIKE ? OR tracks LIKE ?)
       ORDER BY title ASC
-    `).all(campaignId, `%"title":"${title}"%`, title)
+    `).all(campaignId, title, `%"title":"${title}"%`, `%"${title}"%`)
   })
 
   ipcMain.handle('articles:create', (_e, data: any) => {
@@ -854,25 +962,63 @@ function registerIPC(imagesPath: string) {
         cc.initiative DESC,
         cc.instance_number ASC
     `).all(encounterId) as any[]
-    return rows.map(r => ({ ...r, is_dead: r.is_dead === 1 }))
+    return rows.map(r => ({
+      ...r,
+      is_dead: r.is_dead === 1,
+      // Variant statblock takes priority over article statblock
+      statblock:     r.variant_statblock     ?? r.statblock,
+      // Variant loot takes priority over article loot
+      loot_table_id: r.variant_loot_table_id ?? r.loot_table_id,
+      loot_table:    r.variant_loot_table    ?? r.loot_table,
+      // Display name: variant name if set, otherwise article title
+      display_name:  r.variant_name          ?? r.title,
+    }))
   })
 
-  ipcMain.handle('combat:add-creature', (_e, encounterId: number, articleId: number, maxHp: number) => {
-    const { cnt } = db.prepare(
-      'SELECT COUNT(*) as cnt FROM combat_creatures WHERE encounter_id = ? AND article_id = ?'
-    ).get(encounterId, articleId) as { cnt: number }
+  ipcMain.handle('combat:add-creature', (_e, encounterId: number, articleId: number, maxHp: number, variantData?: {
+    variant_name: string | null
+    variant_statblock: string | null
+    variant_loot_table_id: number | null
+    variant_loot_table: string | null
+  }) => {
+    // Instance number scoped to article + variant so two different variants
+    // of the same creature don't share instance numbering
+    const variantName = variantData?.variant_name ?? null
+    const { cnt } = db.prepare(`
+      SELECT COUNT(*) as cnt FROM combat_creatures
+      WHERE encounter_id = ? AND article_id = ?
+      AND (variant_name IS ? OR (variant_name IS NULL AND ? IS NULL))
+    `).get(encounterId, articleId, variantName, variantName) as { cnt: number }
     const instanceNumber = cnt + 1
+
     const result = db.prepare(`
-      INSERT INTO combat_creatures (encounter_id, article_id, instance_number, max_hp, current_hp)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(encounterId, articleId, instanceNumber, maxHp, maxHp)
+      INSERT INTO combat_creatures
+        (encounter_id, article_id, instance_number, max_hp, current_hp,
+         variant_name, variant_statblock, variant_loot_table_id, variant_loot_table)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      encounterId, articleId, instanceNumber, maxHp, maxHp,
+      variantName,
+      variantData?.variant_statblock     ?? null,
+      variantData?.variant_loot_table_id ?? null,
+      variantData?.variant_loot_table    ?? null,
+    )
+
     const row = db.prepare(`
       SELECT cc.*, a.title, a.statblock, a.loot_table, a.loot_table_id
       FROM combat_creatures cc
       JOIN articles a ON a.id = cc.article_id
       WHERE cc.id = ?
     `).get(result.lastInsertRowid) as any
-    return { ...row, is_dead: row.is_dead === 1 }
+
+    return {
+      ...row,
+      is_dead:       row.is_dead === 1,
+      statblock:     row.variant_statblock     ?? row.statblock,
+      loot_table_id: row.variant_loot_table_id ?? row.loot_table_id,
+      loot_table:    row.variant_loot_table     ?? row.loot_table,
+      display_name:  row.variant_name           ?? row.title,
+    }
   })
 
   ipcMain.handle('combat:save-creatures', (_e, creatures: any[]) => {
@@ -902,29 +1048,42 @@ function registerIPC(imagesPath: string) {
 
   // ── Stat Block Window ─────────────────────────────────────────────────────────
 
-  ipcMain.handle('statblock:open-window', async (_e, articleId: number) => {
+  ipcMain.handle('statblock:open-window', async (_e, articleId: number, overrides?: { statblock?: string; name?: string }) => {
     const existing = BrowserWindow.getAllWindows().find(w => {
       try {
         const url = w.webContents.getURL()
-        return url.includes(`articleId=${articleId}`) && url.includes('mode=statblock')
+        const matchesArticle = url.includes(`articleId=${articleId}`) && url.includes('mode=statblock')
+        if (!matchesArticle) return false
+        // If a variant name override is present, require it to match too
+        if (overrides?.name) {
+          return url.includes(`nameOverride=${encodeURIComponent(overrides.name)}`)
+        }
+        // No variant name — match any window for this article that also has no nameOverride
+        return !url.includes('nameOverride=')
       } catch { return false }
     })
     if (existing) { existing.focus(); return }
 
     const win = new BrowserWindow({
       width: 420, height: 650, minWidth: 360, minHeight: 400,
-      title: 'Stat Block', alwaysOnTop: true,
+      title: overrides?.name ?? 'Stat Block', alwaysOnTop: true,
       webPreferences: {
         preload: path.join(__dirname, '../preload/index.js'),
         contextIsolation: true, nodeIntegration: false, webSecurity: false,
       },
     })
 
+    // Build query string — encode overrides as URL params
+    const query: Record<string, string> = { mode: 'statblock', articleId: String(articleId) }
+    if (overrides?.statblock) query.statblockOverride = encodeURIComponent(overrides.statblock)
+    if (overrides?.name)      query.nameOverride      = encodeURIComponent(overrides.name)
+    const qs = Object.entries(query).map(([k, v]) => `${k}=${v}`).join('&')
+
     if (process.env.ELECTRON_RENDERER_URL) {
-      win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?mode=statblock&articleId=${articleId}`)
+      win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?${qs}`)
     } else {
       win.loadFile(path.join(__dirname, '../renderer/index.html'), {
-        query: { mode: 'statblock', articleId: String(articleId) },
+        query: { mode: 'statblock', articleId: String(articleId), ...query },
       })
     }
   })
@@ -1184,9 +1343,9 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('relation-webs:create', (_e, data: any) => {
     const result = db.prepare(`
-      INSERT INTO relation_webs (campaign_id, name, description)
-      VALUES (@campaign_id, @name, @description)
-    `).run({ description: '', ...data })
+      INSERT INTO relation_webs (campaign_id, name, description, template)
+      VALUES (@campaign_id, @name, @description, @template)
+    `).run({ description: '', template: 'custom', ...data })
     return db.prepare(`
       SELECT w.*, 0 AS node_count FROM relation_webs w WHERE w.id = ?
     `).get(result.lastInsertRowid)
@@ -1205,10 +1364,9 @@ function registerIPC(imagesPath: string) {
     db.prepare('DELETE FROM relation_webs WHERE id = ?').run(id)
   })
 
-  // Returns the full web + all its nodes (with joined article data) + all edges
   ipcMain.handle('relation-webs:get-data', (_e, webId: number) => {
     const nodes = db.prepare(`
-      SELECT n.id, n.web_id, n.article_id, n.label, n.pos_x, n.pos_y,
+      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.pos_x, n.pos_y,
              a.title AS article_title, a.article_type, a.tracks
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
@@ -1216,7 +1374,6 @@ function registerIPC(imagesPath: string) {
       ORDER BY n.id
     `).all(webId) as any[]
 
-    // Extract vitality from tracks JSON
     const nodesWithVitality = nodes.map(n => {
       let vitality: string | null = null
       if (n.tracks) {
@@ -1225,7 +1382,7 @@ function registerIPC(imagesPath: string) {
           vitality = tracks.Vitality || null
         } catch {}
       }
-      return { ...n, vitality }   // ← keeps tracks (raw JSON string)
+      return { ...n, vitality }
     })
 
     const edges = db.prepare(`
@@ -1239,15 +1396,14 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('relation-nodes:create', (_e, data: any) => {
     const result = db.prepare(`
-      INSERT INTO relation_nodes (web_id, article_id, label, pos_x, pos_y)
-      VALUES (@web_id, @article_id, @label, @pos_x, @pos_y)
-    `).run({ article_id: null, pos_x: 100, pos_y: 100, ...data })
+      INSERT INTO relation_nodes (web_id, article_id, label, node_type, pos_x, pos_y)
+      VALUES (@web_id, @article_id, @label, @node_type, @pos_x, @pos_y)
+    `).run({ article_id: null, node_type: 'person', pos_x: 100, pos_y: 100, ...data })
 
-    // Touch web updated_at
     db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(data.web_id)
 
     const node = db.prepare(`
-      SELECT n.id, n.web_id, n.article_id, n.label, n.pos_x, n.pos_y,
+      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.pos_x, n.pos_y,
              a.title AS article_title, a.article_type, a.tracks
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
@@ -1267,7 +1423,7 @@ function registerIPC(imagesPath: string) {
     db.prepare(`UPDATE relation_nodes SET ${fields} WHERE id = @id`).run({ ...data, id })
 
     const node = db.prepare(`
-      SELECT n.id, n.web_id, n.article_id, n.label, n.pos_x, n.pos_y,
+      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.pos_x, n.pos_y,
              a.title AS article_title, a.article_type, a.tracks
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
@@ -1295,9 +1451,9 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('relation-edges:create', (_e, data: any) => {
     const result = db.prepare(`
-      INSERT INTO relation_edges (web_id, from_node_id, to_node_id, label_from, label_to)
-      VALUES (@web_id, @from_node_id, @to_node_id, @label_from, @label_to)
-    `).run({ label_from: '', label_to: '', ...data })
+      INSERT INTO relation_edges (web_id, from_node_id, to_node_id, label_from, label_to, edge_type)
+      VALUES (@web_id, @from_node_id, @to_node_id, @label_from, @label_to, @edge_type)
+    `).run({ label_from: '', label_to: '', edge_type: 'standard', ...data })
     db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(data.web_id)
     return db.prepare('SELECT * FROM relation_edges WHERE id = ?').get(result.lastInsertRowid)
   })
@@ -1312,14 +1468,16 @@ function registerIPC(imagesPath: string) {
     db.prepare('DELETE FROM relation_edges WHERE id = ?').run(id)
   })
 
-  // Returns all edges involving a specific article (for the wiki sidebar panel)
   ipcMain.handle('relation-edges:get-for-article', (_e, articleId: number, campaignId: number) => {
-    return (db.prepare(`
+    let edgeRowId = 0
+
+    // 1) Standard edges (non-family-tree webs)
+    const standardRows = (db.prepare(`
       SELECT
         e.id AS edge_id,
         e.label_from, e.label_to,
         e.from_node_id, e.to_node_id,
-        w.id AS web_id, w.name AS web_name,
+        w.id AS web_id, w.name AS web_name, w.template AS web_template,
         fn.label AS from_node_label, fn.article_id AS from_article_id,
         tn.label AS to_node_label, tn.article_id AS to_article_id,
         fa.title AS from_article_title, fa.tracks AS from_tracks,
@@ -1332,15 +1490,146 @@ function registerIPC(imagesPath: string) {
       LEFT JOIN articles ta ON ta.id = tn.article_id
       WHERE w.campaign_id = ?
         AND (fn.article_id = ? OR tn.article_id = ?)
+        AND (e.edge_type = 'standard' OR e.edge_type IS NULL)
+        AND w.template != 'family_tree'
       ORDER BY w.name, e.id
     `).all(campaignId, articleId, articleId) as any[]).map(row => {
       let fromVitality: string | null = null
       let toVitality: string | null = null
       try { fromVitality = JSON.parse(row.from_tracks || '{}').Vitality || null } catch {}
       try { toVitality = JSON.parse(row.to_tracks || '{}').Vitality || null } catch {}
-      const { from_tracks, to_tracks, ...rest } = row
+      const { from_tracks, to_tracks, web_template, ...rest } = row
       return { ...rest, from_vitality: fromVitality, to_vitality: toVitality }
     })
+
+    // 2) Derived family-tree relations from articles.derived_relations
+    const article = db.prepare('SELECT derived_relations FROM articles WHERE id = ?').get(articleId) as any
+    let derivedMap: Record<string, any> = {}
+    try { derivedMap = JSON.parse(article?.derived_relations || '{}') } catch {}
+
+    // Resolve vitality for derived entries: prefer the entry's stored vitality;
+    // if it has an articleId, refresh from the live tracks (kept in sync, but defensive).
+    const articleVitality = (aid: number | null): string | null => {
+      if (!aid) return null
+      const a = db.prepare('SELECT tracks FROM articles WHERE id = ?').get(aid) as any
+      if (!a) return null
+      try { return JSON.parse(a.tracks || '{}').Vitality || null } catch { return null }
+    }
+
+    const derivedRows: any[] = []
+    for (const [webIdStr, data] of Object.entries(derivedMap)) {
+      const d = data as any
+      const webId = Number(webIdStr)
+      if (!d || !d.webName) continue
+
+      // Skip if web no longer exists or belongs to a different campaign
+      const web = db.prepare('SELECT id FROM relation_webs WHERE id = ? AND campaign_id = ?').get(webId, campaignId) as any
+      if (!web) continue
+
+      const push = (entries: any[], roleFallback: string) => {
+        for (const e of entries) {
+          const role = (e.role || roleFallback || '').trim()
+          const otherVit = e.articleId ? articleVitality(e.articleId) : (e.vitality ?? null)
+          derivedRows.push({
+            // Synthesise an edge_id that won't collide with real edge ids — negative
+            edge_id: --edgeRowId,
+            web_id: webId,
+            web_name: d.webName,
+            // We render from the perspective of the current article, so put it on `from`
+            from_node_id: 0,
+            to_node_id: e.nodeId ?? 0,
+            from_article_id: articleId,
+            to_article_id: e.articleId ?? null,
+            from_article_title: null,
+            to_article_title: e.articleId ? e.name : null,
+            from_node_label: '',
+            to_node_label: e.name || '',
+            from_vitality: null,
+            to_vitality: otherVit,
+            label_from: '',
+            label_to: role,
+          })
+        }
+      }
+
+      push(d.parents  ?? [], 'parent')
+      push(d.partners ?? [], 'partner')
+      push(d.children ?? [], 'child')
+      push(d.siblings ?? [], 'sibling')
+    }
+
+    return [...standardRows, ...derivedRows].sort((a, b) =>
+      a.web_name.localeCompare(b.web_name) || a.edge_id - b.edge_id
+    )
+  })
+
+  // ── Union node creation ────────────────────────────────────────────────────────
+
+  ipcMain.handle('relation-nodes:create-union', (_e, data: {
+    web_id: number; person1_id: number; person2_id: number; label1: string; label2: string
+  }) => {
+    const n1 = db.prepare('SELECT pos_x, pos_y FROM relation_nodes WHERE id = ?').get(data.person1_id) as any
+    const n2 = db.prepare('SELECT pos_x, pos_y FROM relation_nodes WHERE id = ?').get(data.person2_id) as any
+    const unionX = Math.round(((n1?.pos_x ?? 100) + (n2?.pos_x ?? 200)) / 2)
+    const unionY = Math.round(((n1?.pos_y ?? 100) + (n2?.pos_y ?? 100)) / 2) + 70
+
+    return db.transaction(() => {
+      const unionResult = db.prepare(`
+        INSERT INTO relation_nodes (web_id, label, node_type, pos_x, pos_y)
+        VALUES (?, '∪', 'union', ?, ?)
+      `).run(data.web_id, unionX, unionY)
+      const unionId = Number(unionResult.lastInsertRowid)
+
+      db.prepare(`
+        INSERT INTO relation_edges (web_id, from_node_id, to_node_id, label_from, label_to, edge_type)
+        VALUES (?, ?, ?, ?, '', 'person_to_union')
+      `).run(data.web_id, data.person1_id, unionId, data.label1 || '')
+
+      db.prepare(`
+        INSERT INTO relation_edges (web_id, from_node_id, to_node_id, label_from, label_to, edge_type)
+        VALUES (?, ?, ?, ?, '', 'person_to_union')
+      `).run(data.web_id, data.person2_id, unionId, data.label2 || '')
+
+      db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(data.web_id)
+      return unionId
+    })()
+  })
+
+  // ── Derived relations sync ─────────────────────────────────────────────────────
+
+  ipcMain.handle('relation-webs:sync-derived-relations', (_e, webId: number) => {
+    const web = db.prepare('SELECT * FROM relation_webs WHERE id = ?').get(webId) as any
+    if (!web || web.template !== 'family_tree') return
+
+    const nodes = db.prepare(`
+      SELECT n.id, n.article_id, n.node_type, n.label,
+             a.title AS article_title, a.tracks
+      FROM relation_nodes n
+      LEFT JOIN articles a ON a.id = n.article_id
+      WHERE n.web_id = ?
+    `).all(webId) as any[]
+
+    const edges = db.prepare('SELECT * FROM relation_edges WHERE web_id = ?').all(webId) as any[]
+
+    const nodesWithVitality = nodes.map(n => {
+      let vitality: string | null = null
+      try { vitality = JSON.parse(n.tracks || '{}').Vitality || null } catch {}
+      return { ...n, vitality }
+    })
+
+    const personNodes = nodesWithVitality.filter(n => n.node_type === 'person' && n.article_id)
+
+    db.transaction(() => {
+      for (const node of personNodes) {
+        const derived = deriveRelationsForNode(node.id, nodesWithVitality, edges, web.name, webId)
+        const article = db.prepare('SELECT derived_relations FROM articles WHERE id = ?').get(node.article_id) as any
+        let existing: Record<string, any> = {}
+        try { existing = JSON.parse(article?.derived_relations || '{}') } catch {}
+        existing[String(webId)] = derived
+        db.prepare('UPDATE articles SET derived_relations = ? WHERE id = ?')
+          .run(JSON.stringify(existing), node.article_id)
+      }
+    })()
   })
 }
 

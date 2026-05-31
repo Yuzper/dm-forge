@@ -1,12 +1,13 @@
 // path: src/pages/SessionPage.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
-import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock } from 'lucide-react'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
 import RichEditor from '../components/RichEditor'
 import { StoreMapProvider } from '../context/MapContext'
 import MapPickerModal from '../components/MapPickerModal'
+import { InWorldDatePicker, parseInWorldDate } from '../components/InWorldDatePicker'
 import type { GameMap, Session } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
@@ -136,6 +137,151 @@ function MapTabMenu({ map, onEdit, onReplace }: { map: GameMap; onEdit: () => vo
   )
 }
 
+// ── In-world date header section ──────────────────────────────────────────────
+
+function InWorldDateHeader({ session, readMode }: { session: Session; readMode: boolean }) {
+  const { updateSession, currentCampaign } = useStore()
+  const [open, setOpen] = useState(false)
+  const [startRaw, setStartRaw] = useState('')
+  const [endRaw, setEndRaw] = useState('')
+  const [saving, setSaving] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const s = session as any
+  const startDay: number | null = s.in_world_day ?? null
+  const endDay: number | null = s.in_world_day_end ?? null
+  const year: number = (currentCampaign as any)?.timeline_base_year ?? 1507
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const openEditor = () => {
+    setStartRaw(startDay ? JSON.stringify({ day: startDay, year, label: '' }) : '')
+    setEndRaw(endDay ? JSON.stringify({ day: endDay, year, label: '' }) : '')
+    setOpen(true)
+  }
+
+  const parseDay = (raw: string): number | null => { try { return JSON.parse(raw)?.day ?? null } catch { return null } }
+
+  const handleStartChange = (raw: string) => {
+    setStartRaw(raw)
+    const sd = parseDay(raw)
+    const ed = parseDay(endRaw)
+    // Default end to start if unset or earlier
+    if (sd !== null && (ed === null || ed < sd)) {
+      setEndRaw(raw)
+    }
+  }
+
+  const handleEndChange = (raw: string) => {
+    const sd = parseDay(startRaw)
+    const ed = parseDay(raw)
+    // Clamp end to start if earlier
+    if (sd !== null && ed !== null && ed < sd) {
+      setEndRaw(startRaw)
+    } else {
+      setEndRaw(raw)
+    }
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    const sd = parseDay(startRaw)
+    const ed = parseDay(endRaw)
+    const safeEnd = sd !== null && ed !== null && ed < sd ? sd : ed
+    await updateSession(session.id, { in_world_day: sd, in_world_day_end: safeEnd } as any)
+    setSaving(false)
+    setOpen(false)
+  }
+
+  const handleClear = async () => {
+    await updateSession(session.id, { in_world_day: null, in_world_day_end: null } as any)
+    setOpen(false)
+  }
+
+  // Build display label
+  const dateLabel = (() => {
+    if (!startDay) return null
+    if (endDay && endDay !== startDay) return `Day ${startDay}–${endDay}, Year ${year}`
+    return `Day ${startDay}, Year ${year}`
+  })()
+
+  if (readMode) {
+    if (!dateLabel) return null
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '0 14px', borderRight: '1px solid var(--border)',
+        whiteSpace: 'nowrap', flexShrink: 0,
+      }}>
+        <Clock size={11} color="#e88c3a" />
+        <span style={{ fontSize: 11, color: '#e88c3a', fontFamily: 'var(--font-ui)' }}>{dateLabel}</span>
+      </div>
+    )
+  }
+
+  // Edit mode
+  return (
+    <div ref={containerRef} style={{ position: 'relative', display: 'flex', alignItems: 'stretch', borderRight: '1px solid var(--border)', flexShrink: 0 }}>
+      <button
+        onClick={open ? () => setOpen(false) : openEditor}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '0 14px', background: open ? 'var(--bg-active)' : 'transparent',
+          border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 12,
+          color: dateLabel ? '#e88c3a' : 'var(--text-muted)',
+          transition: 'all var(--transition)',
+        }}
+        onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.color = '#e88c3a' }}
+        onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.color = dateLabel ? '#e88c3a' : 'var(--text-muted)' }}
+      >
+        <Clock size={12} />
+        {dateLabel ?? 'Set in-world date'}
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, marginTop: 4,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+          borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
+          zIndex: 200, padding: 14, display: 'flex', flexDirection: 'column', gap: 12,
+          minWidth: 320,
+        }}>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <InWorldDatePicker value={startRaw} onChange={handleStartChange} label="Start day" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <InWorldDatePicker value={endRaw} onChange={handleEndChange} label="End day (optional)" />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
+            {startDay && (
+              <button onClick={handleClear}
+                style={{ fontSize: 11, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}>
+                Clear dates
+              </button>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+              <button className="btn btn-sm" onClick={() => setOpen(false)}>Cancel</button>
+              <button className="btn btn-sm btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SessionNotesPanel({ session, onClose }: { session: Session; onClose: () => void }) {
   const { updateSession } = useStore()
   const [notes, setNotes] = useState(
@@ -237,6 +383,7 @@ export default function SessionPage() {
       const map = await window.api.createMap({ session_id: currentSession.id, name: result.name, image_path: result.path })
       useStore.setState(s => ({ maps: [...s.maps, map] }))
       useStore.getState().selectMap(map)
+      if (currentCampaign) useStore.getState().loadSessions(currentCampaign.id)
     } else {
       await importMap(currentSession.id)
     }
@@ -290,14 +437,13 @@ export default function SessionPage() {
 
         {/* Session title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px', borderRight: '1px solid var(--border)' }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, color: 'var(--gold)', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>
-            Session {currentSession.session_number}{currentSession.session_sub}
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>·</div>
-          <div style={{ fontSize: 13, color: 'var(--text-primary)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {currentSession.name}
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 400 }}>
+            Session {currentSession.session_number}{currentSession.session_sub} · {currentSession.name}
           </div>
         </div>
+
+        {/* In-world date */}
+        <InWorldDateHeader session={currentSession} readMode={sessionReadMode} />
 
         {/* Map tabs */}
         <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, flex: 1, overflowX: 'auto', overflowY: 'visible' }}>

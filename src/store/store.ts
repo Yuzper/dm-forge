@@ -10,7 +10,7 @@ function getStarterMonsters(system: string) {
   return []
 }
 
-type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables' | 'relations'
+type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables' | 'relations' | 'timeline'
 
 
 // ── Navigation History ────────────────────────────────────────────────────────
@@ -23,6 +23,7 @@ export type HistoryEntry =
   | { type: 'relations'; label: string; campaign: Campaign }
   | { type: 'dm-notes'; label: string; campaign: Campaign }
   | { type: 'loot-tables'; label: string; campaign: Campaign }
+  | { type: 'timeline'; label: string; campaign: Campaign }
 
 interface AppStore {
   // Navigation
@@ -108,6 +109,10 @@ interface AppStore {
   relationsOpenWebId: number | null // Relations navigation — used to deep-link from article sidebar into a specific web
   setRelationsOpenWebId: (id: number | null) => void
   getArticleBacklinks: (title: string) => Promise<ArticleSummary[]>
+
+  // UI Preferences
+  bgStyle: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood'
+  setBgStyle: (s: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood') => void
 }
 
 function pushEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
@@ -125,6 +130,9 @@ function pushEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[]
 }
 
 export const useStore = create<AppStore>((set, get) => ({
+  bgStyle: (localStorage.getItem('bgStyle') as AppStore['bgStyle']) || 'none',
+  setBgStyle: (bgStyle) => { localStorage.setItem('bgStyle', bgStyle); set({ bgStyle }) },
+
   view: 'campaigns',
   setView: (view) => set({ view }),
   campaignSubView: 'hub',
@@ -256,8 +264,15 @@ export const useStore = create<AppStore>((set, get) => ({
               article_type: 'creature',
               tags: m.tags,
               tracks: JSON.stringify(m.tracks),
-              statblock: JSON.stringify(m.statblock),
-              loot_table_id: lootTableByName[m.loot_table_name] ?? null,
+              // Store variants array as statblock JSON for creature articles
+              statblock: JSON.stringify(m.variants.map((v, i) => ({
+                id: `variant_${Date.now()}_${i}`,
+                name: v.name,
+                cr: v.cr,
+                statblock: v.statblock,
+                loot_table_id: lootTableByName[v.loot_table_name] ?? null,
+                loot_table: JSON.stringify({ name: v.name, items: v.loot_items ?? [] }),
+              }))),
               content: m.content,
             })
           )
@@ -409,6 +424,8 @@ export const useStore = create<AppStore>((set, get) => ({
     const map = await window.api.createMap({ session_id: sessionId, name: result.name, image_path: result.path })
     set(s => ({ maps: [...s.maps, map] }))
     get().selectMap(map)
+    const { currentCampaign } = get()
+    if (currentCampaign) get().loadSessions(currentCampaign.id)
   },
 
   updateMap: async (id, data) => {
@@ -421,9 +438,10 @@ export const useStore = create<AppStore>((set, get) => ({
 
   deleteMap: async (id) => {
     await window.api.deleteMap(id)
-    const { currentSession } = get()
+    const { currentSession, currentCampaign } = get()
     if (currentSession) await get().loadMaps(currentSession.id)
     if (get().maps.length === 0) set({ currentMap: null, pois: [], selectedPOI: null, poiPanelOpen: false })
+    if (currentCampaign) get().loadSessions(currentCampaign.id)
   },
 
   // ── POIs ────────────────────────────────────────────────────────────────────

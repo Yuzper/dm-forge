@@ -5,19 +5,24 @@ import {
   BookOpen, Plus, Search, Trash2, Check, MapPin, User, Package,
   ScrollText, Users, Landmark, FileText, X, ChevronLeft, Calendar,
   MoreHorizontal, Tag, Image as ImageIcon, Link, PawPrint, StickyNote,
-  ArrowLeft, ShoppingBag, Pencil, Map, Upload,
-  Network
+  ArrowLeft, ShoppingBag,
+  Network, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import RichEditor from '../components/RichEditor'
 import type { Article, ArticleSummary, ArticleType, MasterLootTable, LootItem } from '../types'
 import StatBlockEditor from '../components/StatBlockEditor'
-import { parseStatBlock, DEFAULT_STATBLOCK } from '../types'
+import { parseStatBlock } from '../types'
 import StatBlockView from '../components/StatBlockView'
 import LootTableEditor from '../components/LootTableEditor'
 import LootTableView from '../components/LootTableView'
 import { parseLootTable } from '../types'
 import SectionDivider from '../components/SectionDivider'
-import LocationMapSection from '../components/LocationMapSection'  // ADD THIS
+import { InWorldDatePicker } from '../components/InWorldDatePicker'
+import LocationMapSection from '../components/LocationMapSection'
+import QuestSubstepsSection, { parseSubsteps } from '../components/QuestSubstepsSection'
+import type { Substep } from '../components/QuestSubstepsSection'
+import QuestRewardSection, { parseRewards } from '../components/QuestRewardSection'
+import type { Reward } from '../components/QuestRewardSection'
 
 // ── Article type definitions ───────────────────────────────────────────────────
 
@@ -43,12 +48,15 @@ const ARTICLE_TYPES: { value: ArticleType; label: string; icon: any; color: stri
 
 const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   character: {
-    Vitality:    ['Alive', 'Dead', 'Unknown', 'Missing', 'Immortal'],
+    Vitality:      ['Alive', 'Dead', 'Unknown', 'Missing', 'Immortal'],
+    Death_Date:    [],
     Attitude:    ['Friendly', 'Neutral', 'Hostile'],
     Attitude_Towards_Party: ['Friendly', 'Neutral', 'Hostile', 'Unknown'],
     Age:         [],
-    Species:     [],
-    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned'],
+    Species:     ['Human', 'Elf', 'High Elf', 'Drow', 'Half-Elf', 'Dwarf', 'Duergar', 'Halfling', 'Gnome', 'Deep Gnome', 'Half-Orc', 'Orc',
+                  'Tiefling', 'Dragonborn', 'Aasimar', 'Owlin', 'Aarakocra', 'Tortle', 'Goliath', 'Lizardfolk', 'Tabaxi',
+                  'Water Genasi', 'Fire Genasi', 'Air Genasi', 'Earth Genasi'],
+    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
     Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Location:    [],
     Faction:     [],
@@ -56,12 +64,15 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Culture:     [],
   },
   playerCharacter: {
-    Vitality:    ['Alive', 'Dead', 'Unknown', 'Retired', 'Immortal'],
+    Vitality:      ['Alive', 'Dead', 'Unknown', 'Retired', 'Immortal'],
+    Death_Date:    [],
     Disposition: ['Friendly', 'Neutral', 'Hostile'],
-    Royalty:     ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
-    Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Age:         [],
-    Species:     [],
+    Species:     ['Human', 'Elf', 'High Elf', 'Drow', 'Half-Elf', 'Dwarf', 'Duergar', 'Halfling', 'Gnome', 'Deep Gnome', 'Half-Orc', 'Orc',
+                  'Tiefling', 'Dragonborn', 'Aasimar', 'Owlin', 'Aarakocra', 'Tortle', 'Goliath', 'Lizardfolk', 'Tabaxi',
+                  'Water Genasi', 'Fire Genasi', 'Air Genasi', 'Earth Genasi'],
+    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
+    Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Location:    [],
     Faction:     [],
     Religion:    [],
@@ -103,8 +114,10 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Rivals: [],
   },
   quest: {
-    Status:     ['Active', 'Completed', 'Failed', 'Abandoned'],
-    Difficulty: ['Trivial', 'Easy', 'Medium', 'Hard', 'Deadly'],
+    Status:           ['Active', 'Completed', 'Failed', 'Abandoned'],
+    Type:             ['Main', 'Side', 'Personal', 'Faction'],
+    Quest_Giver:      [],
+    Player_Character: [],
   },
   item: {
     Status:   ['Found', 'Lost', 'Destroyed', 'Unknown'],
@@ -112,8 +125,9 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Location: [],
   },
   event: {
-    Status: ['Upcoming', 'Ongoing', 'Past'],
-    Scale:  ['Personal', 'Local', 'Regional', 'World-shaking'],
+    Status:        ['Upcoming', 'Ongoing', 'Past'],
+    Scale:         ['Personal', 'Local', 'Regional', 'World-shaking'],
+    In_World_Date: [],
   },
   culture:  { Status: ['Active', 'Undercover', 'Extinct', 'Unknown'] },
   religion: {
@@ -497,8 +511,240 @@ function ArticleRelationsPanel({
 
 // ─── Article Editor ────────────────────────────────────────────────────────────
 
-const STATBLOCK_TYPES: ArticleType[] = ['creature', 'character', 'playerCharacter']
-const LOOT_TYPES: ArticleType[] = ['creature', 'character', 'playerCharacter', 'vendor']
+// ── Creature variant types ─────────────────────────────────────────────────────
+
+interface CreatureVariant {
+  id: string
+  name: string
+  cr: string
+  statblock: ReturnType<typeof parseStatBlock>
+  loot_table_id: number | null
+  loot_table: string  // JSON LootTable
+}
+
+function parseCreatureVariants(raw: string): CreatureVariant[] {
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.length > 0 && 'name' in parsed[0]) {
+      return parsed.map(v => ({
+        id: v.id || `v_${Math.random().toString(36).slice(2)}`,
+        name: v.name || 'Variant',
+        cr: v.cr || '—',
+        statblock: parseStatBlock(typeof v.statblock === 'string' ? v.statblock : JSON.stringify(v.statblock)),
+        loot_table_id: v.loot_table_id ?? null,
+        loot_table: v.loot_table || '{"name":"Loot","items":[]}',
+      }))
+    }
+  } catch {}
+  // Legacy: single statblock object → wrap as one variant
+  const sb = parseStatBlock(raw)
+  if (sb.hp > 0 || sb.ac > 0 || sb.actions.length > 0) {
+    return [{ id: 'v_legacy', name: 'Standard', cr: '—', statblock: sb, loot_table_id: null, loot_table: '{"name":"Loot","items":[]}' }]
+  }
+  return []
+}
+
+const STATBLOCK_TYPES: ArticleType[] = ['character', 'playerCharacter']
+const LOOT_TYPES: ArticleType[] = ['character', 'playerCharacter', 'vendor']
+
+// ── Creature Variants Section ──────────────────────────────────────────────────
+
+function CreatureVariantsSection({
+  variants, masterTables, readMode, articleTitle, lootSuggestions, onChange,
+}: {
+  variants: CreatureVariant[]
+  masterTables: MasterLootTable[]
+  readMode: boolean
+  articleTitle: string
+  lootSuggestions: string[]
+  onChange: (v: CreatureVariant[]) => void
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(variants[0]?.id ?? null)
+
+  const addVariant = () => {
+    const id = `v_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    const newV: CreatureVariant = {
+      id, name: 'New Variant', cr: '—',
+      statblock: parseStatBlock('{}'),
+      loot_table_id: null,
+      loot_table: '{"name":"Loot","items":[]}',
+    }
+    onChange([...variants, newV])
+    setExpandedId(id)
+  }
+
+  const updateVariant = (id: string, patch: Partial<CreatureVariant>) => {
+    onChange(variants.map(v => v.id === id ? { ...v, ...patch } : v))
+  }
+
+  const removeVariant = (id: string) => {
+    const next = variants.filter(v => v.id !== id)
+    onChange(next)
+    if (expandedId === id) setExpandedId(next[0]?.id ?? null)
+  }
+
+  return (
+    <div style={{ padding: '0 24px 32px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0 16px' }}>
+        <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, var(--border-light), transparent)' }} />
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase', flexShrink: 0 }}>Variants</div>
+        <div style={{ flex: 1, height: 1, background: 'linear-gradient(270deg, var(--border-light), transparent)' }} />
+      </div>
+
+      {variants.length === 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '24px 16px', textAlign: 'center', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-md)', color: 'var(--text-muted)' }}>
+          <span style={{ fontSize: 13 }}>No variants yet</span>
+          {!readMode && <span style={{ fontSize: 11 }}>Add a variant to define combat stats for this creature</span>}
+        </div>
+      )}
+
+      {variants.map(variant => {
+        const isOpen = expandedId === variant.id
+        const masterTable = masterTables.find(t => t.id === variant.loot_table_id)
+        const extrasTable = parseLootTable(variant.loot_table)
+        const sbHasData = variant.statblock.hp > 0 || variant.statblock.ac > 0 || variant.statblock.actions.length > 0
+
+        return (
+          <div key={variant.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', marginBottom: 8, overflow: 'hidden' }}>
+            {/* Header row */}
+            <div
+              onClick={() => setExpandedId(isOpen ? null : variant.id)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer', background: isOpen ? 'var(--bg-elevated)' : 'transparent', transition: 'background var(--transition)' }}
+            >
+              {isOpen ? <ChevronDown size={13} color="var(--text-muted)" /> : <ChevronRight size={13} color="var(--text-muted)" />}
+              {readMode ? (
+                <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', flex: 1 }}>{variant.name}</span>
+              ) : (
+                <input
+                  value={variant.name}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => updateVariant(variant.id, { name: e.target.value })}
+                  style={{ fontWeight: 600, fontSize: 13, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', flex: 1, minWidth: 0 }}
+                  placeholder="Variant name…"
+                />
+              )}
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 99, padding: '1px 8px', flexShrink: 0 }}>
+                CR {readMode ? variant.cr : (
+                  <input
+                    value={variant.cr}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => updateVariant(variant.id, { cr: e.target.value })}
+                    style={{ width: 28, background: 'transparent', border: 'none', outline: 'none', fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', padding: 0 }}
+                    placeholder="—"
+                  />
+                )}
+              </span>
+              {masterTable && (
+                <span style={{ fontSize: 10, color: '#49c185', background: '#49c18514', border: '1px solid #49c18530', borderRadius: 99, padding: '1px 7px', flexShrink: 0 }}>
+                  {masterTable.name}
+                </span>
+              )}
+              {!readMode && variants.length > 1 && (
+                <button
+                  onClick={e => { e.stopPropagation(); removeVariant(variant.id) }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}
+                  title="Remove variant"
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
+            </div>
+
+            {/* Expanded body */}
+            {isOpen && (
+              <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+                {/* Stat block */}
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Stat Block</div>
+                  {readMode ? (
+                    sbHasData
+                      ? <StatBlockView statblock={variant.statblock} name={variant.name} articleType="creature" />
+                      : <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No stat block — switch to Edit to add</div>
+                  ) : (
+                    <StatBlockEditor
+                      value={variant.statblock}
+                      onChange={sb => updateVariant(variant.id, { statblock: sb })}
+                    />
+                  )}
+                </div>
+
+                {/* Loot */}
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Loot</div>
+                  {/* Master table picker */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Master loot table</div>
+                    {readMode ? (
+                      masterTable
+                        ? <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99, background: '#49c18518', border: '1px solid #49c18540', fontSize: 12, color: '#49c185', width: 'fit-content' }}>
+                            <ShoppingBag size={11} /> {masterTable.name}
+                          </div>
+                        : <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No master table</span>
+                    ) : (
+                      <select
+                        className="input" style={{ fontSize: 12 }}
+                        value={variant.loot_table_id ?? ''}
+                        onChange={e => updateVariant(variant.id, { loot_table_id: e.target.value ? parseInt(e.target.value) : null })}
+                      >
+                        <option value="">— None —</option>
+                        {(['creature', 'vendor', 'location', 'custom'] as const).map(cat => {
+                          const group = masterTables.filter(t => t.category === cat)
+                          if (!group.length) return null
+                          const labels: Record<string, string> = { creature: 'Creature', vendor: 'Vendor', location: 'Location', custom: 'Custom' }
+                          return (
+                            <optgroup key={cat} label={labels[cat]}>
+                              {group.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </optgroup>
+                          )
+                        })}
+                      </select>
+                    )}
+                  </div>
+                  {/* Master table preview */}
+                  {readMode && masterTable && (() => {
+                    let items: LootItem[] = []
+                    try { items = JSON.parse(masterTable.items) } catch {}
+                    if (!items.length) return null
+                    return <div style={{ marginBottom: 8 }}><LootTableView label={`From ${masterTable.name}`} items={items} tableBadge={masterTable.name} wikiTitles={[]} onItemClick={() => {}} emptyMessage="" /></div>
+                  })()}
+                  {/* Inline extra items */}
+                  {readMode ? (
+                    <LootTableView
+                      label={masterTable ? 'Extra drops' : 'Loot'}
+                      items={extrasTable.items}
+                      wikiTitles={[]}
+                      onItemClick={() => {}}
+                      emptyMessage="No extra items"
+                    />
+                  ) : (
+                    <LootTableEditor
+                      value={extrasTable}
+                      onChange={t => updateVariant(variant.id, { loot_table: JSON.stringify(t) })}
+                      suggestions={lootSuggestions}
+                      showPriceWeight
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {!readMode && (
+        <button
+          onClick={addVariant}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '7px 14px', fontSize: 12, cursor: 'pointer', background: 'transparent', border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', width: '100%', justifyContent: 'center', transition: 'all var(--transition)' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-primary)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+        >
+          <Plus size={13} /> Add variant
+        </button>
+      )}
+    </div>
+  )
+}
 
 function ArticleEditor({ article, onBack }: { article: Article; onBack: () => void }) {
   const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, setView, setRelationsOpenWebId } = useStore()
@@ -510,6 +756,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
   const [locationNames, setLocationNames]     = useState<string[]>([])
   const [creatureNames, setCreatureNames]     = useState<string[]>([])
   const [characterNames, setCharacterNames]   = useState<string[]>([])
+  const [playerCharacterNames, setPlayerCharacterNames] = useState<string[]>([])
   const [masterTables, setMasterTables]       = useState<MasterLootTable[]>([])
 
   const [title, setTitle]             = useState(article.title)
@@ -517,6 +764,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
   const [articleType, setArticleType] = useState<ArticleType>(article.article_type as ArticleType)
   const [tracks, setTracks]           = useState<Record<string, string>>(() => { try { return JSON.parse(article.tracks) } catch { return {} } })
   const [statblock, setStatblock]     = useState(() => parseStatBlock(article.statblock))
+  const [variants, setVariants]       = useState<CreatureVariant[]>(() => parseCreatureVariants(article.statblock))
   const [tags, setTags]               = useState<string[]>(() => { try { return JSON.parse(article.tags) } catch { return [] } })
   const [tagInput, setTagInput]       = useState('')
   const [coverImage, setCoverImage]   = useState<string | null>(article.cover_image || null)
@@ -530,23 +778,31 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
   const [lootTableJson, setLootTableJson] = useState(article.loot_table || '{"name":"Loot","items":[]}')
   // Master table FK
   const [lootTableId, setLootTableId] = useState<number | null>(article.loot_table_id ?? null)
+  // Quest substeps
+  const [substeps, setSubsteps] = useState<Substep[]>(() => parseSubsteps((article as any).substeps))
+  // Quest rewards
+  const [rewards, setRewards]   = useState<Reward[]>(() => parseRewards((article as any).rewards))
 
   const hasStatblock = STATBLOCK_TYPES.includes(articleType)
   const hasLoot      = LOOT_TYPES.includes(articleType)
   const isVendor     = articleType === 'vendor'
   const hasMap       = articleType === 'location'
+  const hasQuest     = articleType === 'quest'
 
-  const pendingRef = useRef({ title, content, articleType, tracks, statblock, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id })
-  pendingRef.current = { title, content, articleType, tracks, statblock, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id }
+  const pendingRef = useRef({ title, content, articleType, tracks, statblock, variants, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, rewards })
+  pendingRef.current = { title, content, articleType, tracks, statblock, variants, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, rewards }
 
   useEffect(() => {
     return () => {
       const p = pendingRef.current
       if (p.dirty) window.api.updateArticle(p.id, {
         title: p.title, content: p.content, article_type: p.articleType,
-        tracks: JSON.stringify(p.tracks), statblock: JSON.stringify(p.statblock),
+        tracks: JSON.stringify(p.tracks),
+        statblock: p.articleType === 'creature' ? JSON.stringify(p.variants) : JSON.stringify(p.statblock),
         loot_table: p.lootTableJson, loot_table_id: p.lootTableId,
         tags: JSON.stringify(p.tags), cover_image: p.coverImage, portrait_image: p.portraitImage,
+        substeps: JSON.stringify(p.substeps),
+        rewards:  JSON.stringify(p.rewards),
       })
     }
   }, [])
@@ -556,10 +812,13 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
     setArticleType(article.article_type as ArticleType)
     setTracks(() => { try { return JSON.parse(article.tracks) } catch { return {} } })
     setStatblock(parseStatBlock(article.statblock))
+    setVariants(parseCreatureVariants(article.statblock))
     setTags(() => { try { return JSON.parse(article.tags) } catch { return [] } })
     setCoverImage(article.cover_image || null); setPortraitImage(article.portrait_image || null)
     setLootTableJson(article.loot_table || '{"name":"Loot","items":[]}')
     setLootTableId(article.loot_table_id ?? null)
+    setSubsteps(parseSubsteps((article as any).substeps))
+    setRewards(parseRewards((article as any).rewards))
     setDirty(false)
   }, [article.id])
 
@@ -576,27 +835,33 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
     Promise.all([
       window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'character' }),
       window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'playerCharacter' }),
-    ]).then(([chars, pcs]) => setCharacterNames([...chars, ...pcs].map(a => a.title).sort()))
+    ]).then(([chars, pcs]) => {
+      setCharacterNames([...chars, ...pcs].map(a => a.title).sort())
+      setPlayerCharacterNames(pcs.map(a => a.title).sort())
+    })
     window.api.getLootTables(currentCampaign.id).then(setMasterTables)
   }, [currentCampaign?.id])
 
   const save = useCallback(async () => {
     if (!dirty) return
     setSaving(true)
+    const statblockJson = articleType === 'creature' ? JSON.stringify(variants) : JSON.stringify(statblock)
     await updateArticle(article.id, {
       title, content, article_type: articleType,
-      tracks: JSON.stringify(tracks), statblock: JSON.stringify(statblock),
+      tracks: JSON.stringify(tracks), statblock: statblockJson,
       loot_table: lootTableJson, loot_table_id: lootTableId,
       tags: JSON.stringify(tags), cover_image: coverImage, portrait_image: portraitImage,
+      substeps: JSON.stringify(substeps),
+      rewards:  JSON.stringify(rewards),
     })
     setDirty(false); setSaving(false)
-  }, [article.id, dirty, title, content, articleType, tracks, statblock, lootTableJson, lootTableId, tags, coverImage, portraitImage, updateArticle])
+  }, [article.id, dirty, title, content, articleType, tracks, statblock, variants, lootTableJson, lootTableId, tags, coverImage, portraitImage, substeps, rewards, updateArticle])
 
   useEffect(() => {
     if (!dirty) return
     const t = setTimeout(save, 1500)
     return () => clearTimeout(t)
-  }, [dirty, title, content, articleType, tracks, statblock, lootTableJson, lootTableId, tags, coverImage, portraitImage])
+  }, [dirty, title, content, articleType, tracks, statblock, variants, lootTableJson, lootTableId, tags, coverImage, portraitImage])
 
   const pickImage = async (setter: (v: string | null) => void) => {
     const path = await window.api.selectImageFile()
@@ -713,7 +978,7 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                 onWikiLinkClick={navigateToArticleByTitle} expandable readOnly={readMode} />
             </div>
 
-            {/* Stat block */}
+            {/* Stat block — non-creature types */}
             {hasStatblock && (
               <div style={{ padding: '0 24px 32px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0 20px' }}>
@@ -732,11 +997,48 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               </div>
             )}
 
+            {/* Creature variants section */}
+            {articleType === 'creature' && (
+              <CreatureVariantsSection
+                variants={variants}
+                masterTables={masterTables}
+                readMode={readMode}
+                articleTitle={title}
+                lootSuggestions={lootSuggestions}
+                onChange={v => { setVariants(v); setDirty(true) }}
+              />
+            )}
+
             {/* Map section */}
             {hasMap && (
               <div style={{ padding: '0 24px 32px' }}>
                 <SectionDivider label="Maps" />
                 <LocationMapSection articleId={article.id} readMode={readMode} campaignId={currentCampaign!.id} />
+              </div>
+            )}
+
+            {/* Quest substeps section */}
+            {hasQuest && (
+              <div style={{ padding: '0 24px 32px' }}>
+                <SectionDivider label="Substeps" />
+                <QuestSubstepsSection
+                  articleId={article.id}
+                  substeps={substeps}
+                  readMode={readMode}
+                  onChange={steps => { setSubsteps(steps); setDirty(true) }}
+                />
+              </div>
+            )}
+
+            {/* Quest rewards section */}
+            {hasQuest && (
+              <div style={{ padding: '0 24px 32px' }}>
+                <SectionDivider label="Rewards" />
+                <QuestRewardSection
+                  rewards={rewards}
+                  readMode={readMode}
+                  onChange={r => { setRewards(r); setDirty(true) }}
+                />
               </div>
             )}
 
@@ -883,6 +1185,18 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                     {currentTypeTracks.map(([trackName]) => {
                       const val = tracks[trackName]
                       if (!val) return null
+                      if (trackName === 'In_World_Date' || trackName === 'Death_Date') {
+                        let display = val
+                        try { const d = JSON.parse(val); display = `Day ${d.day}, Year ${d.year}` } catch {}
+                        const dateColor = trackName === 'Death_Date' ? '#9b7de8' : 'var(--gold)'
+                        const dateBg = trackName === 'Death_Date' ? 'rgba(155,125,232,0.1)' : 'rgba(200,168,75,0.1)'
+                        const dateBorder = trackName === 'Death_Date' ? 'rgba(155,125,232,0.3)' : 'rgba(200,168,75,0.3)'
+                        return (
+                          <div key={trackName} style={{ fontSize: 11, fontWeight: 600, color: dateColor, padding: '3px 10px', borderRadius: 99, border: `1px solid ${dateBorder}`, background: dateBg }}>
+                            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{formatTrackName(trackName)}: </span>{display}
+                          </div>
+                        )
+                      }
                       const color = TRACK_VALUE_COLORS[val] || '#8a8a8a'
                       return (
                         <div key={trackName} style={{ fontSize: 11, fontWeight: 600, color, padding: '3px 10px', borderRadius: 99, border: `1px solid ${color}44`, background: `${color}12` }}>
@@ -893,44 +1207,72 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
                     {currentTypeTracks.every(([n]) => !tracks[n]) && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>— none set —</span>}
                   </div>
                 ) : (
-                  currentTypeTracks.map(([trackName, options]) => (
-                    <TrackRow
-                      key={articleType + trackName}
-                      trackKey={articleType + trackName}
-                      name={trackName}
-                      options={options}
-                      value={tracks[trackName] || ''}
-                      onChange={v => {
-                        setTracks(prev => {
-                          const updated = { ...prev, [trackName]: v }
-                          const oldTrackTags = getTrackTags(prev)
-                          const newTrackTags = getTrackTags(updated)
-                          setTags(prevTags => {
-                            const manualTags = prevTags.filter(t => !oldTrackTags.includes(t))
-                            return Array.from(new Set([...manualTags, ...newTrackTags]))
+                  currentTypeTracks.map(([trackName, options]) => {
+                    if (trackName === 'In_World_Date' || trackName === 'Death_Date') {
+                      return (
+                        <div key={articleType + trackName} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>{formatTrackName(trackName)}</span>
+                          <div style={{ flex: 1 }}>
+                            <InWorldDatePicker
+                              value={tracks[trackName] || ''}
+                              onChange={v => {
+                                setTracks(prev => {
+                                  const updated = { ...prev, [trackName]: v }
+                                  // Auto-set Vitality to Dead when Death_Date is given
+                                  if (trackName === 'Death_Date' && v) {
+                                    updated['Vitality'] = 'Dead'
+                                  }
+                                  return updated
+                                })
+                                setDirty(true)
+                              }}
+                              label=""
+                            />
+                          </div>
+                        </div>
+                      )
+                    }
+                    return (
+                      <TrackRow
+                        key={articleType + trackName}
+                        trackKey={articleType + trackName}
+                        name={trackName}
+                        options={options}
+                        value={tracks[trackName] || ''}
+                        onChange={v => {
+                          setTracks(prev => {
+                            const updated = { ...prev, [trackName]: v }
+                            const oldTrackTags = getTrackTags(prev)
+                            const newTrackTags = getTrackTags(updated)
+                            setTags(prevTags => {
+                              const manualTags = prevTags.filter(t => !oldTrackTags.includes(t))
+                              return Array.from(new Set([...manualTags, ...newTrackTags]))
+                            })
+                            return updated
                           })
-                          return updated
-                        })
-                        setDirty(true)
-                      }}
-                      dynamicOptions={
-                        trackName === 'Faction'            ? factionNames :
-                        trackName === 'Organization'       ? organizationNames :
-                        trackName === 'Religion'           ? religionNames :
-                        trackName === 'Culture'            ? cultureNames :
-                        trackName === 'Species'            ? creatureNames :
-                        trackName === 'Location'           ? locationNames :
-                        trackName === 'HQ'                 ? locationNames :
-                        trackName === 'Owner'              ? characterNames :
-                        trackName === 'Sender'             ? characterNames :
-                        trackName === 'Intended_Recipient' ? characterNames :
-                        trackName === 'Leader'             ? characterNames :
-                        trackName === 'Allies'             ? [...characterNames, ...organizationNames, ...factionNames, ...religionNames] :
-                        trackName === 'Rivals'             ? [...characterNames, ...organizationNames, ...factionNames, ...religionNames] :
-                        undefined
-                      }
-                    />
-                  ))
+                          setDirty(true)
+                        }}
+                        dynamicOptions={
+                          trackName === 'Faction'            ? factionNames :
+                          trackName === 'Organization'       ? organizationNames :
+                          trackName === 'Religion'           ? religionNames :
+                          trackName === 'Culture'            ? cultureNames :
+                          trackName === 'Species'            ? [...(ARTICLE_TRACKS[articleType]?.Species ?? []), ...creatureNames] :
+                          trackName === 'Location'           ? locationNames :
+                          trackName === 'HQ'                 ? locationNames :
+                          trackName === 'Owner'              ? characterNames :
+                          trackName === 'Sender'             ? characterNames :
+                          trackName === 'Intended_Recipient' ? characterNames :
+                          trackName === 'Leader'             ? characterNames :
+                          trackName === 'Quest_Giver'        ? characterNames :
+                          trackName === 'Player_Character'   ? playerCharacterNames :
+                          trackName === 'Allies'             ? [...characterNames, ...organizationNames, ...factionNames, ...religionNames] :
+                          trackName === 'Rivals'             ? [...characterNames, ...organizationNames, ...factionNames, ...religionNames] :
+                          undefined
+                        }
+                      />
+                    )
+                  })
                 )}
               </div>
             )}
@@ -961,25 +1303,53 @@ function ArticleEditor({ article, onBack }: { article: Article; onBack: () => vo
               }}
             />
 
-            {backlinks.length > 0 && (
-              <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
-                <div style={{ ...sidebarSectionLabel, display: 'flex', alignItems: 'center', gap: 5 }}><Link size={11} /> Linked from</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {backlinks.map(a => {
-                    const t = ARTICLE_TYPES.find(x => x.value === a.article_type) || ARTICLE_TYPES[ARTICLE_TYPES.length - 1]
-                    return (
-                      <button key={a.id} onClick={() => navigateToArticleByTitle(a.title)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 'var(--radius-sm)', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = t.color; (e.currentTarget as HTMLElement).style.color = t.color }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}>
-                        <t.icon size={11} color={t.color} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+            {(() => {
+              const personalQuests = backlinks.filter(a => {
+                if (a.article_type !== 'quest') return false
+                try {
+                  const t = JSON.parse(a.tracks || '{}')
+                  return t.Player_Character === article.title
+                } catch { return false }
+              })
+              const otherLinks = backlinks.filter(a => !personalQuests.includes(a))
+
+              const renderLink = (a: ArticleSummary) => {
+                const t = ARTICLE_TYPES.find(x => x.value === a.article_type) || ARTICLE_TYPES[ARTICLE_TYPES.length - 1]
+                return (
+                  <button key={a.id} onClick={() => navigateToArticleByTitle(a.title)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 'var(--radius-sm)', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = t.color; (e.currentTarget as HTMLElement).style.color = t.color }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}>
+                    <t.icon size={11} color={t.color} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</span>
+                  </button>
+                )
+              }
+
+              return (
+                <>
+                  {personalQuests.length > 0 && (
+                    <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ ...sidebarSectionLabel, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <ScrollText size={11} /> Personal quests
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {personalQuests.map(renderLink)}
+                      </div>
+                    </div>
+                  )}
+
+                  {otherLinks.length > 0 && (
+                    <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ ...sidebarSectionLabel, display: 'flex', alignItems: 'center', gap: 5 }}><Link size={11} /> Linked from</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {otherLinks.map(renderLink)}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
 
             <div style={{ padding: 16, fontSize: 11, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span>Created {new Date(article.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>

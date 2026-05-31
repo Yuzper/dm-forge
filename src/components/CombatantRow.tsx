@@ -8,7 +8,7 @@ import LootResultModal from './LootResultModal'
 interface Props {
   creature: CombatCreature
   onUpdate: (id: number, updates: Partial<Pick<CombatCreature, 'current_hp' | 'is_dead' | 'initiative' | 'ac_override' | 'resources'>>) => void
-  onOpenStatBlock: (articleId: number) => void
+  onOpenStatBlock: (creature: CombatCreature) => void
   onLootGenerated: (creatureId: number, result: LootItem[], articleId: number) => Promise<LootItem[]>
 }
 
@@ -148,14 +148,14 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
               color: isDead ? 'var(--text-muted)' : 'var(--text-primary)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block',
             }}>
-              {creature.title} {creature.instance_number}
+              {(creature as any).display_name ?? creature.title} {creature.instance_number}
             </span>
           </div>
           {isDead && <Skull size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />}
 
           {/* Stat block button */}
           <button
-            onClick={() => onOpenStatBlock(creature.article_id)}
+            onClick={() => onOpenStatBlock(creature)}
             title="Open stat block"
             style={{
               background: 'none', border: '1px solid var(--border-light)',
@@ -402,7 +402,7 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
       {/* Loot result modal */}
       {showLoot && lootItems !== null && (
         <LootResultModal
-          creatureName={`${creature.title} ${creature.instance_number}`}
+          creatureName={`${(creature as any).display_name ?? creature.title} ${creature.instance_number}`}
           items={lootItems}
           onClose={() => setShowLoot(false)}
         />

@@ -423,7 +423,7 @@ export default function LootTablesPage() {
           <ArrowLeft size={14} /> Back
         </button>
         <ShoppingBag size={13} color="#49c185" />
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, color: '#49c185', letterSpacing: '0.04em', flex: 1 }}>
+        <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '0.03em', flex: 1 }}>
           Loot Tables
         </span>
         <button

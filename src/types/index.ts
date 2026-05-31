@@ -87,6 +87,8 @@ export interface Article extends ArticleSummary {
   content: string
   portrait_image: string | null
   statblock: string
+  substeps: string
+  rewards: string
 }
 
 export type ArticleType =
@@ -314,6 +316,8 @@ export interface CreateArticleInput {
   loot_table_id?: number | null
   cover_image?: string | null
   portrait_image?: string | null
+  substeps?: string
+  rewards?: string
 }
 
 export interface CreateLootTableInput {

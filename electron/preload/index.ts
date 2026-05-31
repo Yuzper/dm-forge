@@ -56,12 +56,13 @@ contextBridge.exposeInMainWorld('api', {
   // Combat
   getCombatEncounter:  (poiId: number)       => ipcRenderer.invoke('combat:get-encounter', poiId),
   getCombatCreatures:  (encounterId: number)  => ipcRenderer.invoke('combat:get-creatures', encounterId),
-  addCombatCreature:   (encounterId: number, articleId: number, maxHp: number) =>
-                         ipcRenderer.invoke('combat:add-creature', encounterId, articleId, maxHp),
+  addCombatCreature: (encounterId: number, articleId: number, maxHp: number, variantData?: any) =>
+                                                ipcRenderer.invoke('combat:add-creature', encounterId, articleId, maxHp, variantData),
   saveCombatCreatures: (creatures: any[])     => ipcRenderer.invoke('combat:save-creatures', creatures),
   saveLootResult:      (creatureId: number, lootResult: any[]) => ipcRenderer.invoke('combat:save-loot-result', creatureId, lootResult),
   getLootResults:      (encounterId: number)  => ipcRenderer.invoke('combat:get-loot-results', encounterId),
-  openStatBlockWindow: (articleId: number)    => ipcRenderer.invoke('statblock:open-window', articleId),
+  openStatBlockWindow: (articleId: number, overrides?: { statblock?: string; name?: string }) =>
+                                                ipcRenderer.invoke('statblock:open-window', articleId, overrides),
 
   // Files
   selectImageFile: () => ipcRenderer.invoke('file:select-image'),
@@ -136,4 +137,7 @@ contextBridge.exposeInMainWorld('api', {
   updateRelationEdge:  (...args) => ipcRenderer.invoke('relation-edges:update', ...args),
   deleteRelationEdge:  (...args) => ipcRenderer.invoke('relation-edges:delete', ...args),
   getArticleRelations: (...args) => ipcRenderer.invoke('relation-edges:get-for-article', ...args),
+  
+  createUnionNode:        (...args: any[]) => ipcRenderer.invoke('relation-nodes:create-union',            ...args),
+  syncDerivedRelations:   (webId: number)  => ipcRenderer.invoke('relation-webs:sync-derived-relations',   webId),
 })

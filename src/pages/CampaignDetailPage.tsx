@@ -5,12 +5,17 @@ import {
   Plus, Calendar, Map, BookOpen, MoreHorizontal, Trash2, Pencil,
   ChevronRight, ArrowUpDown, ChevronDown, ChevronUp, Layers,
   Scroll, Sparkles, ArrowLeft, ShoppingBag, Upload, X, Search,
-  ExternalLink, Network,
-  Maximize, Eye, EyeOff, Image as ImageIcon,
+  ExternalLink, Network, Clock,
+  Maximize, Eye, Image as ImageIcon,
 } from 'lucide-react'
 import type { Session, Arc, GameMap, POI } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 import MapPickerModal from '../components/MapPickerModal'
+import { InWorldDatePicker } from '../components/InWorldDatePicker'
+import TimelineEmbed from '../components/TimelineEmbed'
+
+// Extend Session with in_world_day / in_world_day_end which exist in DB but not the shared type yet
+type SessionExt = Session & { in_world_day?: number | null; in_world_day_end?: number | null }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -358,14 +363,7 @@ function HubWorldMap() {
     const stored = localStorage.getItem('worldmap-map-visible')
     return stored === null ? true : stored === 'true'
   })
-  const toggleMapVisible = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setMapVisible(prev => {
-      const next = !prev
-      localStorage.setItem('worldmap-map-visible', String(next))
-      return next
-    })
-  }
+  
   const [importing, setImporting] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [renamingMap, setRenamingMap] = useState<GameMap | null>(null)
@@ -674,16 +672,6 @@ function HubWorldMap() {
       >
         {/* Tab strip */}
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 34, display: 'flex', alignItems: 'stretch', background: 'rgba(0,0,0,0.55)', borderBottom: '1px solid rgba(255,255,255,0.07)', zIndex: 10 }}>
-          {/* Visibility toggle — leftmost */}
-          <button
-            onClick={toggleMapVisible}
-            title={mapVisible ? 'Hide map' : 'Show map'}
-            style={{ display: 'flex', alignItems: 'center', padding: '0 11px', background: 'transparent', border: 'none', borderRight: '1px solid rgba(255,255,255,0.07)', color: mapVisible ? '#c8733a' : 'rgba(255,255,255,0.35)', cursor: 'pointer', transition: 'color var(--transition)', flexShrink: 0 }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = mapVisible ? '#e8935a' : 'rgba(255,255,255,0.65)' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = mapVisible ? '#c8733a' : 'rgba(255,255,255,0.35)' }}
-          >
-            {mapVisible ? <Eye size={12} /> : <EyeOff size={12} />}
-          </button>
           {maps.map(map => (
             <div key={map.id}
               onClick={e => { e.stopPropagation(); handleSelectMap(map) }}
@@ -1028,22 +1016,40 @@ function EditArcModal({ arc, onClose }: { arc: Arc; onClose: () => void }) {
   )
 }
 
-function EditSessionModal({ session, onClose }: { session: Session; onClose: () => void }) {
+function EditSessionModal({ session, onClose }: { session: SessionExt; onClose: () => void }) {
   const { updateSession, sessions, arcs } = useStore()
   const [name, setName] = useState(session.name)
   const [sessionNumber, setSessionNumber] = useState(session.session_number)
   const [sessionSub, setSessionSub] = useState(session.session_sub ?? '')
   const [arcId, setArcId] = useState<number | null>(session.arc_id)
   const [date, setDate] = useState(session.date ?? '')
+  const [inWorldDayStart, setInWorldDayStart] = useState<string>(() => {
+    const d = session.in_world_day
+    return d ? JSON.stringify({ day: d, year: 1507, label: `Day ${d}, Year 1507` }) : ''
+  })
+  const [inWorldDayEnd, setInWorldDayEnd] = useState<string>(() => {
+    const d = session.in_world_day_end
+    return d ? JSON.stringify({ day: d, year: 1507, label: `Day ${d}, Year 1507` }) : ''
+  })
   const [saving, setSaving] = useState(false)
   const subClean = sessionSub.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 3)
   const isDuplicate = sessions.some(s => s.id !== session.id && s.session_number === sessionNumber && s.session_sub === subClean)
+
+  const parseDay = (raw: string) => { try { const d = JSON.parse(raw); return d?.day ?? null } catch { return null } }
 
   const handleSubmit = async () => {
     if (!name.trim() || isDuplicate) return
     setSaving(true)
     try {
-      await updateSession(session.id, { name: name.trim(), session_number: sessionNumber, session_sub: subClean, arc_id: arcId, date: date || null })
+      const startDay = parseDay(inWorldDayStart)
+      const endDay = parseDay(inWorldDayEnd)
+      // Ensure end >= start
+      const safeEnd = startDay && endDay && endDay < startDay ? startDay : endDay
+      await updateSession(session.id, {
+        name: name.trim(), session_number: sessionNumber, session_sub: subClean,
+        arc_id: arcId, date: date || null,
+        in_world_day: startDay, in_world_day_end: safeEnd,
+      } as any)
       onClose()
     } catch { setSaving(false) }
   }
@@ -1085,9 +1091,28 @@ function EditSessionModal({ session, onClose }: { session: Session; onClose: () 
             </div>
           )}
           <div className="input-group">
-            <label className="input-label">Date</label>
+            <label className="input-label">Real-world date</label>
             <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <InWorldDatePicker value={inWorldDayStart} onChange={raw => {
+              setInWorldDayStart(raw)
+              const sd = parseDay(raw)
+              const ed = parseDay(inWorldDayEnd)
+              if (sd !== null && (ed === null || ed < sd)) setInWorldDayEnd(raw)
+            }} label="In-world start" />
+            <InWorldDatePicker value={inWorldDayEnd} onChange={raw => {
+              const sd = parseDay(inWorldDayStart)
+              const ed = parseDay(raw)
+              setInWorldDayEnd(sd !== null && ed !== null && ed < sd ? inWorldDayStart : raw)
+            }} label="In-world end (optional)" />
+          </div>
+          {(() => {
+            const s = parseDay(inWorldDayStart), e = parseDay(inWorldDayEnd)
+            if (!s) return null
+            const label = e && e > s ? `Day ${s}–${e}, Year 1507 (${e - s + 1} days)` : `Day ${s}, Year 1507`
+            return <div style={{ fontSize: 11, color: 'var(--gold)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', padding: '6px 10px' }}>{label}</div>
+          })()}
         </div>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
@@ -1278,9 +1303,10 @@ function CreateSessionModal({ defaultArcId, onClose }: { defaultArcId: number | 
   })
   const [sessionSub, setSessionSub] = useState('')
   const [arcId, setArcId] = useState<number | null>(() => {
-    if (defaultArcId) return defaultArcId
-    if (currentCampaign && lastUsedArcId[currentCampaign.id]) return lastUsedArcId[currentCampaign.id]
-    return arcs.find(a => a.is_default)?.id ?? null
+    if (defaultArcId && arcs.some(a => a.id === defaultArcId)) return defaultArcId
+    const lastArc = currentCampaign ? lastUsedArcId[currentCampaign.id] : null
+    if (lastArc && arcs.some(a => a.id === lastArc)) return lastArc
+    return arcs.find(a => a.is_default)?.id ?? arcs[0]?.id ?? null
   })
   const [date, setDate] = useState('')
   const [saving, setSaving] = useState(false)
@@ -1410,15 +1436,308 @@ function SessionsView({ onBack }: { onBack: () => void }) {
   )
 }
 
+// ── Hub Settings ──────────────────────────────────────────────────────────────
+
+type HubPanelKey = 'worldMap' | 'recentlyUpdated' | 'articlesByType' | 'sessionTimeline' | 'activeQuests'
+
+
+const HUB_PANEL_DEFAULTS: Record<HubPanelKey, boolean> = {
+  worldMap: true, recentlyUpdated: true, articlesByType: true, sessionTimeline: true, activeQuests: true,
+}
+
+function loadHubPanels(campaignId: number): Record<HubPanelKey, boolean> {
+  try {
+    const stored = localStorage.getItem(`hub-panels-${campaignId}`)
+    if (stored) return { ...HUB_PANEL_DEFAULTS, ...JSON.parse(stored) }
+  } catch {}
+  return { ...HUB_PANEL_DEFAULTS }
+}
+
+function saveHubPanels(campaignId: number, panels: Record<HubPanelKey, boolean>) {
+  localStorage.setItem(`hub-panels-${campaignId}`, JSON.stringify(panels))
+}
+
+const PANEL_LABELS: Record<HubPanelKey, string> = {
+  worldMap: 'World map',
+  recentlyUpdated: 'Recently updated',
+  articlesByType: 'Articles by type',
+  sessionTimeline: 'Session timeline',
+  activeQuests: 'Active quests',
+}
+
+function HubSettingsMenu({ panels, onChange }: {
+  panels: Record<HubPanelKey, boolean>
+  onChange: (k: HubPanelKey, v: boolean) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        title="Customise hub"
+        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 99, fontSize: 11, background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)' }}
+      >
+        <Eye size={11} /> Customise
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 6, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 190, zIndex: 50, overflow: 'hidden' }}>
+          {(Object.keys(PANEL_LABELS) as HubPanelKey[]).map((key, i) => (
+            <div key={key}>
+              {i === 1 && <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />}
+              <button
+                onClick={() => onChange(key, !panels[key])}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)', textAlign: 'left', transition: 'background 80ms' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+              >
+                <div style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${panels[key] ? 'var(--gold)' : 'var(--border)'}`, background: panels[key] ? 'var(--gold)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 120ms' }}>
+                  {panels[key] && <span style={{ fontSize: 9, color: '#000', fontWeight: 700, lineHeight: 1 }}>✓</span>}
+                </div>
+                {PANEL_LABELS[key]}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Recently Updated Panel ─────────────────────────────────────────────────────
+
+function RecentlyUpdatedPanel() {
+  const { currentCampaign, openArticle, setView } = useStore()
+  const [items, setItems] = useState<{ id: number; title: string; article_type: string; updated_at: string }[]>([])
+
+  useEffect(() => {
+    if (!currentCampaign) return
+    window.api.getArticlesList({ campaignId: currentCampaign.id }).then((list: any[]) => {
+      const sorted = [...list].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      setItems(sorted.slice(0, 6))
+    })
+  }, [currentCampaign?.id])
+
+  const TYPE_COLORS: Record<string, string> = {
+    character: '#5bbfb0', playerCharacter: '#49c185', creature: '#36a502',
+    location: '#c8a84b', faction: '#e88c3a', organization: '#e8a23a',
+    culture: '#4da6ff', religion: '#b07de8', item: '#9b7de8',
+    vendor: '#49c185', note: '#776d92', quest: '#5b9fe8',
+    event: '#e05555', lore: '#e05555', other: '#8a8a8a',
+  }
+
+  function timeAgo(dateStr: string) {
+    const diff = Date.now() - new Date(dateStr).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 60) return `${mins}m ago`
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return `${hrs}h ago`
+    const days = Math.floor(hrs / 24)
+    if (days === 1) return 'Yesterday'
+    if (days < 7) return `${days}d ago`
+    return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  }
+
+  if (items.length === 0) return null
+
+  return (
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px 18px' }}>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Recently updated</div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {items.map((item, i) => (
+          <button key={item.id} onClick={() => { openArticle(item.id); setView('wiki') }}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', background: 'none', border: 'none', borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.75'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
+          >
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: TYPE_COLORS[item.article_type] ?? 'var(--text-muted)', flexShrink: 0 }} />
+            <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{timeAgo(item.updated_at)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Active Quests Panel ────────────────────────────────────────────────────────
+
+function ActiveQuestsPanel() {
+  const { currentCampaign, openArticle, setView } = useStore()
+  const [quests, setQuests] = useState<{
+    id: number; title: string; updated_at: string
+    type: string; substeps: any[]; questGiver: string; playerCharacter: string
+  }[]>([])
+
+  useEffect(() => {
+    if (!currentCampaign) return
+    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'quest' }).then((list: any[]) => {
+      const active = list
+        .map(a => {
+          let tracks: any = {}, substeps: any[] = []
+          try { tracks = JSON.parse(a.tracks || '{}') } catch {}
+          try { substeps = JSON.parse((a as any).substeps || '[]') } catch {}
+          return {
+            id: a.id, title: a.title, updated_at: a.updated_at,
+            status: tracks.Status || '',
+            type: tracks.Type || '',
+            questGiver: tracks.Quest_Giver || '',
+            playerCharacter: tracks.Player_Character || '',
+            substeps,
+          }
+        })
+        .filter(q => q.status === 'Active')
+        .sort((a, b) => {
+          // Main first, then by recent update
+          const aMain = a.type === 'Main' ? 0 : 1
+          const bMain = b.type === 'Main' ? 0 : 1
+          if (aMain !== bMain) return aMain - bMain
+          return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        })
+      setQuests(active)
+    })
+  }, [currentCampaign?.id])
+
+  const TYPE_COLORS: Record<string, string> = {
+    Main: '#e88c3a', Side: '#5b9fe8', Personal: '#9b7de8', Faction: '#49c185',
+  }
+
+  if (quests.length === 0) return null
+
+  return (
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Active quests</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{quests.length}</div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {quests.map((q, i) => {
+          const total = q.substeps.length
+          const done  = q.substeps.filter(s => s.status === 'complete').length
+          const pct   = total > 0 ? Math.round((done / total) * 100) : 0
+          const color = TYPE_COLORS[q.type] ?? 'var(--text-muted)'
+
+          return (
+            <button key={q.id} onClick={() => { openArticle(q.id); setView('wiki') }}
+              style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 0', background: 'none', border: 'none', borderBottom: i < quests.length - 1 ? '1px solid var(--border)' : 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.75'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.title}</span>
+                {q.type && (
+                  <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 99, background: color + '18', border: `1px solid ${color}44`, color, flexShrink: 0 }}>
+                    {q.type}
+                  </span>
+                )}
+                {total > 0 && (
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{done}/{total}</span>
+                )}
+              </div>
+              {q.playerCharacter && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 15, fontSize: 11, color: 'var(--text-muted)' }}>
+                  <span>for</span>
+                  <span style={{ color: '#9b7de8' }}>{q.playerCharacter}</span>
+                </div>
+              )}
+              {total > 0 && (
+                <div style={{ marginLeft: 15, height: 2, background: 'var(--border-light)', borderRadius: 1, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#49c185' : color, transition: 'width 200ms' }} />
+                </div>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Articles By Type Panel ─────────────────────────────────────────────────────
+
+function ArticlesByTypePanel() {
+  const { currentCampaign } = useStore()
+  const [counts, setCounts] = useState<{ type: string; count: number; color: string }[]>([])
+
+  const TYPE_COLORS: Record<string, string> = {
+    character: '#5bbfb0', playerCharacter: '#49c185', creature: '#36a502',
+    location: '#c8a84b', faction: '#e88c3a', organization: '#e8a23a',
+    culture: '#4da6ff', religion: '#b07de8', item: '#9b7de8',
+    vendor: '#49c185', note: '#776d92', quest: '#5b9fe8',
+    event: '#e05555', lore: '#e05555', other: '#8a8a8a',
+  }
+
+  useEffect(() => {
+    if (!currentCampaign) return
+    window.api.getArticlesList({ campaignId: currentCampaign.id }).then((list: any[]) => {
+      const map: Record<string, number> = {}
+      list.forEach((a: any) => { map[a.article_type] = (map[a.article_type] ?? 0) + 1 })
+      const sorted = Object.entries(map)
+        .map(([type, count]) => ({ type, count, color: TYPE_COLORS[type] ?? '#8a8a8a' }))
+        .sort((a, b) => b.count - a.count)
+      setCounts(sorted)
+    })
+  }, [currentCampaign?.id])
+
+  if (counts.length === 0) return null
+  const max = Math.max(...counts.map(c => c.count))
+
+  return (
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px 18px' }}>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Articles by type</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {counts.map(({ type, count, color }) => (
+          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', width: 72, flexShrink: 0, textTransform: 'capitalize' }}>{type}</span>
+            <div style={{ flex: 1, background: 'var(--bg-elevated)', borderRadius: 99, height: 5 }}>
+              <div style={{ width: `${Math.round(count / max * 100)}%`, height: 5, borderRadius: 99, background: color }} />
+            </div>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', width: 20, textAlign: 'right', flexShrink: 0 }}>{count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Campaign Detail Page ───────────────────────────────────────────────────────
 
 export default function CampaignDetailPage() {
-  const { currentCampaign, sessions, articles, setView, setRelationsOpenWebId } = useStore()
+  const { currentCampaign, sessions, setView } = useStore()
   const { campaignSubView: subView, setCampaignSubView: setSubView } = useStore()
   const [noteCount, setNoteCount] = useState(0)
   const [articleCount, setArticleCount] = useState(0)
   const [lootCount, setLootCount] = useState(0)
   const [relationsCount, setRelationsCount] = useState(0)
+  const [hubPanels, setHubPanels] = useState<Record<HubPanelKey, boolean>>(() =>
+    currentCampaign ? loadHubPanels(currentCampaign.id) : { ...HUB_PANEL_DEFAULTS }
+  )
+
+  useEffect(() => {
+    if (currentCampaign) setHubPanels(loadHubPanels(currentCampaign.id))
+  }, [currentCampaign?.id])
+
+  const togglePanel = (key: HubPanelKey, value: boolean) => {
+    if (!currentCampaign) return
+    setHubPanels(prev => {
+      const next = { ...prev, [key]: value }
+      saveHubPanels(currentCampaign.id, next)
+      return next
+    })
+  }
 
   useEffect(() => {
     if (!currentCampaign) return
@@ -1438,17 +1757,38 @@ export default function CampaignDetailPage() {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ padding: '28px 40px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <span className="badge badge-gold">{currentCampaign.system}</span>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <span className="badge badge-gold">{currentCampaign.system}</span>
+            </div>
+            <h1 style={{ fontSize: 28, letterSpacing: '0.04em' }}>{currentCampaign.name}</h1>
+          </div>
+          <div style={{ paddingTop: 6 }}>
+            <HubSettingsMenu panels={hubPanels} onChange={togglePanel} />
+          </div>
         </div>
-        <h1 style={{ fontSize: 28, letterSpacing: '0.04em' }}>{currentCampaign.name}</h1>
       </div>
 
       {/* Scrollable body */}
       <div style={{ flex: 1, overflow: 'auto', padding: '28px 40px 40px' }}>
 
         {/* World map embedded */}
-        <HubWorldMap />
+        {hubPanels.worldMap && <HubWorldMap />}
+
+        {/* Dashboard panels */}
+        {(hubPanels.recentlyUpdated || hubPanels.articlesByType || hubPanels.sessionTimeline || hubPanels.activeQuests) && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14, marginBottom: 28 }}>
+            {hubPanels.recentlyUpdated && <RecentlyUpdatedPanel />}
+            {hubPanels.activeQuests && <ActiveQuestsPanel />}
+            {hubPanels.articlesByType && <ArticlesByTypePanel />}
+            {hubPanels.sessionTimeline && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <TimelineEmbed />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Hub cards */}
         <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: 16 }}>
@@ -1484,6 +1824,11 @@ export default function CampaignDetailPage() {
             description="Map relationships between characters, factions, and entities. Build family trees, hierarchies, and political webs."
             stat={relationsCount > 0 ? `${relationsCount} web${relationsCount !== 1 ? 's' : ''}` : undefined}
             onClick={() => setView('relations')} accent="#b07de8"
+          />
+          <HubCard
+            icon={<Clock size={20} />} title="Timeline"
+            description="Visualise your campaign history — arc spans, sessions, and world events on a scrollable in-world timeline."
+            onClick={() => setView('timeline')} accent="#5bbfb0"
           />
         </div>
       </div>

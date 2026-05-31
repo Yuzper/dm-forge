@@ -33,7 +33,6 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   // ── Picker state ───────────────────────────────────────────────────────────
   const [showPicker, setShowPicker] = useState(false)
   const [pickerSearch, setPickerSearch] = useState('')
-  const [pickerArticles, setPickerArticles] = useState<ArticleSummary[]>([])
 
   // ── Pending ref for auto-save on close ─────────────────────────────────────
   const pendingRef = useRef({
@@ -103,17 +102,64 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
     }
   }, [creatures, creaturesDirty, encounter])
 
-  // ── Load picker articles (creature + character) ────────────────────────────
+  // ── Picker entries — creatures expand into variants, characters stay flat ─────
+  interface PickerEntry {
+    key: string
+    displayName: string   // "Goblin Warrior"
+    subtitle: string      // "Goblin · CR 1/4" or "character"
+    articleId: number
+    variantId: string | null   // null for characters/playerCharacters
+    variantIndex: number | null
+  }
+  const [pickerEntries, setPickerEntries] = useState<PickerEntry[]>([])
+
   useEffect(() => {
     if (!showPicker) return
-    // Read currentCampaign directly from store to avoid stale closure
     const campaign = useStore.getState().currentCampaign
     if (!campaign) return
     Promise.all([
       window.api.getArticlesList({ campaignId: campaign.id, type: 'creature' }),
       window.api.getArticlesList({ campaignId: campaign.id, type: 'character' }),
-    ]).then(([creatures, characters]) => {
-      setPickerArticles([...creatures, ...characters].sort((a, b) => a.title.localeCompare(b.title)))
+      window.api.getArticlesList({ campaignId: campaign.id, type: 'playerCharacter' }),
+    ]).then(async ([creatures, characters, pcs]) => {
+      const entries: PickerEntry[] = []
+
+      // Expand creature articles into their variants
+      for (const c of creatures) {
+        const full = await window.api.getArticle(c.id)
+        if (!full) continue
+        let variants: any[] = []
+        try {
+          const parsed = JSON.parse(full.statblock)
+          if (Array.isArray(parsed) && parsed.length > 0 && 'name' in parsed[0]) {
+            variants = parsed
+          }
+        } catch {}
+
+        if (variants.length === 0) {
+          // Legacy single statblock
+          entries.push({ key: `c_${c.id}`, displayName: c.title, subtitle: 'creature', articleId: c.id, variantId: null, variantIndex: null })
+        } else {
+          for (let i = 0; i < variants.length; i++) {
+            const v = variants[i]
+            entries.push({
+              key: `c_${c.id}_v${i}`,
+              displayName: v.name || c.title,
+              subtitle: `${c.title} · CR ${v.cr || '—'}`,
+              articleId: c.id,
+              variantId: v.id,
+              variantIndex: i,
+            })
+          }
+        }
+      }
+
+      // Characters and player characters as flat entries
+      for (const ch of [...characters, ...pcs]) {
+        entries.push({ key: `ch_${ch.id}`, displayName: ch.title, subtitle: ch.article_type === 'playerCharacter' ? 'player character' : 'character', articleId: ch.id, variantId: null, variantIndex: null })
+      }
+
+      setPickerEntries(entries.sort((a, b) => a.displayName.localeCompare(b.displayName)))
     })
   }, [showPicker])
 
@@ -150,13 +196,37 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   }, [])
 
   // ── Add combatant ──────────────────────────────────────────────────────────
-  const addCombatant = async (article: ArticleSummary, useRoll = false) => {
+  const addCombatant = async (entry: PickerEntry, useRoll = false) => {
     if (!encounter) return
-    const full = await window.api.getArticle(article.id)
+    const full = await window.api.getArticle(entry.articleId)
     if (!full) return
-    const sb = parseStatBlock(full.statblock)
+
+    let sb: ReturnType<typeof parseStatBlock>
+    let variantLootTableId: number | null = null
+    let variantLootTable: string | null = null
+
+    if (entry.variantIndex !== null) {
+      // Creature variant — parse from variants array
+      try {
+        const variants = JSON.parse(full.statblock)
+        const v = variants[entry.variantIndex]
+        sb = parseStatBlock(typeof v.statblock === 'string' ? v.statblock : JSON.stringify(v.statblock))
+        variantLootTableId = v.loot_table_id ?? null
+        variantLootTable = v.loot_table ?? null
+      } catch {
+        sb = parseStatBlock(full.statblock)
+      }
+    } else {
+      sb = parseStatBlock(full.statblock)
+    }
+
     const maxHp = useRoll ? rollHp(sb.hpDice) : calcHpAverage(sb.hpDice)
-    const newCreature = await window.api.addCombatCreature(encounter.id, article.id, maxHp)
+    const newCreature = await (window.api as any).addCombatCreature(encounter.id, entry.articleId, maxHp, {
+      variant_name: entry.variantIndex !== null ? entry.displayName : null,
+      variant_statblock: entry.variantIndex !== null ? JSON.stringify(sb) : null,
+      variant_loot_table_id: variantLootTableId,
+      variant_loot_table: variantLootTable,
+    })
     setCreatures(prev => [...prev, newCreature])
     setShowPicker(false)
     setPickerSearch('')
@@ -164,16 +234,22 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   }
 
   // ── Open stat block window ─────────────────────────────────────────────────
-  const openStatBlock = useCallback((articleId: number) => {
-    window.api.openStatBlockWindow(articleId)
+  const openStatBlock = useCallback((creature: any) => {
+    (window.api as any).openStatBlockWindow(creature.article_id, {
+      statblock: creature.variant_statblock ?? creature.statblock ?? undefined,
+      name: creature.display_name ?? creature.title ?? undefined,
+    })
   }, [])
 
   // ── Loot generation ─────────────────────────────────────────────────────────
   const handleLootGenerated = useCallback(async (creatureId: number, result: LootItem[], articleId: number): Promise<LootItem[]> => {
     try {
-      const full = await window.api.getArticle(articleId)
-      if (full?.loot_table_id) {
-        const masterResult = await window.api.rollLootTable(full.loot_table_id, '[]')
+      // Check if this combat creature has a variant loot table stored
+      const combatCreature = creatures.find(c => c.id === creatureId)
+      const lootTableId = (combatCreature as any)?.variant_loot_table_id
+        ?? (await window.api.getArticle(articleId))?.loot_table_id
+      if (lootTableId) {
+        const masterResult = await window.api.rollLootTable(lootTableId, '[]')
         result = [...result, ...masterResult]
       }
     } catch (e) {
@@ -185,7 +261,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
       console.error('Save loot result error:', e)
     }
     return result
-  }, [])
+  }, [creatures])
 
   // ── Sort creatures by initiative (desc, nulls last) ────────────────────────
   const sortedCreatures = [...creatures].sort((a, b) => {
@@ -196,8 +272,9 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   })
 
   // ── Picker filter ──────────────────────────────────────────────────────────
-  const filteredPicker = pickerArticles.filter(a =>
-    a.title.toLowerCase().includes(pickerSearch.toLowerCase())
+  const filteredPicker = pickerEntries.filter(e =>
+    e.displayName.toLowerCase().includes(pickerSearch.toLowerCase()) ||
+    e.subtitle.toLowerCase().includes(pickerSearch.toLowerCase())
   )
 
   if (!poiPanelOpen || !selectedPOI) return null
@@ -389,9 +466,9 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
                   {pickerSearch ? 'No matches' : 'No creature or character articles yet'}
                 </div>
               ) : (
-                filteredPicker.map(article => (
+                filteredPicker.map(entry => (
                   <div
-                    key={article.id}
+                    key={entry.key}
                     style={{
                       display: 'flex', alignItems: 'center',
                       padding: '8px 16px', borderBottom: '1px solid var(--border)',
@@ -400,13 +477,13 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {article.title}
+                        {entry.displayName}
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{article.article_type}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{entry.subtitle}</div>
                     </div>
                     <button
                       className="btn btn-sm"
-                      onClick={() => addCombatant(article, false)}
+                      onClick={() => addCombatant(entry, false)}
                       title="Add with average HP"
                       style={{ padding: '3px 8px', fontSize: 11, flexShrink: 0 }}
                     >
@@ -414,7 +491,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
                     </button>
                     <button
                       className="btn btn-ghost btn-sm"
-                      onClick={() => addCombatant(article, true)}
+                      onClick={() => addCombatant(entry, true)}
                       title="Add with rolled HP"
                       style={{ padding: '3px 6px', flexShrink: 0 }}
                     >
