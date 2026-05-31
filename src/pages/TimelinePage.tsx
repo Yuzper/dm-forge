@@ -14,7 +14,7 @@ import {
   renderAxis, renderDayTicks, renderLogBreak,
   renderYearBands, renderYearTicks, renderBinChips,
   renderArcTubes, renderClusters,
-  type TimelineEventItem, type ClusterItem,
+  type TimelineEventItem, type ClusterItem, type SessionRenderItem,
 } from '../utils/timelineSvg'
 
 // ── Layout constants ───────────────────────────────────────────────────────────
@@ -333,6 +333,7 @@ export default function TimelinePage() {
   const svgRef = useRef<SVGSVGElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const filterRef = useRef<HTMLDivElement>(null)
+  const clusterPickerRef = useRef<HTMLDivElement>(null)
   const scrollToBinRef = useRef<number | null>(null)
 
   const [items, setItems] = useState<TimelineEventItem[]>([])
@@ -347,6 +348,7 @@ export default function TimelinePage() {
   const [baseYear, setBaseYear] = useState<number>((currentCampaign as any)?.timeline_base_year ?? DEFAULT_BASE_YEAR)
   const [binTooltip, setBinTooltip] = useState<BinTooltip | null>(null)
   const [dayTooltip, setDayTooltip] = useState<DayTooltip | null>(null)
+  const [clusterPicker, setClusterPicker] = useState<{ items: ClusterItem[]; x: number; y: number } | null>(null)
 
   const pxPerDay = DAY_ZOOM_LEVELS[dayZoomIdx]
 
@@ -361,6 +363,16 @@ export default function TimelinePage() {
   useEffect(() => {
     if (currentCampaign) setFilters(loadFilters(currentCampaign.id))
   }, [currentCampaign?.id])
+
+  // Dismiss the cluster picker on outside click
+  useEffect(() => {
+    if (!clusterPicker) return
+    const h = (e: MouseEvent) => { if (clusterPickerRef.current && !clusterPickerRef.current.contains(e.target as Node)) setClusterPicker(null) }
+    document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h)
+  }, [clusterPicker])
+
+  // Close the picker if the view changes underneath it
+  useEffect(() => { setClusterPicker(null) }, [zoom, pxPerDay, filters])
 
   const handleFiltersChange = (f: TimelineFilters) => {
     setFilters(f); if (currentCampaign) saveFilters(currentCampaign.id, f)
@@ -418,6 +430,17 @@ export default function TimelinePage() {
 
   const bins = computeBins(zoom, baseYear, datedSessions, items)
   const maxWY = Math.ceil(dayToWorldYear(maxDay, baseYear)) + 1
+
+  // Select a clicked timeline item into the detail panel (shared by single-item
+  // clicks and the cluster picker).
+  const selectItem = (item: ClusterItem) => {
+    if (item.kind === 'session') {
+      const s = datedSessions.find(s => s.id === item.id)
+      if (s) setSelected({ kind: 'session', id: s.id, title: s.name, day: s.in_world_day!, dayEnd: s.in_world_day_end ?? s.in_world_day!, year: Math.floor(dayToWorldYear(s.in_world_day!, baseYear)), arcColor: arcMap[s.arc_id ?? 0]?.color, arcName: arcMap[s.arc_id ?? 0]?.name, sessionNum: `${s.session_number}${s.session_sub ?? ''}` })
+    } else {
+      setSelected({ kind: item.kind as 'event' | 'death', id: item.id, title: item.title, day: item.day, year: Math.floor(dayToWorldYear(item.day, baseYear)), articleType: item.article_type, arcColor: item.color })
+    }
+  }
 
   // Render SVG
   useEffect(() => {
@@ -482,18 +505,14 @@ export default function TimelinePage() {
           setDayTooltip({ items: cluster, x: cx - rect.left, y: cy - rect.top })
         },
         onLeave: () => setDayTooltip(null),
-        onClickSingle: item => {
-          if (item.kind === 'session') {
-            const s = datedSessions.find(s => s.id === item.id)
-            if (s) setSelected({ kind: 'session', id: s.id, title: s.name, day: s.in_world_day!, dayEnd: s.in_world_day_end ?? s.in_world_day!, year: Math.floor(dayToWorldYear(s.in_world_day!, baseYear)), arcColor: arcMap[s.arc_id ?? 0]?.color, arcName: arcMap[s.arc_id ?? 0]?.name, sessionNum: `${s.session_number}${s.session_sub ?? ''}` })
-          } else {
-            const ev = items.find(i => i.id === item.id && i.kind === item.kind)
-            if (ev) setSelected({ kind: ev.kind, id: ev.id, title: ev.title, day: ev.day, year: ev.year, articleType: ev.article_type, arcColor: ev.color })
-          }
-        },
-        onClickCluster: () => {
-          const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
-          if (nextZoom !== zoom) setZoom(nextZoom)
+        onClickSingle: item => { setClusterPicker(null); selectItem(item) },
+        onClickCluster: (cluster, cx, cy, container) => {
+          // Clusters only ever render in day mode (the finest zoom), so there is
+          // no finer level to zoom into — show a picker so every overlapping
+          // entry stays reachable.
+          const rect = (container as HTMLElement).getBoundingClientRect()
+          setDayTooltip(null)
+          setClusterPicker({ items: cluster, x: cx - rect.left, y: cy - rect.top })
         },
       })
     }
@@ -681,7 +700,25 @@ export default function TimelinePage() {
               </div>
             ))}
             {dayTooltip.items.length > 5 && <div style={{ color: 'var(--text-muted)', fontSize: 10, marginTop: 2 }}>…and {dayTooltip.items.length - 5} more</div>}
-            {dayTooltip.items.length > 1 && <div style={{ color: 'var(--text-muted)', marginTop: 5, paddingTop: 4, borderTop: '1px solid var(--border)', fontSize: 10 }}>click to zoom in</div>}
+            {dayTooltip.items.length > 1 && <div style={{ color: 'var(--text-muted)', marginTop: 5, paddingTop: 4, borderTop: '1px solid var(--border)', fontSize: 10 }}>click to choose</div>}
+          </div>
+        )}
+
+        {/* Cluster picker — choose one of several overlapping entries */}
+        {clusterPicker && (
+          <div ref={clusterPickerRef} style={{ position: 'absolute', zIndex: 30, left: Math.max(8, clusterPicker.x - 70), top: Math.max(8, clusterPicker.y - 12), background: 'var(--bg-surface)', border: '1px solid var(--border-gold)', borderRadius: 'var(--radius-sm)', padding: '5px 4px', fontSize: 12, color: 'var(--text-secondary)', boxShadow: 'var(--shadow-lg)', minWidth: 180, maxHeight: 220, overflowY: 'auto' }}>
+            <div style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: 10, padding: '2px 8px 5px' }}>Day {clusterPicker.items[0]?.day} · {clusterPicker.items.length} entries</div>
+            {clusterPicker.items.map((it, i) => (
+              <button key={`${it.kind}-${it.id}-${i}`} onClick={() => { selectItem(it); setClusterPicker(null) }}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', background: 'none', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left', color: 'var(--text-secondary)' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                <span style={{ color: it.kind === 'session' ? 'var(--gold)' : it.kind === 'death' ? '#9b7de8' : '#e05555', fontSize: 10, flexShrink: 0 }}>{it.kind === 'session' ? '○' : it.kind === 'death' ? '☠' : '◆'}</span>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {it.kind === 'session' ? `S${it.session_number}${it.session_sub ?? ''} · ${it.title}` : it.title}
+                </span>
+              </button>
+            ))}
           </div>
         )}
       </div>

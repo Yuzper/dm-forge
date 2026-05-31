@@ -450,7 +450,7 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
           position: 'absolute', ...(dropUp ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }), ...(dropLeft ? { right: 0 } : { left: 0 }),
           background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
           borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
-          zIndex: 200, overflow: 'hidden', minWidth: 360,
+          zIndex: 200, width: 380, maxHeight: 340, display: 'flex', flexDirection: 'column',
         }}>
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
@@ -473,27 +473,29 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
             </button>
           </div>
 
-          {/* Mini timeline */}
-          <div style={{ padding: '8px 12px 4px' }}>
-            {currentCampaign && (
-              <MiniTimeline
-                campaignId={currentCampaign.id}
-                selectedDay={day}
-                baseYear={baseYear}
-                yearLength={YEAR_LENGTH}
-                onPickDay={handlePickDay}
-              />
+          {/* Scrollable body: mini timeline + context */}
+          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+            <div style={{ padding: '8px 12px 4px' }}>
+              {currentCampaign && (
+                <MiniTimeline
+                  campaignId={currentCampaign.id}
+                  selectedDay={day}
+                  baseYear={baseYear}
+                  yearLength={YEAR_LENGTH}
+                  onPickDay={handlePickDay}
+                />
+              )}
+            </div>
+
+            {/* Context footer */}
+            {day !== 0 && (
+              <div style={{ padding: '8px 12px 10px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                <span style={{ color: day <= 0 ? '#e88c3a' : 'var(--gold)' }}>Day {day}, Year {year}</span>
+                {day <= 0 && <span style={{ color: '#e88c3a88' }}> (before campaign start)</span>}
+                {ctx && <span> — {ctx}</span>}
+              </div>
             )}
           </div>
-
-          {/* Context footer */}
-          {day !== 0 && (
-            <div style={{ padding: '8px 12px 10px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              <span style={{ color: day <= 0 ? '#e88c3a' : 'var(--gold)' }}>Day {day}, Year {year}</span>
-              {day <= 0 && <span style={{ color: '#e88c3a88' }}> (before campaign start)</span>}
-              {ctx && <span> — {ctx}</span>}
-            </div>
-          )}
 
           {/* Clear */}
           {day !== 0 && (

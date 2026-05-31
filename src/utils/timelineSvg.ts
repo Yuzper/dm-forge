@@ -294,7 +294,7 @@ export interface ClusterOpts {
   onHover: (items: ClusterItem[], cx: number, cy: number, container: Element) => void
   onLeave: () => void
   onClickSingle: (item: ClusterItem) => void
-  onClickCluster: (items: ClusterItem[]) => void
+  onClickCluster: (items: ClusterItem[], clientX: number, clientY: number, container: Element) => void
 }
 
 export function renderClusters(
@@ -326,7 +326,11 @@ export function renderClusters(
       hit.addEventListener('mouseenter', e => opts.onHover(cluster, (e as MouseEvent).clientX, (e as MouseEvent).clientY, container))
       hit.addEventListener('mousemove',  e => opts.onHover(cluster, (e as MouseEvent).clientX, (e as MouseEvent).clientY, container))
       hit.addEventListener('mouseleave', opts.onLeave)
-      hit.addEventListener('click', e => { e.stopPropagation(); isSingle ? opts.onClickSingle(item) : opts.onClickCluster(cluster) })
+      hit.addEventListener('click', e => {
+        e.stopPropagation()
+        const me = e as MouseEvent
+        isSingle ? opts.onClickSingle(item) : opts.onClickCluster(cluster, me.clientX, me.clientY, container)
+      })
     }
 
     if (isSingle && item.kind === 'session') {
