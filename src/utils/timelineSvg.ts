@@ -261,3 +261,97 @@ export function renderEventItems(
     }
   })
 }
+
+// ── Day clustering ─────────────────────────────────────────────────────────────
+// Groups items that fall within CLUSTER_PX pixels of each other so overlapping
+// items on the same day are reachable via a shared cluster indicator.
+
+const CLUSTER_PX = 14
+
+export interface ClusterItem {
+  id: number; title: string; kind: 'session' | 'event' | 'death'
+  day: number; color: string; article_type?: string
+  // session-specific
+  session_number?: number; session_sub?: string | null; arc_id?: number | null
+  in_world_day_end?: number | null
+}
+
+export interface ClusterOpts {
+  axisY: number; sessionDotY: number; eventY: number; deathY: number; arcY: number
+  onHover: (items: ClusterItem[], cx: number, cy: number, container: Element) => void
+  onLeave: () => void
+  onClickSingle: (item: ClusterItem) => void
+  onClickCluster: (items: ClusterItem[]) => void
+}
+
+export function renderClusters(
+  svg: SVGElement,
+  items: ClusterItem[],
+  dx: (d: number) => number,
+  arcMap: Record<number, { color: string }>,
+  opts: ClusterOpts,
+): void {
+  // Group by pixel bucket
+  const buckets = new Map<number, ClusterItem[]>()
+  items.forEach(item => {
+    const px = Math.round(dx(item.day) / CLUSTER_PX) * CLUSTER_PX
+    buckets.set(px, [...(buckets.get(px) ?? []), item])
+  })
+
+  buckets.forEach((cluster, px) => {
+    const isSingle = cluster.length === 1
+    const item = cluster[0]
+    const color = isSingle ? item.color : '#c8a84b'
+
+    const g = svgEl('g', { style: 'cursor:pointer', 'pointer-events': 'bounding-box' }, svg)
+    const container = svg.parentElement!
+
+    g.addEventListener('mouseenter', e => opts.onHover(cluster, (e as MouseEvent).clientX, (e as MouseEvent).clientY, container))
+    g.addEventListener('mousemove',  e => opts.onHover(cluster, (e as MouseEvent).clientX, (e as MouseEvent).clientY, container))
+    g.addEventListener('mouseleave', opts.onLeave)
+    g.addEventListener('click', () => isSingle ? opts.onClickSingle(item) : opts.onClickCluster(cluster))
+
+    if (isSingle && item.kind === 'session') {
+      // Single session — full render
+      const arc = arcMap[item.arc_id ?? 0]
+      const col = arc?.color ?? '#8a8a8a'
+      const endDay = item.in_world_day_end ?? item.day
+      const endX = dx(endDay)
+      const isMultiDay = endDay > item.day
+      const R = 12
+      if (isMultiDay) {
+        svgEl('rect', { x: px, y: opts.axisY - 22 - 9, width: endX - px, height: 9, rx: '5', fill: col + '22', stroke: col, 'stroke-width': '1', 'pointer-events': 'none' }, g)
+      } else {
+        svgEl('line', { x1: px, y1: opts.sessionDotY + R, x2: px, y2: opts.arcY, stroke: col + '44', 'stroke-width': '1', 'stroke-dasharray': '3 2', 'pointer-events': 'none' }, g)
+      }
+      svgEl('circle', { cx: px, cy: opts.sessionDotY, r: R, fill: col + '1a', stroke: col, 'stroke-width': '1.5', 'pointer-events': 'none' }, g)
+      svgTxt(`${item.session_number}${item.session_sub ?? ''}`, { x: px, y: opts.sessionDotY + 4, 'text-anchor': 'middle', fill: col, 'font-size': '9', 'font-weight': '600', 'font-family': 'sans-serif', 'pointer-events': 'none' }, g)
+      const words = item.title.split(' '), half = Math.ceil(words.length / 2)
+      svgTxt(words.slice(0, half).join(' '), { x: px, y: opts.sessionDotY - R - 10, 'text-anchor': 'middle', fill: '#6b6558', 'font-size': '8', 'font-family': 'sans-serif', 'pointer-events': 'none' }, g)
+      if (words.length > half) svgTxt(words.slice(half).join(' '), { x: px, y: opts.sessionDotY - R - 2, 'text-anchor': 'middle', fill: '#6b6558', 'font-size': '8', 'font-family': 'sans-serif', 'pointer-events': 'none' }, g)
+
+    } else if (isSingle && (item.kind === 'event' || item.kind === 'death')) {
+      // Single event/death — full render
+      const S = 7
+      const yPos = item.kind === 'death' ? opts.deathY : opts.eventY
+      svgEl('line', { x1: px, y1: item.kind === 'death' ? yPos - S : yPos + S, x2: px, y2: item.kind === 'death' ? opts.axisY : opts.sessionDotY - 16,
+        stroke: item.color + '44', 'stroke-width': '1', 'stroke-dasharray': '2 3', 'pointer-events': 'none' }, g)
+      svgEl('polygon', { points: `${px},${yPos - S} ${px + S},${yPos} ${px},${yPos + S} ${px - S},${yPos}`,
+        fill: item.color + '1a', stroke: item.color, 'stroke-width': '1.5', 'pointer-events': 'none' }, g)
+      if (item.kind === 'death') svgTxt('☠', { x: px, y: yPos + 3.5, 'text-anchor': 'middle', fill: item.color, 'font-size': '7', 'font-family': 'sans-serif', 'pointer-events': 'none' }, g)
+      svgTxt(item.title, { x: px, y: item.kind === 'death' ? yPos + S + 10 : yPos - S - 5, 'text-anchor': 'middle', fill: item.color, 'font-size': '8', 'font-family': 'sans-serif', 'pointer-events': 'none' }, g)
+
+    } else {
+      // Cluster of multiple items — stacked diamond badge
+      const S = 9
+      const yPos = opts.eventY
+      // Stacked shadow
+      svgEl('polygon', { points: `${px + 3},${yPos - S + 2} ${px + S + 3},${yPos + 2} ${px + 3},${yPos + S + 2} ${px - S + 3},${yPos + 2}`,
+        fill: '#2a2820', stroke: '#3a3828', 'stroke-width': '1', 'pointer-events': 'none' }, g)
+      svgEl('polygon', { points: `${px},${yPos - S} ${px + S},${yPos} ${px},${yPos + S} ${px - S},${yPos}`,
+        fill: color + '22', stroke: color, 'stroke-width': '1.5', 'pointer-events': 'none' }, g)
+      svgTxt(String(cluster.length), { x: px, y: yPos + 3.5, 'text-anchor': 'middle', fill: color, 'font-size': '8', 'font-weight': '700', 'font-family': 'sans-serif', 'pointer-events': 'none' }, g)
+      svgEl('line', { x1: px, y1: yPos + S, x2: px, y2: opts.axisY, stroke: color + '33', 'stroke-width': '1', 'stroke-dasharray': '2 3', 'pointer-events': 'none' }, g)
+    }
+  })
+}

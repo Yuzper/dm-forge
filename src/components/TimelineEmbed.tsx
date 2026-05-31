@@ -11,10 +11,10 @@ import {
   makePageAxisGeo,
 } from '../utils/timelineGeometry'
 import {
-  renderAxis, renderDayTicks, renderPreCampaignShade, renderLogBreak,
+  renderAxis, renderDayTicks, renderLogBreak,
   renderYearBands, renderYearTicks, renderBinChips,
-  renderArcTubes, renderSessions, renderEventItems,
-  type TimelineEventItem, type SessionRenderItem,
+  renderArcTubes, renderClusters,
+  type TimelineEventItem, type ClusterItem,
 } from '../utils/timelineSvg'
 
 // ── Layout constants ───────────────────────────────────────────────────────────
@@ -38,7 +38,8 @@ const DEFAULT_DAY_ZOOM = 4
 
 interface Filters { sessions: boolean; events: boolean; deaths: boolean }
 interface Tooltip { x: number; y: number; label: string; sub?: string; color: string }
-interface BinTooltip { label: string; syCount: number; evCount: number; x: number; y: number; nextZoom: ZoomLevel }
+interface BinTooltip { label: string; syCount: number; evCount: number; items: { title: string; kind: string }[]; x: number; y: number; nextZoom: ZoomLevel }
+interface DayTooltip { items: ClusterItem[]; x: number; y: number }
 
 // ── Filter Panel ───────────────────────────────────────────────────────────────
 
@@ -86,6 +87,7 @@ export default function TimelineEmbed() {
   const [showFilter, setShowFilter] = useState(false)
   const [tooltip, setTooltip] = useState<Tooltip | null>(null)
   const [binTooltip, setBinTooltip] = useState<BinTooltip | null>(null)
+  const [dayTooltip, setDayTooltip] = useState<DayTooltip | null>(null)
   const [baseYear, setBaseYear] = useState<number>((currentCampaign as any)?.timeline_base_year ?? 1507)
 
   const pxPerDay = DAY_ZOOM_LEVELS[dayZoomIdx]
@@ -164,7 +166,7 @@ export default function TimelineEmbed() {
         onHover: (chip, cx, cy) => {
           const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
           const rect = scrollRef.current?.getBoundingClientRect()
-          setBinTooltip({ label: `${chip.startYear}–${chip.endYear}`, syCount: chip.syCount, evCount: chip.evCount, x: cx - (rect?.left ?? 0), y: cy - (rect?.top ?? 0), nextZoom })
+          setBinTooltip({ label: `${chip.startYear}–${chip.endYear}`, syCount: chip.syCount, evCount: chip.evCount, items: chip.items, x: cx - (rect?.left ?? 0), y: cy - (rect?.top ?? 0), nextZoom })
         },
         onLeave: () => setBinTooltip(null),
         onClick: () => {
@@ -185,34 +187,38 @@ export default function TimelineEmbed() {
 
     renderArcTubes(svg, arcSpans, dx, ARC_Y, ARC_H)
 
-    if (filters.sessions) {
-      renderSessions(svg, sessionItems, arcMap, dx,
-        { sessionDotY: SESSION_DOT_Y, sessionPillY: SESSION_PILL_Y, sessionPillH: SESSION_PILL_H, arcY: ARC_Y, axisY: AXIS_Y },
-        {
-          isHighlighted: id => id === latestSession?.id,
-          onClick: s => { selectSession(s as any); setView('session') },
-          onHover: (s, e, container) => {
-            const rect = container.getBoundingClientRect()
-            setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top - 10, label: `Session ${s.session_number}${s.session_sub ?? ''}: ${s.name}`, sub: arcMap[s.arc_id ?? 0]?.name, color: arcMap[s.arc_id ?? 0]?.color ?? '#8a8a8a' })
-          },
-          onLeave: () => setTooltip(null),
-        }
-      )
-    }
+    const clusterItems: ClusterItem[] = [
+      ...(filters.sessions ? sessionItems.map(s => ({
+        id: s.id, title: s.name, kind: 'session' as const,
+        day: s.in_world_day, color: arcMap[s.arc_id ?? 0]?.color ?? '#8a8a8a',
+        session_number: s.session_number, session_sub: s.session_sub,
+        arc_id: s.arc_id, in_world_day_end: s.in_world_day_end,
+      })) : []),
+      ...(filters.events ? items.filter(i => i.kind === 'event').map(i => ({ id: i.id, title: i.title, kind: 'event' as const, day: i.day, color: i.color, article_type: i.article_type })) : []),
+      ...(filters.deaths ? items.filter(i => i.kind === 'death').map(i => ({ id: i.id, title: i.title, kind: 'death' as const, day: i.day, color: i.color, article_type: i.article_type })) : []),
+    ]
 
-    renderEventItems(svg, items, dx,
-      { eventY: EVENT_Y, deathY: DEATH_Y, axisY: AXIS_Y, sessionDotY: SESSION_DOT_Y, arcY: ARC_Y },
-      {
-        showEvents: filters.events, showDeaths: filters.deaths, showSessions: filters.sessions,
-        isHighlighted: () => false,
-        onClick: async item => { await openArticle(item.id); setView('wiki') },
-        onHover: (item, e, container) => {
-          const rect = container.getBoundingClientRect()
-          setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top - 10, label: item.title, sub: item.kind === 'death' ? `Death · ${item.article_type}` : 'Event', color: item.color })
-        },
-        onLeave: () => setTooltip(null),
-      }
-    )
+    renderClusters(svg, clusterItems, dx, arcMap, {
+      axisY: AXIS_Y, sessionDotY: SESSION_DOT_Y, eventY: EVENT_Y, deathY: DEATH_Y, arcY: ARC_Y,
+      onHover: (cluster, cx, cy, container) => {
+        const rect = (container as HTMLElement).getBoundingClientRect()
+        if (cluster.length === 1) {
+          const it = cluster[0]
+          setTooltip({ x: cx - rect.left, y: cy - rect.top - 10, label: it.title, sub: it.kind === 'session' ? arcMap[it.arc_id ?? 0]?.name : it.kind === 'death' ? 'Death' : 'Event', color: it.color })
+        } else {
+          setDayTooltip({ items: cluster, x: cx - rect.left, y: cy - rect.top })
+        }
+      },
+      onLeave: () => { setTooltip(null); setDayTooltip(null) },
+      onClickSingle: async item => {
+        if (item.kind === 'session') { selectSession(item as any); setView('session') }
+        else { await openArticle(item.id); setView('wiki') }
+      },
+      onClickCluster: () => {
+        const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
+        if (nextZoom !== zoom) setZoom(nextZoom)
+      },
+    })
   }, [datedSessions, arcs, items, filters, CANVAS_W, baseYear, zoom, pxPerDay, minDay, maxDay, latestSession, bins])
 
   // Scroll to latest session on mount/data change
@@ -290,7 +296,7 @@ export default function TimelineEmbed() {
 
       {/* Canvas */}
       <div style={{ position: 'relative' }}>
-        <div ref={scrollRef} onMouseLeave={() => { setTooltip(null); setBinTooltip(null) }}
+        <div ref={scrollRef} onMouseLeave={() => { setTooltip(null); setBinTooltip(null); setDayTooltip(null) }}
           style={{ overflowX: 'auto', overflowY: 'hidden', padding: '24px 0 0', background: 'var(--bg-base)', scrollbarWidth: 'thin' }}>
           <svg ref={svgRef} style={{ display: 'block', overflow: 'visible' }} />
           <div style={{ height: 8 }} />
@@ -306,12 +312,32 @@ export default function TimelineEmbed() {
 
         {/* Bin tooltip */}
         {binTooltip && (
-          <div style={{ position: 'absolute', left: Math.max(8, binTooltip.x - 70), top: Math.max(8, binTooltip.y - 80), background: 'var(--bg-surface)', border: '1px solid var(--border-gold)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', fontSize: 11, color: 'var(--text-secondary)', pointerEvents: 'none', zIndex: 50, boxShadow: 'var(--shadow-lg)' }}>
-            <div style={{ color: 'var(--gold)', fontWeight: 600, marginBottom: 3 }}>{binTooltip.label}</div>
-            {binTooltip.syCount > 0 && <div>{binTooltip.syCount} session{binTooltip.syCount !== 1 ? 's' : ''}</div>}
-            {binTooltip.evCount > 0 && <div>{binTooltip.evCount} event{binTooltip.evCount !== 1 ? 's' : ''}</div>}
-            {binTooltip.syCount === 0 && binTooltip.evCount === 0 && <div style={{ color: 'var(--text-muted)' }}>empty period</div>}
-            <div style={{ color: 'var(--text-muted)', marginTop: 4, paddingTop: 3, borderTop: '1px solid var(--border)', fontSize: 10 }}>click to zoom into {ZOOM_LABEL[binTooltip.nextZoom]}</div>
+          <div style={{ position: 'absolute', left: Math.max(8, binTooltip.x - 70), top: Math.max(8, binTooltip.y - 110), background: 'var(--bg-surface)', border: '1px solid var(--border-gold)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', fontSize: 11, color: 'var(--text-secondary)', pointerEvents: 'none', zIndex: 50, boxShadow: 'var(--shadow-lg)', minWidth: 150 }}>
+            <div style={{ color: 'var(--gold)', fontWeight: 600, marginBottom: 4 }}>{binTooltip.label}</div>
+            {binTooltip.items.slice(0, 5).map((it, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+                <span style={{ color: it.kind === 'session' ? 'var(--gold)' : it.kind === 'death' ? '#9b7de8' : '#e05555', fontSize: 9, flexShrink: 0 }}>{it.kind === 'session' ? '○' : it.kind === 'death' ? '☠' : '◆'}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</span>
+              </div>
+            ))}
+            {binTooltip.items.length > 5 && <div style={{ color: 'var(--text-muted)', fontSize: 10, marginTop: 2 }}>…and {binTooltip.items.length - 5} more</div>}
+            {binTooltip.items.length === 0 && <div style={{ color: 'var(--text-muted)' }}>empty period</div>}
+            {binTooltip.nextZoom !== zoom && <div style={{ color: 'var(--text-muted)', marginTop: 4, paddingTop: 3, borderTop: '1px solid var(--border)', fontSize: 10 }}>click to zoom into {ZOOM_LABEL[binTooltip.nextZoom]}</div>}
+          </div>
+        )}
+
+        {/* Day cluster tooltip */}
+        {dayTooltip && (
+          <div style={{ position: 'absolute', left: Math.max(8, dayTooltip.x - 70), top: Math.max(8, dayTooltip.y - 110), background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', fontSize: 11, color: 'var(--text-secondary)', pointerEvents: 'none', zIndex: 50, boxShadow: 'var(--shadow-lg)', minWidth: 150 }}>
+            <div style={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4, fontSize: 10 }}>Day {dayTooltip.items[0]?.day}</div>
+            {dayTooltip.items.slice(0, 5).map((it, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+                <span style={{ color: it.kind === 'session' ? 'var(--gold)' : it.kind === 'death' ? '#9b7de8' : '#e05555', fontSize: 9, flexShrink: 0 }}>{it.kind === 'session' ? '○' : it.kind === 'death' ? '☠' : '◆'}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</span>
+              </div>
+            ))}
+            {dayTooltip.items.length > 5 && <div style={{ color: 'var(--text-muted)', fontSize: 10, marginTop: 2 }}>…and {dayTooltip.items.length - 5} more</div>}
+            <div style={{ color: 'var(--text-muted)', marginTop: 4, paddingTop: 3, borderTop: '1px solid var(--border)', fontSize: 10 }}>click to zoom in</div>
           </div>
         )}
       </div>

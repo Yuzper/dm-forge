@@ -18,18 +18,24 @@ export const worldYearToDay = (wy: number, baseYear: number) => Math.round((wy -
 
 // ── Bin chips ──────────────────────────────────────────────────────────────────
 
+export interface BinItem {
+  title: string
+  kind: 'session' | 'event' | 'death'
+}
+
 export interface BinChip {
   startYear: number
   endYear: number
   syCount: number
   evCount: number
+  items: BinItem[]   // all items in the bin, for tooltip listing
 }
 
 export function computeBins(
   zoom: ZoomLevel,
   baseYear: number,
-  sessions: { in_world_day?: number | null }[],
-  events: { day: number }[],
+  sessions: { in_world_day?: number | null; name?: string; session_number?: number; session_sub?: string | null }[],
+  events: { day: number; title?: string; kind?: string }[],
 ): BinChip[] {
   const binSize = ZOOM_BIN[zoom]
   const preDays = [
@@ -42,11 +48,13 @@ export function computeBins(
   for (let by = startBin; by < baseYear; by += binSize) {
     const end = Math.min(by + binSize, baseYear)
     const inBin = (d: number) => { const wy = dayToWorldYear(d, baseYear); return wy >= by && wy < end }
-    chips.push({
-      startYear: by, endYear: end,
-      syCount: sessions.filter(s => s.in_world_day != null && inBin(s.in_world_day)).length,
-      evCount: events.filter(e => inBin(e.day)).length,
-    })
+    const binSessions = sessions.filter(s => s.in_world_day != null && inBin(s.in_world_day))
+    const binEvents = events.filter(e => inBin(e.day))
+    const items: BinItem[] = [
+      ...binSessions.map(s => ({ title: s.name ? `S${s.session_number}${s.session_sub ?? ''} ${s.name}` : `Session ${s.session_number}`, kind: 'session' as const })),
+      ...binEvents.map(e => ({ title: e.title ?? 'Untitled', kind: (e.kind ?? 'event') as 'event' | 'death' })),
+    ]
+    chips.push({ startYear: by, endYear: end, syCount: binSessions.length, evCount: binEvents.length, items })
   }
   return chips
 }
