@@ -1,5 +1,5 @@
 // path: src/pages/RelationsPage.tsx
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react'
 import { useStore } from '../store/store'
 // @ts-ignore
 import ReactFlow, {
@@ -8,19 +8,21 @@ import ReactFlow, {
   Connection, Edge as RFEdge, Node as RFNode,
   NodeTypes, EdgeTypes, MarkerType,
   Handle, Position, NodeProps, EdgeProps,
-  getBezierPath, EdgeLabelRenderer, BaseEdge,
+  getBezierPath, getSmoothStepPath, EdgeLabelRenderer, BaseEdge,
   OnConnect, OnNodesDelete, OnEdgesDelete,
-  addEdge,
+  addEdge, getRectOfNodes, getTransformForBounds, ConnectionMode,
 } from 'reactflow'
 // @ts-ignore
 import 'reactflow/dist/style.css'
+import { toPng, toSvg } from 'html-to-image'
 import {
   Network, Plus, ArrowLeft, Trash2, Pencil, Check, X, Search, ExternalLink, Filter, ChevronDown, MoreHorizontal, GitMerge, LayoutGrid,
+  Download, Unlink, Link2, Users, Layers, ChevronUp,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type WebTemplate =
+export type WebTemplate =
   | 'family_tree' | 'org_hierarchy' | 'faction_web' | 'social_web'
   | 'quest_chain' | 'lore_causality' | 'trade_network' | 'territory' | 'custom'
 
@@ -29,11 +31,26 @@ interface TemplateConfig {
   unionNodes: boolean
   dagreDir: 'TB' | 'LR' | null
   defaultEdgeLabels: string[]
+  ranked?: boolean   // rank-tier hierarchy (org/crime/religious): tiers + reports_to edges
 }
 
-const TEMPLATE_CONFIG: Record<WebTemplate, TemplateConfig> = {
+// Template cards shared by the relations New-web modal and the article-side
+// "Create web" flow.
+export const WEB_TEMPLATES: { id: WebTemplate; label: string; desc: string }[] = [
+  { id: 'family_tree',    label: 'Family tree',      desc: 'Dynasties, bloodlines' },
+  { id: 'org_hierarchy',  label: 'Hierarchy',        desc: 'Ranks: crime, clergy, org' },
+  { id: 'faction_web',    label: 'Faction web',      desc: 'Alliances, rivalries' },
+  { id: 'social_web',     label: 'Social web',       desc: 'Personal relationships' },
+  { id: 'quest_chain',    label: 'Quest chain',      desc: 'Dependencies, unlocks' },
+  { id: 'lore_causality', label: 'Lore / causality', desc: 'Events, cause & effect' },
+  { id: 'trade_network',  label: 'Trade network',    desc: 'Goods, routes' },
+  { id: 'territory',      label: 'Territory',        desc: 'Control, influence' },
+  { id: 'custom',         label: 'Custom',           desc: 'No constraints' },
+]
+
+export const TEMPLATE_CONFIG: Record<WebTemplate, TemplateConfig> = {
   family_tree:    { label: 'Family tree',      unionNodes: true,  dagreDir: 'TB', defaultEdgeLabels: ['husband of', 'wife of', 'partner of'] },
-  org_hierarchy:  { label: 'Org / hierarchy',  unionNodes: false, dagreDir: 'TB', defaultEdgeLabels: ['reports to', 'manages'] },
+  org_hierarchy:  { label: 'Hierarchy',        unionNodes: false, dagreDir: null, defaultEdgeLabels: [], ranked: true },
   faction_web:    { label: 'Faction web',      unionNodes: false, dagreDir: null, defaultEdgeLabels: ['allied with', 'rivals'] },
   social_web:     { label: 'Social web',       unionNodes: false, dagreDir: null, defaultEdgeLabels: ['knows', 'trusts', 'hates'] },
   quest_chain:    { label: 'Quest chain',      unionNodes: false, dagreDir: 'LR', defaultEdgeLabels: ['unlocks', 'requires'] },
@@ -43,12 +60,39 @@ const TEMPLATE_CONFIG: Record<WebTemplate, TemplateConfig> = {
   custom:         { label: 'Custom',           unionNodes: false, dagreDir: null, defaultEdgeLabels: [] },
 }
 
+interface Rank {
+  id: string
+  name: string
+  color: string
+}
+
+// Tier colors, highest → lowest. Presets and new ranks draw from this palette.
+const RANK_PALETTE = ['#c8a84b', '#b07de8', '#5b9fe8', '#49c185', '#e88c3a', '#7F77DD', '#d98899', '#8a8a8a']
+
+interface RankPreset { id: string; label: string; ranks: string[] }
+export const RANK_PRESETS: RankPreset[] = [
+  { id: 'crime',     label: 'Crime org',  ranks: ['Boss', 'Underboss', 'Consigliere', 'Capo', 'Soldier', 'Associate'] },
+  { id: 'religious', label: 'Religious',  ranks: ['Pope', 'Archbishop', 'Bishop', 'High Priest', 'Priest'] },
+  { id: 'corporate', label: 'Corporate',  ranks: ['CEO', 'VP', 'Director', 'Manager', 'Staff'] },
+  { id: 'blank',     label: 'Blank',      ranks: [] },
+]
+
+function makeRankId(): string {
+  return `rk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+}
+
+export function buildRanksFromPreset(names: string[]): Rank[] {
+  return names.map((name, i) => ({ id: makeRankId(), name, color: RANK_PALETTE[i % RANK_PALETTE.length] }))
+}
+
 interface RelationWeb {
   id: number
   campaign_id: number
   name: string
   description: string
   template: WebTemplate
+  ranks?: string   // JSON string of Rank[]
+  article_id?: number | null
   node_count: number
   updated_at: string
 }
@@ -59,6 +103,7 @@ interface DBRelationNode {
   article_id: number | null
   label: string
   node_type: 'person' | 'union'
+  rank_id?: string | null
   pos_x: number
   pos_y: number
   article_title?: string | null
@@ -74,7 +119,9 @@ interface DBRelationEdge {
   to_node_id: number
   label_from: string
   label_to: string
-  edge_type: 'standard' | 'person_to_union' | 'union_to_child'
+  edge_type: 'standard' | 'person_to_union' | 'union_to_child' | 'reports_to'
+  from_handle?: string | null
+  to_handle?: string | null
 }
 
 // trackFilters: { [articleType]: string[] } — which track keys to display per type
@@ -88,6 +135,8 @@ interface NodeData {
   articleType: string | null
   tracks: Record<string, string>
   trackFilters: Record<string, string[]>
+  rankName: string | null
+  rankColor: string | null
   onCreateArticle: () => void
 }
 
@@ -95,7 +144,7 @@ interface EdgeData {
   dbId: number
   labelFrom: string
   labelTo: string
-  edgeType: 'standard' | 'person_to_union' | 'union_to_child'
+  edgeType: 'standard' | 'person_to_union' | 'union_to_child' | 'reports_to'
 }
 
 // ── Track definitions (mirrored from WikiPage) ─────────────────────────────────
@@ -136,12 +185,12 @@ const ARTICLE_TRACKS: Partial<Record<string, Record<string, string[]>>> = {
   vendor: { Shop_Type: [], Status: [], Location: [], Owner: [] },
 }
 
-const ALL_ARTICLE_TYPES = [
+export const ALL_ARTICLE_TYPES = [
   'character','playerCharacter','creature','location','faction','organization',
   'quest','item','event','culture','religion','lore','note','other','vendor',
 ]
 
-const ARTICLE_TYPE_LABELS: Record<string, string> = {
+export const ARTICLE_TYPE_LABELS: Record<string, string> = {
   character: 'Character', playerCharacter: 'Player Character', creature: 'Creature',
   location: 'Location', faction: 'Faction', organization: 'Organization',
   quest: 'Quest', item: 'Item', event: 'Event', culture: 'Culture',
@@ -150,26 +199,51 @@ const ARTICLE_TYPE_LABELS: Record<string, string> = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function vitalityColor(v: string | null | undefined): string {
-  if (!v) return 'transparent'
-  if (v === 'Alive' || v === 'Immortal') return '#3dbf7f'
-  if (v === 'Dead') return '#e05555'
-  return '#8a8a8a'
-}
-
 function isDead(v: string | null | undefined): boolean {
   return v === 'Dead'
+}
+
+// Map a parent's union role ("husband of"/"wife of") to the child's term for them.
+function parentRoleFromUnionLabel(label: string | null | undefined): string {
+  const l = (label || '').toLowerCase()
+  if (l.includes('husband') || l.includes('father')) return 'father'
+  if (l.includes('wife') || l.includes('mother')) return 'mother'
+  return 'parent'
+}
+
+// Pick a grid-snapped spot for a new node that doesn't overlap existing ones.
+// Walks an outward spiral from a base point until it finds a clear cell.
+function findFreePosition(existing: { pos_x: number; pos_y: number }[]): { x: number; y: number } {
+  const STEP = 200, MIN_DIST = 170
+  const baseX = 120, baseY = 120
+  const clear = (x: number, y: number) =>
+    !existing.some(n => Math.abs(n.pos_x - x) < MIN_DIST && Math.abs(n.pos_y - y) < MIN_DIST)
+  if (clear(baseX, baseY)) return { x: baseX, y: baseY }
+  // Expanding square-ring search
+  for (let ring = 1; ring <= 8; ring++) {
+    for (let dx = -ring; dx <= ring; dx++) {
+      for (let dy = -ring; dy <= ring; dy++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue
+        const x = baseX + dx * STEP, y = baseY + dy * STEP
+        if (clear(x, y)) return { x, y }
+      }
+    }
+  }
+  // Fallback: random offset so nodes never land exactly on top of each other
+  return { x: baseX + Math.round(Math.random() * 10) * 20, y: baseY + Math.round(Math.random() * 10) * 20 }
 }
 
 function dbNodeToRF(
   node: DBRelationNode,
   onCreateArticle: (nodeId: number) => void,
   trackFilters: Record<string, string[]>,
+  ranksById: Record<string, Rank> = {},
 ): RFNode<NodeData> {
   let parsedTracks: Record<string, string> = {}
   if (node.tracks) {
     try { parsedTracks = JSON.parse(node.tracks) } catch {}
   }
+  const rank = node.rank_id ? ranksById[node.rank_id] : undefined
   return {
     id: String(node.id),
     position: { x: node.pos_x, y: node.pos_y },
@@ -184,6 +258,8 @@ function dbNodeToRF(
       articleType: node.article_type || null,
       tracks: parsedTracks,
       trackFilters,
+      rankName: rank?.name ?? null,
+      rankColor: rank?.color ?? null,
       onCreateArticle: () => onCreateArticle(node.id),
     },
   }
@@ -196,6 +272,8 @@ function dbEdgeToRF(edge: DBRelationEdge): RFEdge<EdgeData> {
     id: String(edge.id),
     source: String(edge.from_node_id),
     target: String(edge.to_node_id),
+    sourceHandle: edge.from_handle || undefined,
+    targetHandle: edge.to_handle || undefined,
     type: 'relationEdge',
     data: { dbId: edge.id, labelFrom: edge.label_from, labelTo: edge.label_to, edgeType },
     markerEnd: directed
@@ -205,6 +283,29 @@ function dbEdgeToRF(edge: DBRelationEdge): RFEdge<EdgeData> {
 }
 
 // ── Custom Node ────────────────────────────────────────────────────────────────
+
+// Four connection dots (top/right/bottom/left). Each side has both a source and
+// a target handle sharing the side's id, so (in loose connection mode) you can
+// drag from any dot to any dot and the edge renders from the exact sides used.
+const HANDLE_SIDES: { id: string; position: Position; off: React.CSSProperties }[] = [
+  { id: 'top',    position: Position.Top,    off: { top: -4 } },
+  { id: 'right',  position: Position.Right,  off: { right: -4 } },
+  { id: 'bottom', position: Position.Bottom, off: { bottom: -4 } },
+  { id: 'left',   position: Position.Left,   off: { left: -4 } },
+]
+
+function FourWayHandles({ baseStyle }: { baseStyle: React.CSSProperties }) {
+  return (
+    <>
+      {HANDLE_SIDES.map(h => (
+        <Fragment key={h.id}>
+          <Handle id={h.id} type="target" position={h.position} style={{ ...baseStyle, ...h.off }} />
+          <Handle id={h.id} type="source" position={h.position} style={{ ...baseStyle, ...h.off }} />
+        </Fragment>
+      ))}
+    </>
+  )
+}
 
 function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
   const handleStyle = { background: 'var(--border)', width: 7, height: 7, border: 'none' }
@@ -221,11 +322,8 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
         cursor: 'grab', fontFamily: 'var(--font-ui)',
         position: 'relative',
       }}>
-        <Handle type="target" position={Position.Top}    style={{ ...handleStyle, top: -4 }} />
-        <Handle type="target" position={Position.Left}   style={{ ...handleStyle, left: -4 }} />
         ∪
-        <Handle type="source" position={Position.Bottom} style={{ ...handleStyle, bottom: -4 }} />
-        <Handle type="source" position={Position.Right}  style={{ ...handleStyle, right: -4 }} />
+        <FourWayHandles baseStyle={handleStyle} />
       </div>
     )
   }
@@ -255,6 +353,7 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
         gap: 7,
         minWidth: 140,
         maxWidth: 180,
+        position: 'relative',
         fontFamily: 'var(--font-ui)',
         cursor: 'grab',
         opacity: dead ? 0.45 : 1,
@@ -262,9 +361,16 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
         transition: 'opacity 0.15s, filter 0.15s',
       }}
     >
-      <Handle type="target" position={Position.Top}    style={{ ...handleStyle, top: -4 }} />
-      <Handle type="target" position={Position.Left}   style={{ ...handleStyle, left: -4 }} />
+      <FourWayHandles baseStyle={handleStyle} />
+      {data.rankColor && (
+        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, borderRadius: '6px 0 0 6px', background: data.rankColor }} />
+      )}
       <div style={{ minWidth: 0, flex: 1 }}>
+        {data.rankName && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: data.rankColor || 'var(--text-muted)', marginBottom: 3 }}>
+            {data.rankName}
+          </div>
+        )}
         <div
           style={{
             fontSize: 12, fontWeight: 500,
@@ -298,8 +404,6 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
           </div>
         )}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ ...handleStyle, bottom: -4 }} />
-      <Handle type="source" position={Position.Right}  style={{ ...handleStyle, right: -4 }} />
     </div>
   )
 }
@@ -307,12 +411,13 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
 // ── Custom Edge ────────────────────────────────────────────────────────────────
 
 function RelationEdgeComponent({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, data, markerEnd, selected }: EdgeProps<EdgeData>) {
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX, sourceY, sourcePosition,
-    targetX, targetY, targetPosition,
-  })
-
   const edgeType = data?.edgeType || 'standard'
+  // Reporting lines use stepped/elbow connectors (classic org-chart look);
+  // everything else uses curved bezier paths.
+  const [edgePath, labelX, labelY] = edgeType === 'reports_to'
+    ? getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: 8 })
+    : getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
+
   const labelFrom = data?.labelFrom || ''
   const labelTo   = data?.labelTo   || ''
   const symmetric = !labelTo || labelFrom === labelTo
@@ -478,35 +583,247 @@ function TrackFilterPanel({
   )
 }
 
+// ── Rank Panel ──────────────────────────────────────────────────────────────────
+
+function RankPanel({ ranks, onChange, onClose }: {
+  ranks: Rank[]
+  onChange: (next: Rank[]) => void
+  onClose: () => void
+}) {
+  const update = (id: string, patch: Partial<Rank>) => onChange(ranks.map(r => r.id === id ? { ...r, ...patch } : r))
+  const remove = (id: string) => onChange(ranks.filter(r => r.id !== id))
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir
+    if (j < 0 || j >= ranks.length) return
+    const next = ranks.slice()
+    ;[next[i], next[j]] = [next[j], next[i]]
+    onChange(next)
+  }
+  const add = () => onChange([...ranks, { id: makeRankId(), name: 'New rank', color: RANK_PALETTE[ranks.length % RANK_PALETTE.length] }])
+
+  const arrowBtn: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 0, lineHeight: 0 }
+
+  return (
+    <div style={{
+      position: 'absolute', top: 48, right: 12, zIndex: 100,
+      background: 'var(--bg-surface)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius)', boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+      width: 290, maxHeight: 480, overflow: 'auto', fontFamily: 'var(--font-ui)',
+    }}>
+      <div style={{ padding: '10px 14px 6px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+          Ranks <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 11 }}>top = highest</span>
+        </div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}><X size={13} /></button>
+      </div>
+      <div style={{ padding: '8px 10px' }}>
+        {ranks.length === 0 && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 2px 10px', lineHeight: 1.4 }}>
+            No ranks yet — add tiers from highest to lowest.
+          </div>
+        )}
+        {ranks.map((r, i) => (
+          <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <button onClick={() => move(i, -1)} disabled={i === 0} style={{ ...arrowBtn, opacity: i === 0 ? 0.3 : 1 }}><ChevronUp size={12} /></button>
+              <button onClick={() => move(i, 1)} disabled={i === ranks.length - 1} style={{ ...arrowBtn, opacity: i === ranks.length - 1 ? 0.3 : 1 }}><ChevronDown size={12} /></button>
+            </div>
+            <input type="color" value={r.color} onChange={e => update(r.id, { color: e.target.value })}
+              style={{ width: 22, height: 22, padding: 0, border: 'none', background: 'none', cursor: 'pointer', flexShrink: 0 }} />
+            <input className="input" value={r.name} onChange={e => update(r.id, { name: e.target.value })}
+              style={{ flex: 1, fontSize: 12, padding: '4px 8px', minWidth: 0 }} />
+            <button onClick={() => remove(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}><Trash2 size={12} /></button>
+          </div>
+        ))}
+        <button onClick={add}
+          style={{ marginTop: 8, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px', fontSize: 12, cursor: 'pointer', background: 'transparent', border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)' }}>
+          <Plus size={13} /> Add rank
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Linked Articles Rail ─────────────────────────────────────────────────────
+
+// Left rail listing every article linked to this web. Each entry navigates to
+// the article; articles can be linked/unlinked here (many-to-many).
+function LinkedArticlesRail({ webId, articles, onReload, onClose }: {
+  webId: number
+  articles: { id: number; title: string; article_type: string; is_primary: number }[]
+  onReload: () => void
+  onClose: () => void
+}) {
+  const { currentCampaign, navigateToArticleByTitle } = useStore()
+  const [adding, setAdding] = useState(false)
+  const [search, setSearch] = useState('')
+  const [results, setResults] = useState<{ id: number; title: string; article_type: string }[]>([])
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+
+  useEffect(() => {
+    if (!currentCampaign || !search.trim()) { setResults([]); return }
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      const arts = await (window as any).api.getArticlesList({
+        campaignId: currentCampaign.id, search: search.trim(), searchTitle: true, searchTags: false,
+      })
+      const linkedIds = new Set(articles.map(a => a.id))
+      setResults((arts || []).filter((a: any) => !linkedIds.has(a.id)).slice(0, 6))
+    }, 200)
+  }, [search, currentCampaign, articles])
+
+  const link = async (articleId: number) => {
+    await (window as any).api.linkRelationWebArticle(webId, articleId)
+    setSearch(''); setAdding(false); onReload()
+  }
+  const unlink = async (articleId: number) => {
+    await (window as any).api.unlinkRelationWebArticle(webId, articleId)
+    onReload()
+  }
+
+  return (
+    <div style={{ width: 210, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, background: 'var(--bg-surface)', overflow: 'auto', fontFamily: 'var(--font-ui)' }}>
+      <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Linked articles</span>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}><X size={13} /></button>
+      </div>
+      <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {articles.length === 0 && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 4px 8px', lineHeight: 1.4 }}>No linked articles yet.</div>
+        )}
+        {articles.map(a => (
+          <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={() => navigateToArticleByTitle(a.title)} title="Open article"
+              style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: 'transparent', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', textAlign: 'left', minWidth: 0 }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+              <ExternalLink size={11} color="#5b9fe8" style={{ flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{a.title}</span>
+              {!!a.is_primary && <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>primary</span>}
+            </button>
+            <button onClick={() => unlink(a.id)} title="Unlink article"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}>
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+        {adding ? (
+          <div style={{ marginTop: 6 }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input className="input" autoFocus style={{ paddingLeft: 26, fontSize: 12 }} placeholder="Search articles…"
+                value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            {results.length > 0 && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: 4 }}>
+                {results.map(a => (
+                  <button key={a.id} onClick={() => link(a.id)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 12, color: 'var(--text-primary)', textAlign: 'left' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{a.title}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{a.article_type}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={() => { setAdding(false); setSearch('') }}
+              style={{ marginTop: 4, fontSize: 11, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}>Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => setAdding(true)}
+            style={{ marginTop: 6, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px', fontSize: 12, cursor: 'pointer', background: 'transparent', border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)' }}>
+            <Plus size={12} /> Link article
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Modals ─────────────────────────────────────────────────────────────────────
 
-function NewWebModal({ onClose, onCreated }: { onClose: () => void; onCreated: (web: RelationWeb) => void }) {
+export function NewWebModal({ onClose, onCreated, lockedArticle }: {
+  onClose: () => void
+  onCreated: (web: RelationWeb) => void
+  // When provided, the web is pre-linked to this article (any template) and the
+  // article-search UI is hidden — used by the "Create web" flow from an article.
+  lockedArticle?: { id: number; title: string }
+}) {
   const { currentCampaign } = useStore()
-  const [name, setName] = useState('')
+  const [name, setName] = useState(lockedArticle?.title ?? '')
   const [description, setDescription] = useState('')
   const [template, setTemplate] = useState<WebTemplate>('custom')
+  const [ladderId, setLadderId] = useState<string>('crime')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Hierarchy webs link to an article (any type). Link an existing one, or
+  // create a new one of the chosen type when none is selected.
+  const [linkedArticle, setLinkedArticle] = useState<{ id: number; title: string } | null>(null)
+  const [articleSearch, setArticleSearch] = useState('')
+  const [articleResults, setArticleResults] = useState<{ id: number; title: string; article_type: string }[]>([])
+  const [newArticleType, setNewArticleType] = useState('organization')
+  const articleDebounce = useRef<ReturnType<typeof setTimeout>>()
+
+  useEffect(() => {
+    if (!currentCampaign || !articleSearch.trim()) { setArticleResults([]); return }
+    clearTimeout(articleDebounce.current)
+    articleDebounce.current = setTimeout(async () => {
+      const arts = await (window as any).api.getArticlesList({
+        campaignId: currentCampaign.id, search: articleSearch.trim(), searchTitle: true, searchTags: false,
+      })
+      setArticleResults((arts || []).slice(0, 6))
+    }, 200)
+  }, [articleSearch, currentCampaign])
 
   const handleCreate = async () => {
     if (!name.trim() || !currentCampaign) return
     setSaving(true)
-    const web = await (window as any).api.createRelationWeb({
-      campaign_id: currentCampaign.id, name: name.trim(), description: description.trim(), template,
-    })
-    onCreated(web)
+    setError(null)
+    try {
+      const ranked = TEMPLATE_CONFIG[template].ranked
+      const ranks = ranked ? buildRanksFromPreset(RANK_PRESETS.find(p => p.id === ladderId)?.ranks ?? []) : []
+
+      // Resolve the linked article. When locked (created from an article), that
+      // article is the link for any template. Otherwise hierarchy webs link an
+      // article (existing or auto-created).
+      let articleId: number | null = null
+      if (lockedArticle) {
+        articleId = lockedArticle.id
+      } else if (ranked) {
+        if (linkedArticle) {
+          articleId = linkedArticle.id
+        } else {
+          try {
+            const art = await (window as any).api.createArticle({
+              campaign_id: currentCampaign.id, title: name.trim(), article_type: newArticleType,
+            })
+            articleId = art.id
+          } catch {
+            // Title taken — link the existing article with that name instead.
+            const matches = await (window as any).api.getArticlesList({
+              campaignId: currentCampaign.id, search: name.trim(), searchTitle: true, searchTags: false,
+            })
+            const exact = (matches || []).find((a: any) => a.title.toLowerCase() === name.trim().toLowerCase())
+            articleId = exact?.id ?? null
+          }
+        }
+      }
+
+      const web = await (window as any).api.createRelationWeb({
+        campaign_id: currentCampaign.id, name: name.trim(), description: description.trim(), template,
+        ranks: JSON.stringify(ranks), article_id: articleId,
+      })
+      onCreated(web)
+    } catch (err: any) {
+      console.error('createRelationWeb failed:', err)
+      setError(err?.message || 'Failed to create web — please try again.')
+      setSaving(false)
+    }
   }
 
-  const TEMPLATES: { id: WebTemplate; label: string; desc: string }[] = [
-    { id: 'family_tree',    label: 'Family tree',      desc: 'Dynasties, bloodlines' },
-    { id: 'org_hierarchy',  label: 'Org / hierarchy',  desc: 'Commands, ranks, guilds' },
-    { id: 'faction_web',    label: 'Faction web',      desc: 'Alliances, rivalries' },
-    { id: 'social_web',     label: 'Social web',       desc: 'Personal relationships' },
-    { id: 'quest_chain',    label: 'Quest chain',      desc: 'Dependencies, unlocks' },
-    { id: 'lore_causality', label: 'Lore / causality', desc: 'Events, cause & effect' },
-    { id: 'trade_network',  label: 'Trade network',    desc: 'Goods, routes' },
-    { id: 'territory',      label: 'Territory',        desc: 'Control, influence' },
-    { id: 'custom',         label: 'Custom',           desc: 'No constraints' },
-  ]
+  const TEMPLATES = WEB_TEMPLATES
 
   const cfg = TEMPLATE_CONFIG[template]
 
@@ -546,7 +863,84 @@ function NewWebModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
             ) : (
               <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '0.5px solid var(--border)' }}>Free canvas</span>
             )}
+            {cfg.ranked && (
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: '#EEEDFE', color: '#3C3489', border: '0.5px solid #AFA9EC' }}>Rank tiers</span>
+            )}
           </div>
+          {cfg.ranked && (
+            <div className="input-group">
+              <label className="input-label">Starting ranks <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(editable later)</span></label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {RANK_PRESETS.map(p => (
+                  <button key={p.id} onClick={() => setLadderId(p.id)}
+                    style={{
+                      fontSize: 11, padding: '4px 10px', borderRadius: 99, cursor: 'pointer',
+                      background: ladderId === p.id ? 'var(--bg-elevated)' : 'transparent',
+                      border: ladderId === p.id ? '1.5px solid #7F77DD' : '1px solid var(--border)',
+                      color: ladderId === p.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {(() => {
+                const preset = RANK_PRESETS.find(p => p.id === ladderId)
+                return preset && preset.ranks.length > 0 ? (
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{preset.ranks.join(' › ')}</div>
+                ) : null
+              })()}
+            </div>
+          )}
+          {lockedArticle && (
+            <div className="input-group">
+              <label className="input-label">Linked article</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
+                <Network size={13} color="#7F77DD" />
+                <span style={{ flex: 1, fontSize: 13 }}>{lockedArticle.title}</span>
+              </div>
+            </div>
+          )}
+          {cfg.ranked && !lockedArticle && (
+            <div className="input-group">
+              <label className="input-label">Linked article</label>
+              {linkedArticle ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
+                  <Network size={13} color="#7F77DD" />
+                  <span style={{ flex: 1, fontSize: 13 }}>{linkedArticle.title}</span>
+                  <button onClick={() => setLinkedArticle(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}><X size={13} /></button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                    <input className="input" style={{ paddingLeft: 30 }} placeholder="Link an existing article…"
+                      value={articleSearch} onChange={e => setArticleSearch(e.target.value)} />
+                  </div>
+                  {articleResults.length > 0 && (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: 4 }}>
+                      {articleResults.map(a => (
+                        <button key={a.id} onClick={() => { setLinkedArticle(a); setArticleSearch('') }}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', textAlign: 'left' }}
+                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                          {a.title}
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{a.article_type}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }}>
+                    <span>Or create a new</span>
+                    <select className="input" value={newArticleType} onChange={e => setNewArticleType(e.target.value)} style={{ fontSize: 12, padding: '3px 6px', width: 'auto' }}>
+                      {ALL_ARTICLE_TYPES.map(t => <option key={t} value={t}>{ARTICLE_TYPE_LABELS[t] || t}</option>)}
+                    </select>
+                    <span>named “{name.trim() || '…'}”.</span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <div className="input-group">
             <label className="input-label">Name</label>
             <input className="input" autoFocus
@@ -566,23 +960,35 @@ function NewWebModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
             {saving ? 'Creating…' : 'Create'}
           </button>
         </div>
+        {error && (
+          <div style={{ marginTop: 10, fontSize: 12, color: '#e05555', background: 'rgba(224,85,85,0.08)', borderRadius: 6, padding: '8px 12px' }}>
+            {error}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function AddNodeModal({ webId, onClose, onAdded }: {
-  webId: number; onClose: () => void; onAdded: (node: DBRelationNode) => void
+function AddNodeModal({ webId, existingNodes, onClose, onAdded }: {
+  webId: number; existingNodes: DBRelationNode[]; onClose: () => void; onAdded: (nodes: DBRelationNode[]) => void
 }) {
   const { currentCampaign } = useStore()
-  // 'search' = link existing article, 'new' = create a stub node
+  // 'search' = link existing article(s), 'new' = create a stub node
   const [mode, setMode] = useState<'search' | 'new'>('search')
   const [name, setName] = useState('')
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<{ id: number; title: string; article_type: string }[]>([])
-  const [selectedArticle, setSelectedArticle] = useState<{ id: number; title: string } | null>(null)
+  // Multi-select: link several existing articles as nodes in one go.
+  const [selected, setSelected] = useState<{ id: number; title: string; article_type?: string }[]>([])
   const [saving, setSaving] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+
+  // Articles already present as nodes — hidden from results to avoid duplicates.
+  const existingArticleIds = useMemo(
+    () => new Set(existingNodes.map(n => n.article_id).filter(Boolean) as number[]),
+    [existingNodes],
+  )
 
   useEffect(() => {
     if (!currentCampaign || !search.trim()) { setResults([]); return }
@@ -591,22 +997,45 @@ function AddNodeModal({ webId, onClose, onAdded }: {
       const articles = await (window as any).api.getArticlesList({
         campaignId: currentCampaign.id, search: search.trim(), searchTitle: true, searchTags: false,
       })
-      setResults(articles.slice(0, 8))
+      setResults(articles.slice(0, 12))
     }, 200)
   }, [search, currentCampaign])
 
+  const selectedIds = new Set(selected.map(a => a.id))
+  const visibleResults = results.filter(a => !selectedIds.has(a.id) && !existingArticleIds.has(a.id))
+
+  const toggleSelect = (a: { id: number; title: string; article_type?: string }) =>
+    setSelected(prev => prev.some(s => s.id === a.id) ? prev.filter(s => s.id !== a.id) : [...prev, a])
+
   const handleAdd = async () => {
-    if (mode === 'search' && !selectedArticle) return
-    if (mode === 'new' && !name.trim()) return
+    if (mode === 'new') {
+      if (!name.trim()) return
+      setSaving(true)
+      const { x, y } = findFreePosition(existingNodes)
+      const node = await (window as any).api.createRelationNode({
+        web_id: webId, label: name.trim(), article_id: null, pos_x: x, pos_y: y,
+      })
+      onAdded([node])
+      return
+    }
+    // search mode — bulk-create one node per selected article
+    if (selected.length === 0) return
     setSaving(true)
-    const node = await (window as any).api.createRelationNode({
-      web_id: webId,
-      label: mode === 'search' ? (name.trim() || selectedArticle!.title) : name.trim(),
-      article_id: mode === 'search' ? (selectedArticle?.id ?? null) : null,
-      pos_x: Math.round((80 + Math.random() * 300) / 20) * 20,
-      pos_y: Math.round((80 + Math.random() * 200) / 20) * 20,
-    })
-    onAdded(node)
+    const placed = existingNodes.map(n => ({ pos_x: n.pos_x, pos_y: n.pos_y }))
+    const created: DBRelationNode[] = []
+    for (const a of selected) {
+      const { x, y } = findFreePosition(placed)
+      const node = await (window as any).api.createRelationNode({
+        web_id: webId,
+        // Single selection keeps the optional label override; bulk uses titles.
+        label: (selected.length === 1 && name.trim()) ? name.trim() : a.title,
+        article_id: a.id,
+        pos_x: x, pos_y: y,
+      })
+      placed.push({ pos_x: x, pos_y: y })
+      created.push(node)
+    }
+    onAdded(created)
   }
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
@@ -620,7 +1049,7 @@ function AddNodeModal({ webId, onClose, onAdded }: {
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
-        <div className="modal-title">Add node</div>
+        <div className="modal-title">Add node{selected.length > 1 ? 's' : ''}</div>
 
         {/* Mode tabs */}
         <div style={{
@@ -629,9 +1058,9 @@ function AddNodeModal({ webId, onClose, onAdded }: {
           marginBottom: 16,
         }}>
           <button style={tabStyle(mode === 'search')} onClick={() => { setMode('search'); setName('') }}>
-            🔗 Link existing article
+            🔗 Link existing article{selected.length !== 1 ? 's' : ''}
           </button>
-          <button style={tabStyle(mode === 'new')} onClick={() => { setMode('new'); setSelectedArticle(null); setSearch('') }}>
+          <button style={tabStyle(mode === 'new')} onClick={() => { setMode('new'); setSelected([]); setSearch('') }}>
             ✦ New node (no article yet)
           </button>
         </div>
@@ -639,44 +1068,49 @@ function AddNodeModal({ webId, onClose, onAdded }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {mode === 'search' ? (
             <>
+              {/* Selected chips */}
+              {selected.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {selected.map(a => (
+                    <span key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', background: 'var(--bg-elevated)', borderRadius: 99, border: '1px solid var(--border-light)', fontSize: 12 }}>
+                      <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#3dbf7f', flexShrink: 0 }} />
+                      {a.title}
+                      <button onClick={() => toggleSelect(a)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 0 }}><X size={12} /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="input-group">
-                <label className="input-label">Search for an existing article</label>
-                {selectedArticle ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#3dbf7f', flexShrink: 0 }} />
-                    <span style={{ flex: 1, fontSize: 13 }}>{selectedArticle.title}</span>
-                    <button onClick={() => { setSelectedArticle(null); setSearch('') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}><X size={13} /></button>
+                <label className="input-label">
+                  Search for existing articles <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(select multiple)</span>
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input className="input" style={{ paddingLeft: 30 }} placeholder="Search articles…"
+                    value={search} onChange={e => setSearch(e.target.value)} autoFocus />
+                </div>
+                {visibleResults.length > 0 && (
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: 4, maxHeight: 240, overflowY: 'auto' }}>
+                    {visibleResults.map(a => (
+                      <button key={a.id}
+                        onClick={() => toggleSelect(a)}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', textAlign: 'left' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                      >
+                        <Plus size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        {a.title}
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{a.article_type}</span>
+                      </button>
+                    ))}
                   </div>
-                ) : (
-                  <>
-                    <div style={{ position: 'relative' }}>
-                      <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-                      <input className="input" style={{ paddingLeft: 30 }} placeholder="Search articles…"
-                        value={search} onChange={e => setSearch(e.target.value)} autoFocus />
-                    </div>
-                    {results.length > 0 && (
-                      <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: 4 }}>
-                        {results.map(a => (
-                          <button key={a.id}
-                            onClick={() => { setSelectedArticle(a); setSearch('') }}
-                            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', textAlign: 'left' }}
-                            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
-                            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
-                          >
-                            {a.title}
-                            <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{a.article_type}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
                 )}
               </div>
-              {selectedArticle && (
+              {selected.length === 1 && (
                 <div className="input-group">
                   <label className="input-label">Override label <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
                   <input className="input"
-                    placeholder={`${selectedArticle.title} (default)`}
+                    placeholder={`${selected[0].title} (default)`}
                     value={name} onChange={e => setName(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleAdd()} />
                 </div>
@@ -701,92 +1135,14 @@ function AddNodeModal({ webId, onClose, onAdded }: {
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={handleAdd}
-            disabled={saving || (mode === 'search' ? !selectedArticle : !name.trim())}>
-            {saving ? 'Adding…' : 'Add node'}
+            disabled={saving || (mode === 'search' ? selected.length === 0 : !name.trim())}>
+            {saving
+              ? 'Adding…'
+              : mode === 'search' && selected.length > 1
+                ? `Add ${selected.length} nodes`
+                : 'Add node'}
           </button>
         </div>
-      </div>
-    </div>
-  )
-}
-
-function AddUnionModal({ webId, personNodes, suggestions, onClose, onCreated }: {
-  webId: number
-  personNodes: DBRelationNode[]
-  suggestions: string[]
-  onClose: () => void
-  onCreated: () => void
-}) {
-  const [p1, setP1] = useState<number | ''>('')
-  const [p2, setP2] = useState<number | ''>('')
-  const [label1, setLabel1] = useState(suggestions[0] || '')
-  const [label2, setLabel2] = useState(suggestions[1] || '')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const handleCreate = async () => {
-    if (!p1 || !p2) return
-    setSaving(true)
-    setError(null)
-    try {
-      await (window as any).api.createUnionNode({
-        web_id: webId, person1_id: p1, person2_id: p2,
-        label1: label1.trim(), label2: label2.trim(),
-      })
-      onCreated()
-    } catch (err: any) {
-      console.error('createUnionNode failed:', err)
-      setError(err?.message || 'Failed to create union — check the console for details.')
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Add union</div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-          A union node represents a couple. Connect two people — their children then link to the union.
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div className="input-group">
-            <label className="input-label">First person</label>
-            <select className="input" value={p1} onChange={e => setP1(Number(e.target.value) || '')} style={{ fontSize: 13 }}>
-              <option value="">Select…</option>
-              {personNodes.filter(n => n.id !== p2).map(n => <option key={n.id} value={n.id}>{n.article_title || n.label}</option>)}
-            </select>
-          </div>
-          {p1 !== '' && (
-            <div className="input-group">
-              <label className="input-label">Their role <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-              <input className="input" placeholder="husband of, wife of, partner of…" value={label1} onChange={e => setLabel1(e.target.value)} />
-            </div>
-          )}
-          <div className="input-group">
-            <label className="input-label">Second person</label>
-            <select className="input" value={p2} onChange={e => setP2(Number(e.target.value) || '')} style={{ fontSize: 13 }}>
-              <option value="">Select…</option>
-              {personNodes.filter(n => n.id !== p1).map(n => <option key={n.id} value={n.id}>{n.article_title || n.label}</option>)}
-            </select>
-          </div>
-          {p2 !== '' && (
-            <div className="input-group">
-              <label className="input-label">Their role <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-              <input className="input" placeholder="husband of, wife of, partner of…" value={label2} onChange={e => setLabel2(e.target.value)} />
-            </div>
-          )}
-        </div>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleCreate} disabled={!p1 || !p2 || saving}>
-            {saving ? 'Creating…' : 'Create union'}
-          </button>
-        </div>
-        {error && (
-          <div style={{ marginTop: 10, fontSize: 12, color: '#e05555', background: 'rgba(224,85,85,0.08)', borderRadius: 6, padding: '8px 12px' }}>
-            {error}
-          </div>
-        )}
       </div>
     </div>
   )
@@ -850,6 +1206,16 @@ function EdgeLabelModal({ onClose, onConfirm, mode = 'standard', suggestions = [
             <input className="input" autoFocus placeholder="Brother, Ally, Father of…"
               value={labelFrom} onChange={e => setLabelFrom(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleConfirm()} />
+            {suggestions.length > 0 && (
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+                {suggestions.map(s => (
+                  <button key={s} onClick={() => setLabelFrom(s)}
+                    style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--bg-elevated)', border: '1px solid var(--border)', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Shows on both articles when symmetric</div>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
@@ -914,6 +1280,230 @@ function EditEdgeModal({ edge, onClose, onSave }: {
   )
 }
 
+// ── Create / Link / Union editing modals ───────────────────────────────────────
+
+function CreateArticleModal({ node, onClose, onCreate }: {
+  node: DBRelationNode
+  onClose: () => void
+  onCreate: (articleType: string) => Promise<void> | void
+}) {
+  const [articleType, setArticleType] = useState('character')
+  const [saving, setSaving] = useState(false)
+
+  const handleCreate = async () => {
+    setSaving(true)
+    await onCreate(articleType)
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-title">Create article</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+            A new article titled <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{node.label}</span> will be created and linked to this node.
+          </div>
+          <div className="input-group">
+            <label className="input-label">Article type</label>
+            <select className="input" autoFocus value={articleType} onChange={e => setArticleType(e.target.value)} style={{ fontSize: 13 }}>
+              {ALL_ARTICLE_TYPES.map(t => (
+                <option key={t} value={t}>{ARTICLE_TYPE_LABELS[t] || t}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleCreate} disabled={saving}>
+            {saving ? 'Creating…' : 'Create & link'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LinkArticleModal({ node, campaignId, onClose, onLink }: {
+  node: DBRelationNode
+  campaignId: number
+  onClose: () => void
+  onLink: (articleId: number) => Promise<void> | void
+}) {
+  const [search, setSearch] = useState('')
+  const [results, setResults] = useState<{ id: number; title: string; article_type: string }[]>([])
+  const [saving, setSaving] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+
+  useEffect(() => {
+    if (!search.trim()) { setResults([]); return }
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      const articles = await (window as any).api.getArticlesList({
+        campaignId, search: search.trim(), searchTitle: true, searchTags: false,
+      })
+      setResults((articles || []).slice(0, 8))
+    }, 200)
+  }, [search, campaignId])
+
+  const handlePick = async (id: number) => {
+    setSaving(true)
+    await onLink(id)
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-title">Link article</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+          Link <span style={{ color: 'var(--text-primary)' }}>{node.label}</span> to an existing article.
+        </div>
+        <div className="input-group">
+          <div style={{ position: 'relative' }}>
+            <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input className="input" style={{ paddingLeft: 30 }} placeholder="Search articles…"
+              value={search} onChange={e => setSearch(e.target.value)} autoFocus disabled={saving} />
+          </div>
+          {results.length > 0 && (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: 4 }}>
+              {results.map(a => (
+                <button key={a.id} disabled={saving}
+                  onClick={() => handlePick(a.id)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', textAlign: 'left' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                >
+                  {a.title}
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{a.article_type}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EditUnionModal({ unionId, dbNodes, dbEdges, onClose, onSaved, onDissolve }: {
+  unionId: number
+  dbNodes: DBRelationNode[]
+  dbEdges: DBRelationEdge[]
+  onClose: () => void
+  onSaved: () => void
+  onDissolve: () => void
+}) {
+  const personNodes = dbNodes.filter(n => n.node_type === 'person')
+  const memberEdges = dbEdges.filter(e => e.edge_type === 'person_to_union' && e.to_node_id === unionId)
+  const [members, setMembers] = useState(
+    memberEdges.map(e => ({ edgeId: e.id, personId: e.from_node_id, role: e.label_from }))
+  )
+  const [saving, setSaving] = useState(false)
+  const [confirmDissolve, setConfirmDissolve] = useState(false)
+
+  const duplicate = members.length === 2 && members[0].personId === members[1].personId
+
+  const handleSave = async () => {
+    if (duplicate) return
+    setSaving(true)
+    await Promise.all(members.map(m =>
+      (window as any).api.updateRelationEdge(m.edgeId, { from_node_id: m.personId, label_from: m.role.trim() })
+    ))
+    onSaved()
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-title">Edit union</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+          Change who is in this union or relabel their roles.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {members.map((m, i) => (
+            <div key={m.edgeId} style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
+              <div className="input-group" style={{ margin: 0 }}>
+                <label className="input-label">Person {i + 1}</label>
+                <select className="input" value={m.personId} style={{ fontSize: 13 }}
+                  onChange={e => setMembers(prev => prev.map((x, j) => j === i ? { ...x, personId: Number(e.target.value) } : x))}>
+                  {personNodes.map(n => <option key={n.id} value={n.id}>{n.article_title || n.label}</option>)}
+                </select>
+              </div>
+              <div className="input-group" style={{ margin: 0 }}>
+                <label className="input-label">Their role <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                <input className="input" placeholder="husband of, wife of, partner of…" value={m.role}
+                  onChange={e => setMembers(prev => prev.map((x, j) => j === i ? { ...x, role: e.target.value } : x))} />
+              </div>
+            </div>
+          ))}
+          {duplicate && (
+            <div style={{ fontSize: 12, color: '#e05555' }}>The two people in a union must be different.</div>
+          )}
+        </div>
+        <div className="modal-actions" style={{ justifyContent: 'space-between' }}>
+          <button
+            className="btn"
+            onClick={() => { if (!confirmDissolve) { setConfirmDissolve(true); return } onDissolve() }}
+            style={{ color: confirmDissolve ? 'var(--danger-hover)' : '#e05555' }}
+          >
+            <Trash2 size={13} /> {confirmDissolve ? 'Confirm dissolve' : 'Dissolve union'}
+          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving || duplicate}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Export menu ─────────────────────────────────────────────────────────────────
+
+function ExportMenu({ onExport }: { onExport: (format: 'png' | 'svg') => void }) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={menuRef} style={{ position: 'relative' }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: open ? 'var(--bg-elevated)' : 'transparent', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', transition: 'background var(--transition)' }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = open ? 'var(--bg-elevated)' : 'transparent'}
+      >
+        <Download size={13} /> Export <ChevronDown size={12} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 140, zIndex: 60, overflow: 'hidden' }}>
+          {(['png', 'svg'] as const).map(fmt => (
+            <button key={fmt}
+              onClick={() => { setOpen(false); onExport(fmt) }}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'none', border: 'none', fontSize: 13, cursor: 'pointer', textAlign: 'left', color: 'var(--text-secondary)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+            >
+              <Download size={13} /> {fmt.toUpperCase()} image
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Web Card Menu ─────────────────────────────────────────────────────────────
 
 function WebMenu({ onDelete }: { onDelete: () => void }) {
@@ -946,7 +1536,7 @@ function WebMenu({ onDelete }: { onDelete: () => void }) {
         <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 150, zIndex: 50, overflow: 'hidden' }}>
           <button
             onClick={e => { e.stopPropagation(); if (!confirmDelete) { setConfirmDelete(true); return } onDelete(); setOpen(false) }}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'none', border: 'none', fontSize: 13, cursor: 'pointer', textAlign: 'left', color: confirmDelete ? '#ff7777' : '#e05555' }}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'none', border: 'none', fontSize: 13, cursor: 'pointer', textAlign: 'left', color: confirmDelete ? 'var(--danger-hover)' : '#e05555' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
           >
@@ -1051,8 +1641,11 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
 
 // ── Canvas View ────────────────────────────────────────────────────────────────
 
-function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => void }) {
-  const { currentCampaign, navigateToArticleByTitle, setRelationsOpenWebId } = useStore()
+function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb; onBack: () => void; focusArticleId?: number | null }) {
+  const { currentCampaign, navigateToArticleByTitle } = useStore()
+  // ReactFlow instance (captured on init) — used to pan/zoom to a deep-linked node.
+  const rfRef = useRef<any>(null)
+  const didFocusRef = useRef(false)
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -1061,30 +1654,64 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [showAddNode, setShowAddNode] = useState(false)
-  const [showAddUnion, setShowAddUnion] = useState(false)
   const [pendingConnection, setPendingConnection] = useState<Connection | null>(null)
   const [pendingConnectionMode, setPendingConnectionMode] = useState<'standard' | 'person_to_union'>('standard')
   const [editingEdge, setEditingEdge] = useState<DBRelationEdge | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [creatingArticleFor, setCreatingArticleFor] = useState<DBRelationNode | null>(null)
+  const [linkingArticleFor, setLinkingArticleFor] = useState<DBRelationNode | null>(null)
+  const [editingUnion, setEditingUnion] = useState<DBRelationNode | null>(null)
   const [webName, setWebName] = useState(web.name)
   const [editingName, setEditingName] = useState(false)
   const nameRef = useRef<HTMLInputElement>(null)
 
   // ── Track filters ─────────────────────────────────────────────────────────
   // { [articleType]: string[] } — keys to display in nodes of that type
+  const trackFiltersKey = `relations_track_filters_${web.id}`
   const [trackFilters, setTrackFilters] = useState<Record<string, string[]>>(() => {
     try {
-        const saved = localStorage.getItem('relations_track_filters')
+        const saved = localStorage.getItem(trackFiltersKey)
         return saved ? JSON.parse(saved) : {}
     } catch { return {} }
   })
 
   useEffect(() => {
     try {
-        localStorage.setItem('relations_track_filters', JSON.stringify(trackFilters))
+        localStorage.setItem(trackFiltersKey, JSON.stringify(trackFilters))
     } catch {}
-  }, [trackFilters])
+  }, [trackFilters, trackFiltersKey])
 
   const [showFilterPanel, setShowFilterPanel] = useState(false)
+
+  // ── Linked articles (many-to-many web↔article) ──────────────────────────────
+  const [linkedArticles, setLinkedArticles] = useState<{ id: number; title: string; article_type: string; is_primary: number }[]>([])
+  const [showArticleRail, setShowArticleRail] = useState(false)
+
+  const reloadLinkedArticles = useCallback(async () => {
+    const arts = await (window as any).api.getRelationWebArticles(web.id)
+    setLinkedArticles(arts || [])
+  }, [web.id])
+
+  // Load on web change; auto-open the rail when the web already has links.
+  useEffect(() => {
+    ;(async () => {
+      const arts = await (window as any).api.getRelationWebArticles(web.id)
+      setLinkedArticles(arts || [])
+      setShowArticleRail((arts || []).length > 0)
+    })()
+  }, [web.id])
+
+  // ── Ranks (hierarchy webs) ──────────────────────────────────────────────────
+  const [ranks, setRanks] = useState<Rank[]>(() => {
+    try { return JSON.parse(web.ranks || '[]') } catch { return [] }
+  })
+  const ranksById = useMemo(() => Object.fromEntries(ranks.map(r => [r.id, r])) as Record<string, Rank>, [ranks])
+  const [showRankPanel, setShowRankPanel] = useState(false)
+
+  const saveRanks = useCallback(async (next: Rank[]) => {
+    setRanks(next)
+    try { await (window as any).api.updateRelationWeb(web.id, { ranks: JSON.stringify(next) }) } catch {}
+  }, [web.id])
 
   // Derive which article types are actually present in this web
   const articleTypesInWeb = Array.from(
@@ -1100,28 +1727,80 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
     const data = await (window as any).api.getRelationWebData(web.id)
     setDbNodes(data.nodes)
     setDbEdges(data.edges)
-    setNodes(data.nodes.map((n: DBRelationNode) => dbNodeToRF(n, handleCreateArticleRef.current, trackFilters)))
+    setNodes(data.nodes.map((n: DBRelationNode) => dbNodeToRF(n, handleCreateArticleRef.current, trackFilters, ranksById)))
     setEdges(data.edges.map((e: DBRelationEdge) => dbEdgeToRF(e)))
-  }, [web.id, trackFilters])
+  }, [web.id, trackFilters, ranksById])
 
   useEffect(() => { loadWebDataRef.current = loadWebData }, [loadWebData])
   useEffect(() => { loadWebData() }, [web.id])
 
-  // Re-render nodes when trackFilters change (without reloading from DB)
+  // Deep-link: once nodes are loaded, select + center the node linked to the
+  // focus article (set when opening the web from an article's sidebar).
+  const focusOnArticleNode = useCallback(() => {
+    if (!focusArticleId || didFocusRef.current) return
+    const target = dbNodes.find(n => n.article_id === focusArticleId)
+    if (!target || !rfRef.current) return
+    didFocusRef.current = true
+    setSelectedNodeId(String(target.id))
+    // Center on the node's middle (node footprint ≈ 160×60).
+    rfRef.current.setCenter(target.pos_x + 80, target.pos_y + 30, { zoom: 1.2, duration: 600 })
+  }, [focusArticleId, dbNodes])
+
+  useEffect(() => { focusOnArticleNode() }, [focusOnArticleNode])
+
+  // Re-render nodes when track filters or ranks change (without reloading from DB)
   useEffect(() => {
     setNodes(prev => prev.map(n => {
       const dbNode = dbNodes.find(d => String(d.id) === n.id)
       if (!dbNode) return n
-      return dbNodeToRF(dbNode, handleCreateArticleRef.current, trackFilters)
+      return dbNodeToRF(dbNode, handleCreateArticleRef.current, trackFilters, ranksById)
     }))
-  }, [trackFilters])
+  }, [trackFilters, ranksById])
 
   const syncDerivedRelations = useCallback(async () => {
-    if (web.template !== 'family_tree') return
+    // Family trees derive relations; hierarchies derive the leader track. Both
+    // run through the same backend handler (each no-ops for other templates).
+    if (web.template !== 'family_tree' && web.template !== 'org_hierarchy') return
     try { await (window as any).api.syncDerivedRelations(web.id) } catch {}
   }, [web.id, web.template])
 
+  // Tier layout for ranked hierarchy webs: rows by rank order, x ordered within
+  // each row near the (primary) superior. Unranked nodes drop to the bottom row.
+  const handleTierLayout = useCallback(async () => {
+    const ROW_H = 130, COL_W = 200, baseY = 80
+    const persons = dbNodes.filter(n => n.node_type === 'person')
+    const tierOf = (n: DBRelationNode) => {
+      const idx = ranks.findIndex(r => r.id === n.rank_id)
+      return idx === -1 ? ranks.length : idx
+    }
+    const superiorX = (n: DBRelationNode) => {
+      const sup = dbEdges
+        .filter(e => e.edge_type === 'reports_to' && e.from_node_id === n.id)
+        .map(e => dbNodes.find(m => m.id === e.to_node_id))
+        .filter(Boolean) as DBRelationNode[]
+      if (!sup.length) return n.pos_x
+      return sup.reduce((s, m) => s + m.pos_x, 0) / sup.length
+    }
+    const tiers: Record<number, DBRelationNode[]> = {}
+    persons.forEach(n => { const t = tierOf(n); (tiers[t] ||= []).push(n) })
+    const updates: { id: number; pos_x: number; pos_y: number }[] = []
+    Object.keys(tiers).map(Number).sort((a, b) => a - b).forEach((t, rowIdx) => {
+      const row = tiers[t].slice().sort((a, b) => superiorX(a) - superiorX(b))
+      const totalW = (row.length - 1) * COL_W
+      row.forEach((n, i) => {
+        updates.push({
+          id: n.id,
+          pos_x: Math.round((600 + i * COL_W - totalW / 2) / 20) * 20,
+          pos_y: baseY + rowIdx * ROW_H,
+        })
+      })
+    })
+    await Promise.all(updates.map(u => (window as any).api.updateRelationNode(u.id, { pos_x: u.pos_x, pos_y: u.pos_y })))
+    loadWebDataRef.current()
+  }, [dbNodes, dbEdges, ranks])
+
   const handleTidyUp = useCallback(async () => {
+    if (cfg.ranked) return handleTierLayout()
     if (!cfg.dagreDir) return
     try {
       const dagre = (await import('dagre' as any)).default ?? (await import('dagre' as any))
@@ -1143,22 +1822,59 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
       }))
       loadWebDataRef.current()
     } catch (err) { console.error('Tidy up failed:', err) }
-  }, [dbNodes, dbEdges, cfg.dagreDir])
+  }, [dbNodes, dbEdges, cfg.dagreDir, cfg.ranked, handleTierLayout])
 
-  // handleCreateArticle defined after loadWebData so it can call both it and syncDerivedRelations
+  // Inline "+ Create article" opens a modal to pick the article type first.
   const handleCreateArticleRef = useRef<(nodeId: number) => void>(() => {})
-  const handleCreateArticle = useCallback(async (nodeId: number) => {
+  const requestCreateArticle = useCallback((nodeId: number) => {
+    const node = dbNodes.find(n => n.id === nodeId)
+    if (node) { setActionError(null); setCreatingArticleFor(node) }
+  }, [dbNodes])
+  useEffect(() => { handleCreateArticleRef.current = requestCreateArticle }, [requestCreateArticle])
+
+  const doCreateArticle = useCallback(async (nodeId: number, articleType: string) => {
     if (!currentCampaign) return
     const node = dbNodes.find(n => n.id === nodeId)
     if (!node) return
-    const article = await (window as any).api.createArticle({
-      campaign_id: currentCampaign.id, title: node.label, article_type: 'character',
-    })
-    await (window as any).api.updateRelationNode(nodeId, { article_id: article.id })
+    setActionError(null)
+    try {
+      const article = await (window as any).api.createArticle({
+        campaign_id: currentCampaign.id, title: node.label, article_type: articleType,
+      })
+      await (window as any).api.updateRelationNode(nodeId, { article_id: article.id })
+    } catch {
+      // Title likely already exists (articles are unique per campaign) — link the
+      // existing article instead of leaving the node silently unlinked.
+      const matches = await (window as any).api.getArticlesList({
+        campaignId: currentCampaign.id, search: node.label, searchTitle: true, searchTags: false,
+      })
+      const exact = (matches || []).find((a: any) => a.title.toLowerCase() === node.label.trim().toLowerCase())
+      if (exact) {
+        await (window as any).api.updateRelationNode(nodeId, { article_id: exact.id })
+      } else {
+        setCreatingArticleFor(null)
+        setActionError(`Couldn't create an article for "${node.label}". A different article with that name may already exist.`)
+        return
+      }
+    }
+    setCreatingArticleFor(null)
     loadWebDataRef.current()
     syncDerivedRelations()
   }, [currentCampaign, dbNodes, syncDerivedRelations])
-  useEffect(() => { handleCreateArticleRef.current = handleCreateArticle }, [handleCreateArticle])
+
+  // Link / unlink an existing article on a node.
+  const linkArticle = useCallback(async (nodeId: number, articleId: number) => {
+    await (window as any).api.updateRelationNode(nodeId, { article_id: articleId })
+    setLinkingArticleFor(null)
+    loadWebDataRef.current()
+    syncDerivedRelations()
+  }, [syncDerivedRelations])
+
+  const unlinkArticle = useCallback(async (nodeId: number) => {
+    await (window as any).api.updateRelationNode(nodeId, { article_id: null })
+    loadWebDataRef.current()
+    syncDerivedRelations()
+  }, [syncDerivedRelations])
 
   const onNodeDragStop = useCallback(async (_evt: any, node: RFNode) => {
     await (window as any).api.updateRelationNode(Number(node.id), {
@@ -1167,8 +1883,43 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
   }, [])
 
   const onConnect: OnConnect = useCallback((connection: Connection) => {
+    // Ignore self-loops and duplicate connections between the same pair.
+    if (!connection.source || !connection.target || connection.source === connection.target) return
+    const s = Number(connection.source), t = Number(connection.target)
+    const alreadyConnected = dbEdges.some(e =>
+      (e.from_node_id === s && e.to_node_id === t) ||
+      (e.from_node_id === t && e.to_node_id === s)
+    )
+    if (alreadyConnected) return
     const src = dbNodes.find(n => String(n.id) === connection.source)
     const tgt = dbNodes.find(n => String(n.id) === connection.target)
+    // Ranked hierarchy: connecting two people makes a reports_to edge immediately
+    // (no label). Stored subordinate → superior; rank order decides direction,
+    // falling back to the drag direction when ranks are equal/unset.
+    if (cfg.ranked && src?.node_type === 'person' && tgt?.node_type === 'person') {
+      const rankIdx = (n: DBRelationNode) => {
+        const i = ranks.findIndex(r => r.id === n.rank_id)
+        return i === -1 ? Infinity : i
+      }
+      let fromId = s, toId = t
+      if (rankIdx(src) < rankIdx(tgt)) {
+        // src is the higher rank (superior) → flip so the subordinate is `from`
+        fromId = t; toId = s
+      }
+      ;(async () => {
+        // Subordinate sits below its superior, so route the line subordinate-top
+        // → superior-bottom for a clean vertical org-chart connector.
+        const edge = await (window as any).api.createRelationEdge({
+          web_id: web.id, from_node_id: fromId, to_node_id: toId,
+          label_from: '', label_to: '', edge_type: 'reports_to',
+          from_handle: 'top', to_handle: 'bottom',
+        })
+        setDbEdges(prev => [...prev, edge])
+        setEdges(prev => addEdge({ ...dbEdgeToRF(edge) }, prev))
+        syncDerivedRelations()
+      })()
+      return
+    }
     // union → person: create union_to_child edge immediately, no label needed
     if (src?.node_type === 'union' && tgt?.node_type === 'person') {
       ;(async () => {
@@ -1177,6 +1928,7 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
           from_node_id: Number(connection.source),
           to_node_id: Number(connection.target),
           label_from: '', label_to: '', edge_type: 'union_to_child',
+          from_handle: connection.sourceHandle || '', to_handle: connection.targetHandle || '',
         })
         setDbEdges(prev => [...prev, edge])
         setEdges(prev => addEdge({ ...dbEdgeToRF(edge) }, prev))
@@ -1188,7 +1940,7 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
       (src?.node_type === 'person' && tgt?.node_type === 'union') ? 'person_to_union' : 'standard'
     setPendingConnectionMode(mode)
     setPendingConnection(connection)
-  }, [dbNodes, web.id, syncDerivedRelations])
+  }, [dbNodes, dbEdges, web.id, syncDerivedRelations, cfg.ranked, ranks])
 
   const handleEdgeLabelConfirm = async (labelFrom: string, labelTo: string) => {
     if (!pendingConnection) return
@@ -1198,6 +1950,7 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
       to_node_id: Number(pendingConnection.target),
       label_from: labelFrom, label_to: labelTo,
       edge_type: pendingConnectionMode,
+      from_handle: pendingConnection.sourceHandle || '', to_handle: pendingConnection.targetHandle || '',
     })
     setDbEdges(prev => [...prev, edge])
     setEdges(prev => addEdge({ ...dbEdgeToRF(edge) }, prev))
@@ -1225,12 +1978,55 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
     syncDerivedRelations()
   }, [syncDerivedRelations])
 
-  const handleNodeAdded = (node: DBRelationNode) => {
-    setDbNodes(prev => [...prev, node])
-    setNodes(prev => [...prev, dbNodeToRF(node, handleCreateArticle, trackFilters)])
+  const handleNodeAdded = (newNodes: DBRelationNode[]) => {
+    setDbNodes(prev => [...prev, ...newNodes])
+    setNodes(prev => [...prev, ...newNodes.map(n => dbNodeToRF(n, requestCreateArticle, trackFilters, ranksById))])
     setShowAddNode(false)
     syncDerivedRelations()
   }
+
+  // Spawn a bare union node — connect partners and children to it manually.
+  const addUnionNode = useCallback(async () => {
+    const { x, y } = findFreePosition(dbNodes)
+    const node = await (window as any).api.createRelationNode({
+      web_id: web.id, label: '∪', node_type: 'union', pos_x: x, pos_y: y,
+    })
+    setDbNodes(prev => [...prev, node])
+    setNodes(prev => [...prev, dbNodeToRF(node, requestCreateArticle, trackFilters, ranksById)])
+  }, [dbNodes, web.id, trackFilters, requestCreateArticle])
+
+  // Export the canvas as a PNG or SVG image of the whole graph.
+  const exportImage = useCallback(async (format: 'png' | 'svg') => {
+    const viewport = document.querySelector('.react-flow__viewport') as HTMLElement | null
+    if (!viewport || nodes.length === 0) return
+    const bounds = getRectOfNodes(nodes)
+    const imageWidth = Math.max(Math.round(bounds.width) + 160, 400)
+    const imageHeight = Math.max(Math.round(bounds.height) + 160, 300)
+    const [tx, ty, tScale] = getTransformForBounds(bounds, imageWidth, imageHeight, 0.5, 2)
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-base').trim() || '#0d0b09'
+    const opts: any = {
+      backgroundColor: bg,
+      width: imageWidth,
+      height: imageHeight,
+      style: {
+        width: `${imageWidth}px`,
+        height: `${imageHeight}px`,
+        transform: `translate(${tx}px, ${ty}px) scale(${tScale})`,
+      },
+    }
+    try {
+      const dataUrl = format === 'png'
+        ? await toPng(viewport, { ...opts, pixelRatio: 2 })
+        : await toSvg(viewport, opts)
+      const a = document.createElement('a')
+      a.download = `${(webName || 'relations').replace(/[^a-z0-9-_]+/gi, '_')}.${format}`
+      a.href = dataUrl
+      a.click()
+    } catch (err) {
+      console.error('Export failed:', err)
+      setActionError('Export failed — see console for details.')
+    }
+  }, [nodes, webName])
 
   const saveWebName = async () => {
     if (!webName.trim()) { setWebName(web.name); setEditingName(false); return }
@@ -1277,7 +2073,17 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Del to remove selected</span>
-          {cfg.dagreDir && (
+          {cfg.ranked && (
+            <button
+              onClick={() => setShowRankPanel(v => !v)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: showRankPanel ? 'var(--bg-elevated)' : 'transparent', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', transition: 'background var(--transition)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = showRankPanel ? 'var(--bg-elevated)' : 'transparent'}
+            >
+              <Layers size={13} /> Ranks
+            </button>
+          )}
+          {(cfg.dagreDir || cfg.ranked) && (
             <button onClick={handleTidyUp}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', transition: 'background var(--transition)' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
@@ -1287,7 +2093,7 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
             </button>
           )}
           {cfg.unionNodes && (
-            <button onClick={() => setShowAddUnion(true)}
+            <button onClick={addUnionNode}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: 'transparent', border: '1px solid #AFA9EC', borderRadius: 'var(--radius-sm)', color: '#7F77DD', transition: 'background var(--transition)' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#EEEDFE'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
@@ -1295,6 +2101,25 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
               <GitMerge size={13} /> Add union
             </button>
           )}
+          {/* Linked articles rail toggle */}
+          <button
+            onClick={() => setShowArticleRail(v => !v)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '5px 10px', fontSize: 12, cursor: 'pointer',
+              background: showArticleRail ? 'var(--bg-elevated)' : 'transparent',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
+              transition: 'background var(--transition)',
+            }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = showArticleRail ? 'var(--bg-elevated)' : 'transparent'}
+          >
+            <Link2 size={13} /> Articles
+            {linkedArticles.length > 0 && (
+              <span style={{ fontSize: 10, background: '#7F77DD22', color: '#7F77DD', borderRadius: 99, padding: '1px 6px' }}>{linkedArticles.length}</span>
+            )}
+          </button>
           {/* Filter button */}
           <button
             onClick={() => setShowFilterPanel(v => !v)}
@@ -1315,6 +2140,7 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7F77DD', flexShrink: 0 }} />
             )}
           </button>
+          <ExportMenu onExport={exportImage} />
           <button className="btn btn-primary" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => setShowAddNode(true)}>
             <Plus size={13} /> Add node
           </button>
@@ -1329,13 +2155,34 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
             articleTypesInWeb={articleTypesInWeb}
           />
         )}
+
+        {/* Rank panel */}
+        {showRankPanel && (
+          <RankPanel ranks={ranks} onChange={saveRanks} onClose={() => setShowRankPanel(false)} />
+        )}
       </div>
+
+      {actionError && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 20px', background: 'rgba(224,85,85,0.1)', borderBottom: '1px solid rgba(224,85,85,0.3)', color: '#e05555', fontSize: 12, flexShrink: 0 }}>
+          <span style={{ flex: 1 }}>{actionError}</span>
+          <button onClick={() => setActionError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e05555', display: 'flex', padding: 2 }}><X size={13} /></button>
+        </div>
+      )}
 
       {/* Canvas + Detail panel */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {showArticleRail && (
+          <LinkedArticlesRail
+            webId={web.id}
+            articles={linkedArticles}
+            onReload={reloadLinkedArticles}
+            onClose={() => setShowArticleRail(false)}
+          />
+        )}
         <div style={{ flex: 1 }}>
           <ReactFlow
             nodes={nodes} edges={edges}
+            onInit={(inst: any) => { rfRef.current = inst; focusOnArticleNode() }}
             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodesDelete={onNodesDelete} onEdgesDelete={onEdgesDelete}
@@ -1347,6 +2194,7 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
             }}
             onPaneClick={() => setSelectedNodeId(null)}
             nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
+            connectionMode={ConnectionMode.Loose}
             snapToGrid snapGrid={[20, 20]}
             fitView fitViewOptions={{ padding: 0.3 }}
             deleteKeyCode={['Delete', 'Backspace']}
@@ -1360,36 +2208,102 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
         {selectedNode && (
           <div style={{ width: 240, borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, background: 'var(--bg-surface)', overflow: 'auto' }}>
             <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
-                <div style={{
-                  width: 8, height: 8, borderRadius: '50%',
-                  background: selectedNode.article_id && selectedNode.vitality ? vitalityColor(selectedNode.vitality) : 'transparent',
-                  border: selectedNode.article_id && selectedNode.vitality ? 'none' : '1.5px dashed var(--border-light)',
-                  flexShrink: 0,
-                }} />
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {selectedNode.article_title || selectedNode.label}
-                </span>
-              </div>
-              {selectedNode.article_id ? (
-                <button onClick={() => navigateToArticleByTitle(selectedNode.article_title || selectedNode.label)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: '#5b9fe8', fontSize: 11, padding: 0 }}>
-                  <ExternalLink size={11} /> Open article
-                </button>
+              {selectedNode.node_type === 'union' ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+                    <Users size={13} color="#7F77DD" />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Union</span>
+                  </div>
+                  <button onClick={() => setEditingUnion(selectedNode)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: '#7F77DD', fontSize: 11, padding: 0 }}>
+                    <Pencil size={11} /> Edit union
+                  </button>
+                </>
               ) : (
-                <span style={{ fontSize: 11, color: '#7F77DD', cursor: 'pointer' }}
-                  onClick={() => handleCreateArticle(selectedNode.id)}>
-                  + Create article
-                </span>
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {selectedNode.article_title || selectedNode.label}
+                    </span>
+                  </div>
+                  {selectedNode.article_id ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <button onClick={() => navigateToArticleByTitle(selectedNode.article_title || selectedNode.label)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: '#5b9fe8', fontSize: 11, padding: 0 }}>
+                        <ExternalLink size={11} /> Open article
+                      </button>
+                      <button onClick={() => unlinkArticle(selectedNode.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 11, padding: 0 }}>
+                        <Unlink size={11} /> Unlink
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <button onClick={() => requestCreateArticle(selectedNode.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: '#7F77DD', fontSize: 11, padding: 0 }}>
+                        <Plus size={11} /> Create article
+                      </button>
+                      <button onClick={() => setLinkingArticleFor(selectedNode)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: '#5b9fe8', fontSize: 11, padding: 0 }}>
+                        <Link2 size={11} /> Link existing
+                      </button>
+                    </div>
+                  )}
+                  {cfg.ranked && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Rank</div>
+                      <select
+                        className="input"
+                        value={selectedNode.rank_id || ''}
+                        style={{ fontSize: 12, padding: '5px 8px' }}
+                        onChange={async e => {
+                          await (window as any).api.updateRelationNode(selectedNode.id, { rank_id: e.target.value })
+                          loadWebDataRef.current()
+                          syncDerivedRelations()
+                        }}
+                      >
+                        <option value="">— Unranked —</option>
+                        {ranks.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
             {selectedNodeEdges.length > 0 && (
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                  {web.template === 'family_tree' ? 'Family relations' : 'Edges'}
+                  {selectedNode.node_type === 'union' ? 'Union members' : web.template === 'family_tree' ? 'Family relations' : cfg.ranked ? 'Reporting' : 'Edges'}
                 </div>
-                {web.template === 'family_tree' && selectedNodeId ? (() => {
+                {selectedNode.node_type === 'union' ? (() => {
+                  const uid = Number(selectedNodeId)
+                  const members = dbEdges.filter(e => e.edge_type === 'person_to_union' && e.to_node_id === uid)
+                    .map(e => ({ node: dbNodes.find(n => n.id === e.from_node_id), role: e.label_from }))
+                  const uchildren = dbEdges.filter(e => e.edge_type === 'union_to_child' && e.from_node_id === uid)
+                    .map(e => dbNodes.find(n => n.id === e.to_node_id))
+                  const Row = ({ name, role }: { name: string; role?: string }) => (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '2px 0', fontSize: 12 }}>
+                      <span style={{ flex: 1, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                      {role && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{role}</span>}
+                    </div>
+                  )
+                  return (
+                    <div>
+                      {members.map((m, i) => <Row key={`m${i}`} name={m.node?.article_title || m.node?.label || '?'} role={m.role} />)}
+                      {uchildren.length > 0 && (
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Children</div>
+                          {uchildren.map((c, i) => <Row key={`c${i}`} name={c?.article_title || c?.label || '?'} />)}
+                        </div>
+                      )}
+                      <button onClick={() => setEditingUnion(selectedNode)}
+                        style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 11, padding: '4px 8px' }}>
+                        <Pencil size={11} /> Edit union
+                      </button>
+                    </div>
+                  )
+                })() : web.template === 'family_tree' && selectedNodeId ? (() => {
                   const nid = Number(selectedNodeId)
                   const partners: any[] = [], children: any[] = [], parents: any[] = [], siblings: any[] = []
                   const sibIds = new Set<number>()
@@ -1397,7 +2311,8 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
                   dbEdges.filter(e => e.edge_type === 'person_to_union' && e.from_node_id === nid).forEach(ue => {
                     dbEdges.filter(e => e.edge_type === 'person_to_union' && e.to_node_id === ue.to_node_id && e.from_node_id !== nid).forEach(e => {
                       const p = dbNodes.find(n => n.id === e.from_node_id)
-                      if (p) partners.push({ name: p.article_title || p.label, role: ue.label_from, vitality: p.vitality })
+                      // Partner's own role in the union (from this person's perspective).
+                      if (p) partners.push({ name: p.article_title || p.label, role: (e.label_from || '').replace(/ of$/i, '').trim() || 'partner', vitality: p.vitality })
                     })
                     dbEdges.filter(e => e.edge_type === 'union_to_child' && e.from_node_id === ue.to_node_id).forEach(e => {
                       const c = dbNodes.find(n => n.id === e.to_node_id)
@@ -1407,7 +2322,8 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
                   dbEdges.filter(e => e.edge_type === 'union_to_child' && e.to_node_id === nid).forEach(pe => {
                     dbEdges.filter(e => e.edge_type === 'person_to_union' && e.to_node_id === pe.from_node_id).forEach(e => {
                       const p = dbNodes.find(n => n.id === e.from_node_id)
-                      if (p) parents.push({ name: p.article_title || p.label, role: (e.label_from || '').replace(/ of$/i, '') || 'parent', vitality: p.vitality })
+                      // From the child's perspective: "mother"/"father", not the union role.
+                      if (p) parents.push({ name: p.article_title || p.label, role: parentRoleFromUnionLabel(e.label_from), vitality: p.vitality })
                     })
                     dbEdges.filter(e => e.edge_type === 'union_to_child' && e.from_node_id === pe.from_node_id && e.to_node_id !== nid).forEach(e => {
                       if (!sibIds.has(e.to_node_id)) { sibIds.add(e.to_node_id); const s = dbNodes.find(n => n.id === e.to_node_id); if (s) siblings.push({ name: s.article_title || s.label, vitality: s.vitality }) }
@@ -1419,21 +2335,92 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
                       <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{label}</div>
                       {items.map((item, i) => (
                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '2px 0', fontSize: 12 }}>
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: vitalityColor(item.vitality), flexShrink: 0 }} />
                           <span style={{ flex: 1, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
                           {item.role && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{item.role}</span>}
                         </div>
                       ))}
                     </div>
                   )
+                  // Typed standard edges drawn inside the family tree (e.g.
+                  // "Family Friend", "Disowned") aren't part of the union graph,
+                  // so surface them here alongside the derived family relations.
+                  const standardEdges = selectedNodeEdges.filter(e => e.edge_type === 'standard' || !e.edge_type)
                   return (
                     <div>
                       <Sec label="Partners" items={partners} />
                       <Sec label="Children" items={children} />
                       <Sec label="Parents" items={parents} />
                       <Sec label="Siblings" items={siblings} />
-                      {partners.length + children.length + parents.length + siblings.length === 0 && (
+                      {standardEdges.length > 0 && (
+                        <div style={{ marginBottom: 6 }}>
+                          <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Other relationships</div>
+                          {standardEdges.map(edge => {
+                            const isFrom = String(edge.from_node_id) === selectedNodeId
+                            const otherId = isFrom ? edge.to_node_id : edge.from_node_id
+                            const other = dbNodes.find(n => n.id === otherId)
+                            const directed = edge.label_from !== edge.label_to
+                            return (
+                              <div key={edge.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0', fontSize: 12 }}>
+                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>{other?.article_title || other?.label || '?'}</span>
+                                <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{isFrom ? edge.label_from : edge.label_to}{directed ? ' →' : ''}</span>
+                                <button onClick={() => setEditingEdge(edge)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 1 }}>
+                                  <Pencil size={10} />
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                      {partners.length + children.length + parents.length + siblings.length + standardEdges.length === 0 && (
                         <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No family relations yet.</div>
+                      )}
+                    </div>
+                  )
+                })() : cfg.ranked && selectedNodeId ? (() => {
+                  const nid = Number(selectedNodeId)
+                  const superiors = dbEdges.filter(e => e.edge_type === 'reports_to' && e.from_node_id === nid)
+                    .map(e => dbNodes.find(n => n.id === e.to_node_id)).filter(Boolean) as DBRelationNode[]
+                  const reports = dbEdges.filter(e => e.edge_type === 'reports_to' && e.to_node_id === nid)
+                    .map(e => dbNodes.find(n => n.id === e.from_node_id)).filter(Boolean) as DBRelationNode[]
+                  const Sec = ({ label, items }: { label: string; items: DBRelationNode[] }) => items.length === 0 ? null : (
+                    <div style={{ marginBottom: 6 }}>
+                      <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{label}</div>
+                      {items.map(n => (
+                        <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '2px 0', fontSize: 12 }}>
+                          <span style={{ flex: 1, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.article_title || n.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                  // Typed standard edges drawn in the hierarchy (e.g. "Rival",
+                  // "Mentor") aren't reporting lines, so surface them separately.
+                  const standardEdges = selectedNodeEdges.filter(e => e.edge_type === 'standard' || !e.edge_type)
+                  return (
+                    <div>
+                      <Sec label="Reports to" items={superiors} />
+                      <Sec label="Oversees" items={reports} />
+                      {standardEdges.length > 0 && (
+                        <div style={{ marginBottom: 6 }}>
+                          <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Other relationships</div>
+                          {standardEdges.map(edge => {
+                            const isFrom = String(edge.from_node_id) === selectedNodeId
+                            const otherId = isFrom ? edge.to_node_id : edge.from_node_id
+                            const other = dbNodes.find(n => n.id === otherId)
+                            const directed = edge.label_from !== edge.label_to
+                            return (
+                              <div key={edge.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0', fontSize: 12 }}>
+                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>{other?.article_title || other?.label || '?'}</span>
+                                <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{isFrom ? edge.label_from : edge.label_to}{directed ? ' →' : ''}</span>
+                                <button onClick={() => setEditingEdge(edge)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 1 }}>
+                                  <Pencil size={10} />
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                      {superiors.length + reports.length + standardEdges.length === 0 && (
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No reporting lines yet. Drag from this node to a superior.</div>
                       )}
                     </div>
                   )
@@ -1447,7 +2434,6 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
                       return (
                         <div key={edge.id}
                           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: 12 }}>
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: vitalityColor(other?.vitality), flexShrink: 0 }} />
                           <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
                             {other?.article_title || other?.label || '?'}
                           </span>
@@ -1475,16 +2461,7 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
         )}
       </div>
 
-      {showAddNode && <AddNodeModal webId={web.id} onClose={() => setShowAddNode(false)} onAdded={handleNodeAdded} />}
-      {showAddUnion && (
-        <AddUnionModal
-          webId={web.id}
-          personNodes={dbNodes.filter(n => n.node_type === 'person')}
-          suggestions={cfg.defaultEdgeLabels}
-          onClose={() => setShowAddUnion(false)}
-          onCreated={async () => { setShowAddUnion(false); await loadWebData(); syncDerivedRelations() }}
-        />
-      )}
+      {showAddNode && <AddNodeModal webId={web.id} existingNodes={dbNodes} onClose={() => setShowAddNode(false)} onAdded={handleNodeAdded} />}
       {pendingConnection && (
         <EdgeLabelModal
           mode={pendingConnectionMode}
@@ -1504,6 +2481,37 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
           }}
         />
       )}
+      {creatingArticleFor && (
+        <CreateArticleModal
+          node={creatingArticleFor}
+          onClose={() => setCreatingArticleFor(null)}
+          onCreate={(type) => doCreateArticle(creatingArticleFor.id, type)}
+        />
+      )}
+      {linkingArticleFor && currentCampaign && (
+        <LinkArticleModal
+          node={linkingArticleFor}
+          campaignId={currentCampaign.id}
+          onClose={() => setLinkingArticleFor(null)}
+          onLink={(articleId) => linkArticle(linkingArticleFor.id, articleId)}
+        />
+      )}
+      {editingUnion && (
+        <EditUnionModal
+          unionId={editingUnion.id}
+          dbNodes={dbNodes}
+          dbEdges={dbEdges}
+          onClose={() => setEditingUnion(null)}
+          onSaved={async () => { setEditingUnion(null); await loadWebData(); syncDerivedRelations() }}
+          onDissolve={async () => {
+            await (window as any).api.deleteRelationNode(editingUnion.id)
+            setEditingUnion(null)
+            setSelectedNodeId(null)
+            await loadWebData()
+            syncDerivedRelations()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -1511,9 +2519,11 @@ function RelationsCanvasView({ web, onBack }: { web: RelationWeb; onBack: () => 
 // ── Page Root ──────────────────────────────────────────────────────────────────
 
 export default function RelationsPage() {
-  const { relationsOpenWebId, setRelationsOpenWebId } = useStore()
+  const { relationsOpenWebId, setRelationsOpenWebId, relationsFocusArticleId, setRelationsFocusArticleId } = useStore()
   const [openWeb, setOpenWeb] = useState<RelationWeb | null>(null)
   const [loading, setLoading] = useState(false)
+  // Deep-link focus: select + center the node linked to this article on open.
+  const [focusArticleId, setFocusArticleId] = useState<number | null>(null)
 
   // On mount: if the store has a pending web id, fetch and open it
   useEffect(() => {
@@ -1525,7 +2535,10 @@ export default function RelationsPage() {
           // The web data will be fetched inside RelationsCanvasView via getRelationWebData
           // We just need the web metadata (name etc) — synthesise a minimal object
           const id = relationsOpenWebId
+          const focus = relationsFocusArticleId
           setRelationsOpenWebId(null) // clear so back-nav works normally
+          setRelationsFocusArticleId(null)
+          setFocusArticleId(focus)
           // Fetch the web from list to get its name
           const { currentCampaign } = useStore.getState()
           if (!currentCampaign) { setLoading(false); return }
@@ -1544,8 +2557,8 @@ export default function RelationsPage() {
   )
 
   if (openWeb) {
-    return <RelationsCanvasView web={openWeb} onBack={() => setOpenWeb(null)} />
+    return <RelationsCanvasView key={openWeb.id} web={openWeb} focusArticleId={focusArticleId} onBack={() => { setOpenWeb(null); setFocusArticleId(null) }} />
   }
 
-  return <RelationsHubView onOpenWeb={setOpenWeb} />
+  return <RelationsHubView onOpenWeb={web => { setFocusArticleId(null); setOpenWeb(web) }} />
 }

@@ -1,12 +1,33 @@
 // path: src/pages/DMNotesPage.tsx
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { useMenuClose } from '../hooks/useMenuClose'
 import Modal from '../components/Modal'
 import { useStore } from '../store/store'
 import {
   Sparkles, Plus, Trash2, MoreHorizontal, FileText, Check,
-  ArrowLeft, FolderPlus, ChevronDown, ChevronUp, Pencil, ArrowUpCircle, ArrowDownCircle,
+  ArrowLeft, FolderPlus, ChevronDown, ChevronUp, Pencil, ArrowUpCircle, ArrowDownCircle, GripVertical,
 } from 'lucide-react'
+
+// ── Drag-and-drop plumbing (pages + groups in the notes sidebar) ────────────────
+type NotesDropHint =
+  | { kind: 'page'; container: number | null; index: number }
+  | { kind: 'group'; index: number }
+
+interface NotesDnd {
+  dragItem: { kind: 'page' | 'group'; id: number } | null
+  dropHint: NotesDropHint | null
+  startPageDrag: (id: number) => void
+  startGroupDrag: (id: number) => void
+  endDrag: () => void
+  onPageRowDragOver: (container: number | null, index: number, e: React.DragEvent) => void
+  onContainerDragOver: (container: number | null, count: number, e: React.DragEvent) => void
+  onGroupHeaderDragOver: (groupIndex: number, container: number, e: React.DragEvent) => void
+  commitDrop: () => void
+}
+
+const DropLine = () => (
+  <div style={{ height: 2, background: '#9b7de8', borderRadius: 2, margin: '2px 6px' }} />
+)
 import RichEditor from '../components/RichEditor'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
@@ -171,7 +192,7 @@ function PageMenu({ page, groups, isFirst, isLast, onDelete, onMoveUp, onMoveDow
           <div style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />
           <button
             onClick={() => trigger(() => { onDelete(); setOpen(false) })}
-            className="menu-item menu-item-sm menu-item-danger" style={confirming ? { color: '#ff7777' } : undefined}
+            className="menu-item menu-item-sm menu-item-danger" style={confirming ? { color: 'var(--danger-hover)' } : undefined}
           >
             <Trash2 size={12} /> {confirming ? 'Confirm delete' : 'Delete'}
           </button>
@@ -229,7 +250,7 @@ function GroupMenu({ group, isFirst, isLast, onMoveUp, onMoveDown, onRename, onD
           <div style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />
           <button
             onClick={() => trigger(() => { onDelete(); setOpen(false) })}
-            className="menu-item menu-item-sm menu-item-danger" style={confirming ? { color: '#ff7777' } : undefined}
+            className="menu-item menu-item-sm menu-item-danger" style={confirming ? { color: 'var(--danger-hover)' } : undefined}
           >
             <Trash2 size={12} /> {confirming ? 'Confirm delete' : 'Delete'}
           </button>
@@ -241,21 +262,38 @@ function GroupMenu({ group, isFirst, isLast, onMoveUp, onMoveDown, onRename, onD
 
 // ── Page Item ──────────────────────────────────────────────────────────────────
 
-function PageItem({ page, isActive, groups, isFirst, isLast, onClick, onDelete, onMoveUp, onMoveDown, onMoveToGroup }: {
+function PageItem({ page, isActive, groups, isFirst, isLast, dnd, index, container, onClick, onDelete, onMoveUp, onMoveDown, onMoveToGroup }: {
   page: DMNotePageSummary
   isActive: boolean
   groups: DMNoteGroup[]
   isFirst: boolean
   isLast: boolean
+  dnd: NotesDnd
+  index: number
+  container: number | null
   onClick: () => void
   onDelete: () => void
   onMoveUp: () => void
   onMoveDown: () => void
   onMoveToGroup: (groupId: number | null) => void
 }) {
+  const isDragging = dnd.dragItem?.kind === 'page' && dnd.dragItem.id === page.id
   return (
     <div
       onClick={onClick}
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', String(page.id))
+        // Defer the state update one frame: mounting the "drop to ungroup" zone
+        // synchronously here would mutate the DOM mid-dragstart and Chromium would
+        // abort the drag (only reproducible when every page lives in a folder).
+        const id = page.id
+        requestAnimationFrame(() => dnd.startPageDrag(id))
+      }}
+      onDragEnd={() => dnd.endDrag()}
+      onDragOver={e => dnd.onPageRowDragOver(container, index, e)}
+      onDrop={e => { e.preventDefault(); dnd.commitDrop() }}
       style={{
         display: 'flex', alignItems: 'center', gap: 6,
         padding: '6px 8px',
@@ -263,7 +301,8 @@ function PageItem({ page, isActive, groups, isFirst, isLast, onClick, onDelete, 
         cursor: isActive ? 'default' : 'pointer',
         background: isActive ? 'var(--bg-active)' : 'transparent',
         border: `1px solid ${isActive ? '#9b7de840' : 'transparent'}`,
-        transition: 'all 120ms ease',
+        transition: 'background 120ms ease',
+        opacity: isDragging ? 0.4 : 1,
       }}
       onMouseEnter={e => {
         if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
@@ -300,12 +339,15 @@ function PageItem({ page, isActive, groups, isFirst, isLast, onClick, onDelete, 
 
 // ── Group Section ──────────────────────────────────────────────────────────────
 
-function GroupSection({ group, pages, groups, isFirst, isLast, activePage, editingGroupId, onOpenPage, onCreatePage, onDeletePage, onMovePageUp, onMovePageDown, onMovePageToGroup, onMoveGroupUp, onMoveGroupDown, onDeleteGroup, onStartRename, onFinishRename }: {
+function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, dropHint, activePage, editingGroupId, onOpenPage, onCreatePage, onDeletePage, onMovePageUp, onMovePageDown, onMovePageToGroup, onMoveGroupUp, onMoveGroupDown, onDeleteGroup, onStartRename, onFinishRename }: {
   group: DMNoteGroup
   pages: DMNotePageSummary[]
   groups: DMNoteGroup[]
   isFirst: boolean
   isLast: boolean
+  groupIndex: number
+  dnd: NotesDnd
+  dropHint: NotesDropHint | null
   activePage: DMNotePageFull | null
   editingGroupId: number | null
   onOpenPage: (id: number) => void
@@ -325,6 +367,9 @@ function GroupSection({ group, pages, groups, isFirst, isLast, activePage, editi
   const renameRef = useRef<HTMLInputElement>(null)
 
   const isRenaming = editingGroupId === group.id
+  const isGroupDragging = dnd.dragItem?.kind === 'group' && dnd.dragItem.id === group.id
+  // Highlight the header when a page is being dragged onto this group.
+  const pageDropTarget = dnd.dragItem?.kind === 'page' && dropHint?.kind === 'page' && dropHint.container === group.id
 
   useEffect(() => {
     if (isRenaming) {
@@ -338,9 +383,23 @@ function GroupSection({ group, pages, groups, isFirst, isLast, activePage, editi
   }
 
   return (
-    <div style={{ marginBottom: 4 }}>
-      {/* Group header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 4px 3px' }}>
+    <div style={{ marginBottom: 4, opacity: isGroupDragging ? 0.4 : 1 }}>
+      {/* Group header — drag handle (group reorder) + drop target (page into group) */}
+      <div
+        style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 4px 3px', borderRadius: 'var(--radius-sm)', background: pageDropTarget ? `${group.color}22` : 'transparent' }}
+        onDragOver={e => dnd.onGroupHeaderDragOver(groupIndex, group.id, e)}
+        onDrop={e => { e.preventDefault(); dnd.commitDrop() }}
+      >
+        <span
+          draggable={!isRenaming}
+          onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; dnd.startGroupDrag(group.id) }}
+          onDragEnd={() => dnd.endDrag()}
+          title="Drag to reorder group"
+          style={{ display: 'flex', alignItems: 'center', cursor: 'grab', color: 'var(--text-muted)', flexShrink: 0 }}
+          onClick={e => e.stopPropagation()}
+        >
+          <GripVertical size={12} />
+        </span>
         <button
           onClick={() => setCollapsed(v => !v)}
           style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', flex: 1, textAlign: 'left', padding: 0, minWidth: 0 }}
@@ -382,27 +441,37 @@ function GroupSection({ group, pages, groups, isFirst, isLast, activePage, editi
 
       {/* Group pages */}
       {!collapsed && (
-        <div style={{ paddingLeft: 12, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <div
+          style={{ paddingLeft: 12, display: 'flex', flexDirection: 'column', gap: 1 }}
+          onDragOver={e => dnd.onContainerDragOver(group.id, pages.length, e)}
+          onDrop={e => { e.preventDefault(); dnd.commitDrop() }}
+        >
           {pages.length === 0 && (
             <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 8px', fontStyle: 'italic' }}>
               Empty group
             </div>
           )}
           {pages.map((p, idx) => (
-            <PageItem
-              key={p.id}
-              page={p}
-              isActive={activePage?.id === p.id}
-              groups={groups}
-              isFirst={idx === 0}
-              isLast={idx === pages.length - 1}
-              onClick={() => activePage?.id !== p.id && onOpenPage(p.id)}
-              onDelete={() => onDeletePage(p)}
-              onMoveUp={() => onMovePageUp(p)}
-              onMoveDown={() => onMovePageDown(p)}
-              onMoveToGroup={groupId => onMovePageToGroup(p, groupId)}
-            />
+            <Fragment key={p.id}>
+              {dropHint?.kind === 'page' && dropHint.container === group.id && dropHint.index === idx && <DropLine />}
+              <PageItem
+                page={p}
+                isActive={activePage?.id === p.id}
+                groups={groups}
+                isFirst={idx === 0}
+                isLast={idx === pages.length - 1}
+                dnd={dnd}
+                index={idx}
+                container={group.id}
+                onClick={() => activePage?.id !== p.id && onOpenPage(p.id)}
+                onDelete={() => onDeletePage(p)}
+                onMoveUp={() => onMovePageUp(p)}
+                onMoveDown={() => onMovePageDown(p)}
+                onMoveToGroup={groupId => onMovePageToGroup(p, groupId)}
+              />
+            </Fragment>
           ))}
+          {dropHint?.kind === 'page' && dropHint.container === group.id && dropHint.index === pages.length && <DropLine />}
           <button
             onClick={() => onCreatePage(group.id)}
             style={{
@@ -687,6 +756,88 @@ export default function DMNotesPage() {
 
   const sortedGroups = [...groups].sort((a, b) => a.sort_order - b.sort_order)
 
+  // ── Drag-and-drop reordering ──────────────────────────────────────────────────
+  const [dragItem, setDragItem] = useState<{ kind: 'page' | 'group'; id: number } | null>(null)
+  const [dropHint, setDropHint] = useState<NotesDropHint | null>(null)
+
+  // Move a page into a container (group id, or null for ungrouped) at a position,
+  // renumbering that container 0..n. Handles both within- and cross-group moves.
+  const movePageTo = (pageId: number, targetGroupId: number | null, targetIndex: number) => {
+    // Target index is expressed against the rendered list, which for a same-group
+    // move still includes the dragged page — so translate it into the index of the
+    // list with the dragged page removed (shift down by one if it sat earlier).
+    const containerAll = pages
+      .filter(p => p.group_id === targetGroupId)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map(p => p.id)
+    const fromIdx = containerAll.indexOf(pageId)
+    const ids = containerAll.filter(id => id !== pageId)
+    let at = targetIndex
+    if (fromIdx >= 0 && fromIdx < at) at -= 1
+    at = Math.max(0, Math.min(at, ids.length))
+    ids.splice(at, 0, pageId)
+    const orders = ids.map((id, i) => ({ id, sort_order: i, group_id: targetGroupId }))
+    setPages(ps => ps.map(p => {
+      const o = orders.find(x => x.id === p.id)
+      return o ? { ...p, sort_order: o.sort_order, group_id: targetGroupId } : p
+    }))
+    window.api.reorderDMNotePages(orders)
+  }
+
+  const moveGroupTo = (groupId: number, targetIndex: number) => {
+    const all = sortedGroups.map(g => g.id)
+    const fromIdx = all.indexOf(groupId)
+    const ids = all.filter(id => id !== groupId)
+    let at = targetIndex
+    if (fromIdx >= 0 && fromIdx < at) at -= 1
+    at = Math.max(0, Math.min(at, ids.length))
+    ids.splice(at, 0, groupId)
+    const orders = ids.map((id, i) => ({ id, sort_order: i }))
+    setGroups(gs => gs.map(g => {
+      const o = orders.find(x => x.id === g.id)
+      return o ? { ...g, sort_order: o.sort_order } : g
+    }))
+    window.api.reorderDMNoteGroups(orders)
+  }
+
+  const dnd: NotesDnd = {
+    dragItem,
+    dropHint,
+    startPageDrag: id => setDragItem({ kind: 'page', id }),
+    startGroupDrag: id => setDragItem({ kind: 'group', id }),
+    endDrag: () => { setDragItem(null); setDropHint(null) },
+    onPageRowDragOver: (container, index, e) => {
+      if (dragItem?.kind !== 'page') return
+      e.preventDefault(); e.stopPropagation()
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      const after = e.clientY > r.top + r.height / 2
+      setDropHint({ kind: 'page', container, index: after ? index + 1 : index })
+    },
+    onContainerDragOver: (container, count, e) => {
+      if (dragItem?.kind !== 'page') return
+      e.preventDefault()
+      setDropHint({ kind: 'page', container, index: count })
+    },
+    onGroupHeaderDragOver: (groupIndex, container, e) => {
+      if (dragItem?.kind === 'group') {
+        e.preventDefault(); e.stopPropagation()
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        const after = e.clientY > r.top + r.height / 2
+        setDropHint({ kind: 'group', index: after ? groupIndex + 1 : groupIndex })
+      } else if (dragItem?.kind === 'page') {
+        e.preventDefault(); e.stopPropagation()
+        setDropHint({ kind: 'page', container, index: 0 })
+      }
+    },
+    commitDrop: () => {
+      if (dragItem && dropHint) {
+        if (dragItem.kind === 'page' && dropHint.kind === 'page') movePageTo(dragItem.id, dropHint.container, dropHint.index)
+        else if (dragItem.kind === 'group' && dropHint.kind === 'group') moveGroupTo(dragItem.id, dropHint.index)
+      }
+      setDragItem(null); setDropHint(null)
+    },
+  }
+
   if (!currentCampaign) return null
 
   return (
@@ -758,51 +909,72 @@ export default function DMNotesPage() {
           {/* Page list */}
           <div style={{ flex: 1, overflow: 'auto', padding: '6px 4px' }}>
 
-            {/* Ungrouped pages */}
-            {ungroupedPages.length > 0 && (
-              <div style={{ marginBottom: 6 }}>
+            {/* Ungrouped pages — always a drop target so pages can be moved out of groups */}
+            {(ungroupedPages.length > 0 || dragItem?.kind === 'page') && (
+              <div
+                style={{ marginBottom: 6 }}
+                onDragOver={e => dnd.onContainerDragOver(null, ungroupedPages.length, e)}
+                onDrop={() => dnd.commitDrop()}
+              >
                 {ungroupedPages.map((p, idx) => (
-                  <PageItem
-                    key={p.id}
-                    page={p}
-                    isActive={activePage?.id === p.id}
-                    groups={groups}
-                    isFirst={idx === 0}
-                    isLast={idx === ungroupedPages.length - 1}
-                    onClick={() => activePage?.id !== p.id && openPage(p.id)}
-                    onDelete={() => handleDeletePage(p)}
-                    onMoveUp={() => movePageUp(p)}
-                    onMoveDown={() => movePageDown(p)}
-                    onMoveToGroup={groupId => movePageToGroup(p, groupId)}
-                  />
+                  <Fragment key={p.id}>
+                    {dropHint?.kind === 'page' && dropHint.container === null && dropHint.index === idx && <DropLine />}
+                    <PageItem
+                      page={p}
+                      isActive={activePage?.id === p.id}
+                      groups={groups}
+                      isFirst={idx === 0}
+                      isLast={idx === ungroupedPages.length - 1}
+                      dnd={dnd}
+                      index={idx}
+                      container={null}
+                      onClick={() => activePage?.id !== p.id && openPage(p.id)}
+                      onDelete={() => handleDeletePage(p)}
+                      onMoveUp={() => movePageUp(p)}
+                      onMoveDown={() => movePageDown(p)}
+                      onMoveToGroup={groupId => movePageToGroup(p, groupId)}
+                    />
+                  </Fragment>
                 ))}
+                {dropHint?.kind === 'page' && dropHint.container === null && dropHint.index === ungroupedPages.length && <DropLine />}
+                {ungroupedPages.length === 0 && dragItem?.kind === 'page' && (
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '8px', textAlign: 'center', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', fontStyle: 'italic' }}>
+                    Drop here to ungroup
+                  </div>
+                )}
               </div>
             )}
 
             {/* Groups */}
             {sortedGroups.map((group, gIdx) => (
-              <GroupSection
-                key={group.id}
-                group={group}
-                pages={pagesForGroup(group.id)}
-                groups={groups}
-                isFirst={gIdx === 0}
-                isLast={gIdx === sortedGroups.length - 1}
-                activePage={activePage}
-                editingGroupId={editingGroupId}
-                onOpenPage={openPage}
-                onCreatePage={handleCreatePage}
-                onDeletePage={handleDeletePage}
-                onMovePageUp={movePageUp}
-                onMovePageDown={movePageDown}
-                onMovePageToGroup={movePageToGroup}
-                onMoveGroupUp={() => moveGroupUp(group)}
-                onMoveGroupDown={() => moveGroupDown(group)}
-                onDeleteGroup={() => handleDeleteGroup(group.id)}
-                onStartRename={() => setEditingGroupId(group.id)}
-                onFinishRename={name => handleRenameGroup(group.id, name)}
-              />
+              <Fragment key={group.id}>
+                {dropHint?.kind === 'group' && dropHint.index === gIdx && <DropLine />}
+                <GroupSection
+                  group={group}
+                  pages={pagesForGroup(group.id)}
+                  groups={groups}
+                  isFirst={gIdx === 0}
+                  isLast={gIdx === sortedGroups.length - 1}
+                  groupIndex={gIdx}
+                  dnd={dnd}
+                  dropHint={dropHint}
+                  activePage={activePage}
+                  editingGroupId={editingGroupId}
+                  onOpenPage={openPage}
+                  onCreatePage={handleCreatePage}
+                  onDeletePage={handleDeletePage}
+                  onMovePageUp={movePageUp}
+                  onMovePageDown={movePageDown}
+                  onMovePageToGroup={movePageToGroup}
+                  onMoveGroupUp={() => moveGroupUp(group)}
+                  onMoveGroupDown={() => moveGroupDown(group)}
+                  onDeleteGroup={() => handleDeleteGroup(group.id)}
+                  onStartRename={() => setEditingGroupId(group.id)}
+                  onFinishRename={name => handleRenameGroup(group.id, name)}
+                />
+              </Fragment>
             ))}
+            {dropHint?.kind === 'group' && dropHint.index === sortedGroups.length && <DropLine />}
 
             {/* Empty state */}
             {pages.length === 0 && groups.length === 0 && (

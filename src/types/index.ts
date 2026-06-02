@@ -27,6 +27,8 @@ export interface Session {
   map_count?: number
   in_world_day?: number | null
   in_world_day_end?: number | null
+  is_draft?: number
+  sort_order?: number
 }
 
 export interface GameMap {
@@ -36,6 +38,7 @@ export interface GameMap {
   article_id: number | null   // null when owned by a session
   name: string
   image_path: string
+  sort_order: number
   created_at: string
   poi_count?: number
 }
@@ -65,6 +68,7 @@ export interface Arc {
   name: string
   color: string
   is_default: boolean
+  sort_order: number
   created_at: string
 }
 
@@ -92,6 +96,7 @@ export interface Article extends ArticleSummary {
   content: string
   portrait_image: string | null
   statblock: string
+  item_block: string
   substeps: string
   rewards: string
 }
@@ -179,6 +184,54 @@ export function parseStatBlock(json: string): StatBlock {
   } catch {
     return { ...DEFAULT_STATBLOCK }
   }
+}
+
+// ── Item stat block (magic-item "Wondrous item, uncommon" style) ───────────────
+
+export const ITEM_CATEGORIES = [
+  'Wondrous item', 'Armor', 'Weapon', 'Potion', 'Ring', 'Rod', 'Scroll', 'Staff', 'Wand',
+] as const
+
+export const ITEM_RARITIES = [
+  'Common', 'Uncommon', 'Rare', 'Very Rare', 'Legendary', 'Artifact', 'Varies',
+] as const
+
+export interface ItemStatBlock {
+  category: string        // "Wondrous item", "Weapon (any sword)"…
+  rarity: string          // one of ITEM_RARITIES (or free text)
+  requiresAttunement: boolean
+  attunementNote: string  // optional qualifier, e.g. "by a spellcaster"
+  description: string      // main rules text (newlines = paragraphs)
+  properties: StatBlockEntry[]  // named abilities, like creature traits
+}
+
+export const DEFAULT_ITEM_STATBLOCK: ItemStatBlock = {
+  category: '', rarity: '', requiresAttunement: false, attunementNote: '',
+  description: '', properties: [],
+}
+
+export function parseItemStatBlock(json: string): ItemStatBlock {
+  try {
+    const parsed = JSON.parse(json)
+    return { ...DEFAULT_ITEM_STATBLOCK, ...parsed }
+  } catch {
+    return { ...DEFAULT_ITEM_STATBLOCK }
+  }
+}
+
+// Italic subtitle line, e.g. "Wondrous item, uncommon (requires attunement by a spellcaster)".
+export function itemBlockSubtitle(ib: ItemStatBlock): string {
+  const head = [ib.category, ib.rarity ? ib.rarity.toLowerCase() : '']
+    .filter(Boolean).join(', ')
+  if (!ib.requiresAttunement) return head
+  const attune = ib.attunementNote.trim()
+    ? `requires attunement ${ib.attunementNote.trim()}`
+    : 'requires attunement'
+  return head ? `${head} (${attune})` : `(${attune})`
+}
+
+export function itemBlockHasData(ib: ItemStatBlock): boolean {
+  return !!(ib.category || ib.rarity || ib.description.trim() || ib.properties.length || ib.requiresAttunement)
 }
 
 export interface LootItem {
@@ -278,6 +331,7 @@ export interface CreateSessionInput {
   arc_id?: number | null
   date?: string | null
   notes?: string
+  is_draft?: number
 }
 
 export interface CreateMapInput {
@@ -345,23 +399,26 @@ export interface ElectronAPI {
   getSessionPoiTexts: (campaignId: number)           => Promise<{ session_id: number; label: string; content: string }[]>
   createSession:   (data: CreateSessionInput)      => Promise<Session>
   updateSession:   (id: number, data: Partial<CreateSessionInput>) => Promise<Session>
+  promoteSession:  (id: number) => Promise<Session>
+  reorderDrafts:   (orders: { id: number; sort_order: number }[]) => Promise<void>
   deleteSession:   (id: number)                    => Promise<void>
 
   getArcs:    (campaignId: number)                 => Promise<Arc[]>
   createArc:  (data: CreateArcInput)               => Promise<Arc>
   updateArc:  (id: number, data: Partial<CreateArcInput>) => Promise<Arc>
   deleteArc:  (id: number)                         => Promise<{ success: boolean; error?: string }>
+  reorderArcs:(orders: { id: number; sort_order: number }[]) => Promise<void>
 
   getMaps:            (sessionId: number)          => Promise<GameMap[]>
   getMapsForArticle:  (articleId: number)          => Promise<GameMap[]>
   createMap:          (data: CreateMapInput)       => Promise<GameMap>
   updateMap:          (id: number, data: Partial<CreateMapInput>) => Promise<GameMap>
+  reorderMaps:        (orders: { id: number; sort_order: number }[]) => Promise<void>
   deleteMap:          (id: number)                 => Promise<void>
   importMapImage:     (sessionId: number)          => Promise<{ path: string; name: string } | null>
   importMapForArticle:(articleId: number)          => Promise<{ path: string; name: string } | null>
   getMapsForCampaign:   (campaignId: number) => Promise<GameMap[]>
   importMapForCampaign: (campaignId: number) => Promise<{ path: string; name: string } | null>
-  getCampaignMapImages: (campaignId: number) => Promise<{ image_path: string; name: string; label: string; created_at: string }[]>
 
   getPOIs:         (mapId: number)                 => Promise<POI[]>
   createPOI:       (data: CreatePOIInput)          => Promise<POI>

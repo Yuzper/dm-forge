@@ -5,8 +5,9 @@ import {
   Plus, Calendar, Map, BookOpen, MoreHorizontal, Trash2, Pencil,
   ChevronRight, ArrowUpDown, ChevronDown, ChevronUp, Layers,
   Scroll, Sparkles, ArrowLeft, ShoppingBag, Upload, X, Search,
-  ExternalLink, Network, Clock,
+  ExternalLink, Network, Clock, GripVertical,
   Maximize, Eye, Image as ImageIcon,
+  PanelRight, ArrowUpToLine, Hammer,
 } from 'lucide-react'
 import type { Session, Arc, GameMap, POI } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
@@ -15,7 +16,6 @@ import { parseDay } from '../utils/dates'
 import { ARTICLE_TYPE_COLORS } from '../constants/articleTypes'
 import Modal from '../components/Modal'
 import EmptyState from '../components/EmptyState'
-import MapPickerModal from '../components/MapPickerModal'
 import { InWorldDatePicker } from '../components/InWorldDatePicker'
 import TimelineEmbed from '../components/TimelineEmbed'
 
@@ -336,7 +336,7 @@ function HubPOIEditModal({
         <div className="modal-actions" style={{ justifyContent: 'space-between' }}>
           <button
             onClick={() => triggerDelete(onDelete)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: confirmingDelete ? '#ff7777' : '#e05555', fontSize: 13, display: 'flex', alignItems: 'center', gap: 5, padding: '4px 2px' }}>
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: confirmingDelete ? 'var(--danger-hover)' : '#e05555', fontSize: 13, display: 'flex', alignItems: 'center', gap: 5, padding: '4px 2px' }}>
             <Trash2 size={13} /> {confirmingDelete ? 'Confirm' : 'Delete'}
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -370,7 +370,6 @@ function HubWorldMap() {
   })
   
   const [importing, setImporting] = useState(false)
-  const [showPicker, setShowPicker] = useState(false)
   const [renamingMap, setRenamingMap] = useState<GameMap | null>(null)
   const [selectedPOI, setSelectedPOI] = useState<POI | null>(null)
   const [hoveredPoiId, setHoveredPoiId] = useState<number | null>(null)
@@ -546,6 +545,12 @@ function HubWorldMap() {
     setMaps((prev: GameMap[]) => [...prev, map])
     handleSelectMap(map)
     setImporting(false)
+  }
+
+  const handleUploadNew = async () => {
+    if (!currentCampaign) return
+    const result = await window.api.importMapForCampaign(currentCampaign.id)
+    if (result) await handleImport(result)
   }
 
   const handleDeleteMap = async (id: number) => {
@@ -738,7 +743,7 @@ function HubWorldMap() {
             </div>
           ))}
           {editMode && (
-            <button onClick={e => { e.stopPropagation(); setShowPicker(true) }} disabled={importing}
+            <button onClick={e => { e.stopPropagation(); handleUploadNew() }} disabled={importing}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 12px', background: 'transparent', border: 'none', borderRight: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.3)', fontSize: 11, cursor: importing ? 'wait' : 'pointer', whiteSpace: 'nowrap', transition: 'color var(--transition)' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.65)'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.3)'}>
@@ -765,7 +770,7 @@ function HubWorldMap() {
             title="No world map yet"
             description="Import a PNG or JPEG to get started"
             action={
-              <button className="btn btn-primary" onClick={e => { e.stopPropagation(); setShowPicker(true) }} disabled={importing}
+              <button className="btn btn-primary" onClick={e => { e.stopPropagation(); handleUploadNew() }} disabled={importing}
                 style={{ background: '#c8733a', borderColor: '#c8733a' }}>
                 <Upload size={14} /> {importing ? 'Importing…' : 'Import Map'}
               </button>
@@ -872,20 +877,6 @@ function HubWorldMap() {
       </div>
 
       {/* Modals */}
-      {showPicker && currentCampaign && (
-        <MapPickerModal
-          campaignId={currentCampaign.id}
-          onPickExisting={(result: { path: string; name: string }) => { setShowPicker(false); handleImport(result) }}
-          onUploadNew={async () => {
-            setShowPicker(false)
-            setImporting(true)
-            const result = await window.api.importMapForCampaign(currentCampaign.id)
-            if (result) await handleImport(result)
-            setImporting(false)
-          }}
-          onClose={() => setShowPicker(false)}
-        />
-      )}
 
       {renamingMap && (
         <Modal title="Rename map" onClose={() => setRenamingMap(null)}>
@@ -1054,8 +1045,9 @@ function EditSessionModal({ session, onClose }: { session: SessionExt; onClose: 
     return d ? JSON.stringify({ day: d, year: 1507, label: `Day ${d}, Year 1507` }) : ''
   })
   const [saving, setSaving] = useState(false)
+  const isDraft = !!(session as any).is_draft
   const subClean = sessionSub.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 3)
-  const isDuplicate = sessions.some(s => s.id !== session.id && s.session_number === sessionNumber && s.session_sub === subClean)
+  const isDuplicate = !isDraft && sessions.some(s => s.id !== session.id && s.session_number === sessionNumber && s.session_sub === subClean)
 
   const handleSubmit = async () => {
     if (!name.trim() || isDuplicate) return
@@ -1075,25 +1067,27 @@ function EditSessionModal({ session, onClose }: { session: SessionExt; onClose: 
   }
 
   return (
-    <Modal title="Edit Session" onClose={onClose}>
+    <Modal title={isDraft ? 'Edit Future Session' : 'Edit Session'} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-          <div className="input-group" style={{ flex: '0 0 80px' }}>
-            <label className="input-label">Session #</label>
-            <input className="input" type="number" min={1} value={sessionNumber}
-              onChange={e => setSessionNumber(Math.max(1, parseInt(e.target.value) || 1))}
-              style={{ textAlign: 'center', color: 'var(--gold)', fontWeight: 600 }} />
+        {!isDraft && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <div className="input-group" style={{ flex: '0 0 80px' }}>
+              <label className="input-label">Session #</label>
+              <input className="input" type="number" min={1} value={sessionNumber}
+                onChange={e => setSessionNumber(Math.max(1, parseInt(e.target.value) || 1))}
+                style={{ textAlign: 'center', color: 'var(--gold)', fontWeight: 600 }} />
+            </div>
+            <div className="input-group" style={{ flex: '0 0 72px' }}>
+              <label className="input-label">Sub (opt.)</label>
+              <input className="input" placeholder="a, b…" value={sessionSub}
+                onChange={e => setSessionSub(e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3))}
+                style={{ textAlign: 'center' }} />
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--gold)', fontFamily: 'var(--font-display)', paddingBottom: 6 }}>
+              → Session {sessionNumber}{subClean}
+            </div>
           </div>
-          <div className="input-group" style={{ flex: '0 0 72px' }}>
-            <label className="input-label">Sub (opt.)</label>
-            <input className="input" placeholder="a, b…" value={sessionSub}
-              onChange={e => setSessionSub(e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3))}
-              style={{ textAlign: 'center' }} />
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--gold)', fontFamily: 'var(--font-display)', paddingBottom: 6 }}>
-            → Session {sessionNumber}{subClean}
-          </div>
-        </div>
+        )}
         {isDuplicate && <div style={{ fontSize: 12, color: '#e05555' }}>Session {sessionNumber}{subClean} already exists</div>}
         <div className="input-group">
           <label className="input-label">Session Name</label>
@@ -1198,7 +1192,7 @@ function SessionRow({ session, arc }: { session: Session; arc: Arc }) {
                 <Pencil size={13} /> Edit
               </button>
               <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteSession(session.id); setMenuOpen(false) }) }}
-                className="menu-item menu-item-danger" style={confirmDelete ? { color: '#ff7777' } : undefined}>
+                className="menu-item menu-item-danger" style={confirmDelete ? { color: 'var(--danger-hover)' } : undefined}>
                 <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
               </button>
             </div>
@@ -1230,7 +1224,7 @@ function ArcMenu({ arc, onEdit }: { arc: Arc; onEdit: () => void }) {
             <>
               <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
               <button onClick={() => triggerDelete(() => { deleteArc(arc.id); setOpen(false) })}
-                className="menu-item menu-item-danger" style={confirmDelete ? { color: '#ff7777' } : undefined}>
+                className="menu-item menu-item-danger" style={confirmDelete ? { color: 'var(--danger-hover)' } : undefined}>
                 <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
               </button>
             </>
@@ -1241,7 +1235,16 @@ function ArcMenu({ arc, onEdit }: { arc: Arc; onEdit: () => void }) {
   )
 }
 
-function ArcSection({ arc, sessions, sortAsc, onAddSession }: { arc: Arc; sessions: Session[]; sortAsc: boolean; onAddSession: (arcId: number) => void }) {
+function ArcSection({ arc, sessions, sortAsc, onAddSession, dragEnabled = false, isDragging = false, dropLineAbove = false, onDragStart, onDragEnd, onSectionDragOver, onSectionDrop }: {
+  arc: Arc; sessions: Session[]; sortAsc: boolean; onAddSession: (arcId: number) => void
+  dragEnabled?: boolean
+  isDragging?: boolean
+  dropLineAbove?: boolean
+  onDragStart?: () => void
+  onDragEnd?: () => void
+  onSectionDragOver?: (e: React.DragEvent) => void
+  onSectionDrop?: () => void
+}) {
   const [collapsed, setCollapsed] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const sorted = [...sessions].sort((a, b) => {
@@ -1250,8 +1253,24 @@ function ArcSection({ arc, sessions, sortAsc, onAddSession }: { arc: Arc; sessio
     return sortAsc ? (a.session_sub ?? '').localeCompare(b.session_sub ?? '') : (b.session_sub ?? '').localeCompare(a.session_sub ?? '')
   })
   return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px' }}>
+    <div
+      style={{ opacity: isDragging ? 0.4 : 1, borderTop: dropLineAbove ? '2px solid var(--gold)' : '2px solid transparent', transition: 'opacity 120ms ease' }}
+      onDragOver={onSectionDragOver}
+      onDrop={() => onSectionDrop?.()}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 4px' }}>
+        {dragEnabled && (
+          <span
+            draggable
+            onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.() }}
+            onDragEnd={() => onDragEnd?.()}
+            title="Drag to reorder arc"
+            style={{ display: 'flex', alignItems: 'center', cursor: 'grab', color: 'var(--text-muted)', flexShrink: 0 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <GripVertical size={14} />
+          </span>
+        )}
         <button onClick={() => setCollapsed(v => !v)}
           style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', flex: 1, textAlign: 'left', padding: 0 }}>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: arc.color, flexShrink: 0 }} />
@@ -1280,13 +1299,13 @@ function ArcSection({ arc, sessions, sortAsc, onAddSession }: { arc: Arc; sessio
         </div>
       )}
       {editOpen && <EditArcModal arc={arc} onClose={() => setEditOpen(false)} />}
-    </>
+    </div>
   )
 }
 
 // ── Create Session Modal ───────────────────────────────────────────────────────
 
-function CreateSessionModal({ defaultArcId, onClose }: { defaultArcId: number | null; onClose: () => void }) {
+function CreateSessionModal({ defaultArcId, onClose, draft = false }: { defaultArcId: number | null; onClose: () => void; draft?: boolean }) {
   const { createSession, arcs, lastUsedArcId, currentCampaign, sessions } = useStore()
   const [name, setName] = useState('')
   const [sessionNumber, setSessionNumber] = useState(() => {
@@ -1306,13 +1325,30 @@ function CreateSessionModal({ defaultArcId, onClose }: { defaultArcId: number | 
   const handleSubmit = async () => {
     if (!name.trim()) return
     setSaving(true)
-    await createSession({ name: name.trim(), session_number: sessionNumber, session_sub: sessionSub.trim(), arc_id: arcId, date: date || undefined })
+    await createSession({
+      name: name.trim(),
+      session_number: draft ? 0 : sessionNumber,
+      session_sub: draft ? '' : sessionSub.trim(),
+      arc_id: arcId, date: date || undefined,
+      ...(draft ? { is_draft: 1 } : {}),
+    })
     onClose()
   }
 
   return (
-    <Modal title="New Session" onClose={onClose}>
+    <Modal title={draft ? 'Prep Future Session' : 'New Session'} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {draft && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            Prep this session now — maps, POIs, combats, notes. Promote it later to drop it into the timeline with a number.
+          </div>
+        )}
+        {draft ? (
+          <div className="input-group">
+            <label className="input-label">Name</label>
+            <input className="input" placeholder="The Iron Gate…" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
+          </div>
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '80px 60px 1fr', gap: 10 }}>
           <div className="input-group">
             <label className="input-label">Session #</label>
@@ -1327,37 +1363,201 @@ function CreateSessionModal({ defaultArcId, onClose }: { defaultArcId: number | 
             <input className="input" placeholder="The Iron Gate…" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
           </div>
         </div>
+        )}
         <div className="input-group">
           <label className="input-label">Arc</label>
           <select className="input" value={arcId ?? ''} onChange={e => setArcId(e.target.value ? parseInt(e.target.value) : null)}>
             {arcs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
-        <div className="input-group">
-          <label className="input-label">Date <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-          <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
-        </div>
+        {!draft && (
+          <div className="input-group">
+            <label className="input-label">Date <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+            <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
+          </div>
+        )}
       </div>
       <div className="modal-actions">
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" onClick={handleSubmit} disabled={!name.trim() || saving}>
-          {saving ? 'Creating…' : 'Create Session'}
+          {saving ? (draft ? 'Prepping…' : 'Creating…') : (draft ? 'Prep Session' : 'Create Session')}
         </button>
       </div>
     </Modal>
   )
 }
 
+// ── Future Sessions (prep) panel ─────────────────────────────────────────────
+
+function DraftRow({ session, index, dragId, dropIndex, onDragStart, onDragOver, onDrop, onDragEnd }: {
+  session: Session
+  index: number
+  dragId: number | null
+  dropIndex: number | null
+  onDragStart: (id: number) => void
+  onDragOver: (index: number) => void
+  onDrop: (index: number) => void
+  onDragEnd: () => void
+}) {
+  const { selectSession, deleteSession, promoteSession, arcs } = useStore()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
+  useMenuClose(menuOpen, menuRef, setMenuOpen)
+  const arc = arcs.find(a => a.id === session.arc_id) ?? arcs.find(a => a.is_default)
+  const color = arc?.color ?? '#8a8a8a'
+  const isDropTarget = dropIndex === index && dragId !== null && dragId !== session.id
+
+  return (
+    <>
+      <div
+        draggable
+        onClick={() => selectSession(session)}
+        onDragStart={e => { onDragStart(session.id); e.dataTransfer.effectAllowed = 'move' }}
+        onDragOver={e => { if (dragId === null) return; e.preventDefault(); onDragOver(index) }}
+        onDrop={e => { e.preventDefault(); onDrop(index) }}
+        onDragEnd={onDragEnd}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+          background: 'var(--bg-surface)', border: '1px solid var(--border)',
+          borderTop: isDropTarget ? '2px solid var(--gold)' : '1px solid var(--border)',
+          borderRadius: 'var(--radius)', cursor: 'grab', position: 'relative',
+          opacity: dragId === session.id ? 0.4 : 1, transition: 'opacity 120ms ease, border-color 120ms ease',
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = color }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)' }}
+      >
+        <GripVertical size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)', fontSize: 11, marginTop: 1 }}>
+            <Map size={10} /> {(session as any).map_count ?? 0} maps
+            {arc && <span style={{ color }}>· {arc.name}</span>}
+          </div>
+        </div>
+        <button
+          title="Promote to numbered session"
+          onClick={e => { e.stopPropagation(); promoteSession(session.id) }}
+          className="btn btn-ghost btn-icon btn-sm"
+          style={{ color: 'var(--gold)', flexShrink: 0 }}
+        >
+          <ArrowUpToLine size={14} />
+        </button>
+        <div ref={menuRef} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+          <button onClick={e => { e.stopPropagation(); setMenuOpen(o => !o) }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: '3px 2px' }}>
+            <MoreHorizontal size={14} />
+          </button>
+          {menuOpen && (
+            <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 170, zIndex: 50, overflow: 'hidden' }}>
+              <button onClick={() => { promoteSession(session.id); setMenuOpen(false) }} className="menu-item">
+                <ArrowUpToLine size={13} /> Promote to session
+              </button>
+              <button onClick={() => { setEditOpen(true); setMenuOpen(false) }} className="menu-item">
+                <Pencil size={13} /> Edit
+              </button>
+              <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteSession(session.id); setMenuOpen(false) }) }}
+                className="menu-item menu-item-danger" style={confirmDelete ? { color: 'var(--danger-hover)' } : undefined}>
+                <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+      {editOpen && <EditSessionModal session={session} onClose={() => setEditOpen(false)} />}
+    </>
+  )
+}
+
+function PrepPanel({ onClose }: { onClose: () => void }) {
+  const { drafts, reorderDrafts } = useStore()
+  const [showCreate, setShowCreate] = useState(false)
+  const [dragId, setDragId] = useState<number | null>(null)
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
+
+  const handleDrop = (targetIndex: number) => {
+    if (dragId === null) { setDropIndex(null); return }
+    const from = drafts.findIndex(d => d.id === dragId)
+    setDragId(null); setDropIndex(null)
+    if (from === -1 || from === targetIndex) return
+    const next = [...drafts]
+    const [moved] = next.splice(from, 1)
+    next.splice(targetIndex > from ? targetIndex - 1 : targetIndex, 0, moved)
+    reorderDrafts(next.map((d, i) => ({ id: d.id, sort_order: i })))
+  }
+
+  return (
+    <div style={{ width: 380, flexShrink: 0, borderLeft: '1px solid var(--border)', background: 'var(--bg-base)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ padding: '16px 18px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Hammer size={15} color="var(--gold)" />
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--text-primary)', letterSpacing: '0.03em', flex: 1 }}>Future Sessions</span>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-elevated)', padding: '1px 7px', borderRadius: 99, border: '1px solid var(--border-light)' }}>{drafts.length}</span>
+          <button onClick={onClose} title="Hide prep panel" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 3 }}>
+            <X size={14} />
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}>
+          Prep sessions before they're scheduled. Drag to reorder; promote one to drop it into the timeline with a number.
+        </div>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}
+        onDragOver={e => { if (dragId !== null) { e.preventDefault(); setDropIndex(drafts.length) } }}
+        onDrop={() => handleDrop(drafts.length)}
+      >
+        {drafts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 12px', color: 'var(--text-muted)' }}>
+            <Hammer size={34} strokeWidth={1} color="var(--border-light)" style={{ marginBottom: 10 }} />
+            <div style={{ fontSize: 13, marginBottom: 4, color: 'var(--text-secondary)' }}>Nothing prepped yet</div>
+            <div style={{ fontSize: 12 }}>Build sessions ahead of time, then promote them when you're ready to run.</div>
+          </div>
+        ) : drafts.map((d, i) => (
+          <DraftRow
+            key={d.id}
+            session={d}
+            index={i}
+            dragId={dragId}
+            dropIndex={dropIndex}
+            onDragStart={setDragId}
+            onDragOver={setDropIndex}
+            onDrop={handleDrop}
+            onDragEnd={() => { setDragId(null); setDropIndex(null) }}
+          />
+        ))}
+      </div>
+      <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+        <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setShowCreate(true)}>
+          <Plus size={15} /> Prep new session
+        </button>
+      </div>
+      {showCreate && <CreateSessionModal defaultArcId={null} draft onClose={() => setShowCreate(false)} />}
+    </div>
+  )
+}
+
 // ── Sessions View ──────────────────────────────────────────────────────────────
 
 function SessionsView({ onBack }: { onBack: () => void }) {
-  const { currentCampaign, sessions, arcs } = useStore()
+  const { currentCampaign, sessions, drafts, arcs, reorderArcs } = useStore()
+  // ── Arc drag-reorder ──────────────────────────────────────────────────────────
+  const [dragArcId, setDragArcId] = useState<number | null>(null)
+  // The arc id we'd insert *before*; null = drop at the end of the list.
+  const [dropBeforeArc, setDropBeforeArc] = useState<number | null | undefined>(undefined)
   const [showCreate, setShowCreate] = useState(false)
   const [createArcOpen, setCreateArcOpen] = useState(false)
   const [preselectedArcId, setPreselectedArcId] = useState<number | null>(null)
   const [sortAsc, setSortAsc] = useState<boolean>(() => {
     try { return localStorage.getItem('dmforge:session-sort') !== 'desc' } catch { return true }
   })
+  const [prepOpen, setPrepOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem('dmforge:prep-panel') === 'open' } catch { return false }
+  })
+  const togglePrep = (open: boolean) => {
+    setPrepOpen(open)
+    try { localStorage.setItem('dmforge:prep-panel', open ? 'open' : 'closed') } catch {}
+  }
 
   // ── Search ────────────────────────────────────────────────────────────────────
   const [query, setQuery] = useState('')
@@ -1403,12 +1603,33 @@ function SessionsView({ onBack }: { onBack: () => void }) {
   const handleAddSession = (arcId: number) => { setPreselectedArcId(arcId); setShowCreate(true) }
   if (!currentCampaign) return null
   const defaultArc = arcs.find(a => a.is_default)
-  const sortedArcs = [...arcs].sort((a, b) => a.name.localeCompare(b.name))
+  const sortedArcs = [...arcs].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
   const sessionsForArc = (arcId: number) =>
     filteredSessions.filter(s => s.arc_id === arcId || (s.arc_id === null && arcId === defaultArc?.id))
 
   const isSearching = query.trim().length > 0
   const arcsWithResults = isSearching ? sortedArcs.filter(arc => sessionsForArc(arc.id).length > 0) : sortedArcs
+
+  const commitArcDrop = () => {
+    if (dragArcId != null && dropBeforeArc !== undefined) {
+      const ids = sortedArcs.map(a => a.id).filter(id => id !== dragArcId)
+      const insertAt = dropBeforeArc === null ? ids.length : ids.indexOf(dropBeforeArc)
+      ids.splice(insertAt < 0 ? ids.length : insertAt, 0, dragArcId)
+      reorderArcs(ids.map((id, i) => ({ id, sort_order: i })))
+    }
+    setDragArcId(null); setDropBeforeArc(undefined)
+  }
+  const onArcDragOver = (arcId: number, e: React.DragEvent) => {
+    if (dragArcId == null) return
+    e.preventDefault(); e.stopPropagation()
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const after = e.clientY > r.top + r.height / 2
+    const idx = sortedArcs.findIndex(a => a.id === arcId)
+    const next = sortedArcs[idx + 1]
+    setDropBeforeArc(after ? (next ? next.id : null) : arcId)
+  }
+  // Arc reorder only makes sense in the unfiltered list.
+  const arcDragEnabled = !isSearching && sortedArcs.length > 1
 
 
   return (
@@ -1424,6 +1645,17 @@ function SessionsView({ onBack }: { onBack: () => void }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              className="btn"
+              onClick={() => togglePrep(!prepOpen)}
+              title={prepOpen ? 'Hide future sessions' : 'Show future sessions'}
+              style={prepOpen ? { color: 'var(--gold)', borderColor: 'var(--border-gold)' } : undefined}
+            >
+              <PanelRight size={15} /> Future
+              {drafts.length > 0 && (
+                <span style={{ fontSize: 11, color: 'var(--gold)', background: 'rgba(200,168,75,0.12)', padding: '0 6px', borderRadius: 99, marginLeft: 2 }}>{drafts.length}</span>
+              )}
+            </button>
             <button className="btn" onClick={() => setCreateArcOpen(true)}><Layers size={15} /> New Arc</button>
             <button className="btn btn-primary" onClick={() => { setPreselectedArcId(null); setShowCreate(true) }}>
               <Plus size={15} /> New Session
@@ -1431,7 +1663,9 @@ function SessionsView({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
+          <div style={{ maxWidth: 680, margin: '0 auto' }}>
 
         {/* Search bar */}
         <div style={{ marginBottom: 20, maxWidth: 680 }}>
@@ -1502,12 +1736,32 @@ function SessionsView({ onBack }: { onBack: () => void }) {
             No sessions match <span style={{ color: 'var(--text-secondary)' }}>"{query}"</span>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 680 }}>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 680 }}
+            onDragOver={e => { if (dragArcId != null) { e.preventDefault(); setDropBeforeArc(null) } }}
+            onDrop={() => { if (dragArcId != null) commitArcDrop() }}
+          >
             {arcsWithResults.map(arc => (
-              <ArcSection key={arc.id} arc={arc} sessions={sessionsForArc(arc.id)} sortAsc={sortAsc} onAddSession={handleAddSession} />
+              <ArcSection
+                key={arc.id}
+                arc={arc}
+                sessions={sessionsForArc(arc.id)}
+                sortAsc={sortAsc}
+                onAddSession={handleAddSession}
+                dragEnabled={arcDragEnabled}
+                isDragging={dragArcId === arc.id}
+                dropLineAbove={dragArcId != null && dropBeforeArc === arc.id}
+                onDragStart={() => setDragArcId(arc.id)}
+                onDragEnd={() => { setDragArcId(null); setDropBeforeArc(undefined) }}
+                onSectionDragOver={e => onArcDragOver(arc.id, e)}
+                onSectionDrop={commitArcDrop}
+              />
             ))}
           </div>
         )}
+          </div>
+        </div>
+        {prepOpen && <PrepPanel onClose={() => togglePrep(false)} />}
       </div>
       {showCreate && <CreateSessionModal defaultArcId={preselectedArcId} onClose={() => { setShowCreate(false); setPreselectedArcId(null) }} />}
       {createArcOpen && <CreateArcModal onClose={() => setCreateArcOpen(false)} />}

@@ -209,20 +209,24 @@ export default function TimelineCanvas({
     if (isSingle && item.kind === 'session') {
       const col = arcMap[item.arc_id ?? 0]?.color ?? '#8a8a8a'
       const endDay = item.in_world_day_end ?? item.day
-      const endX = dx(endDay)
       const isMultiDay = endDay > item.day
       const R = 12
+      // Single-day sessions are a circle centred on their day. Multi-day sessions
+      // stretch into a rounded-corner capsule from start day → end day, with a
+      // minimum length so they always read as "elongated" even when zoomed out.
+      const MIN_PILL_W = 2 * R + 16
+      const spanW = isMultiDay ? Math.max(dx(endDay) - px, MIN_PILL_W) : 2 * R
+      const left = isMultiDay ? px : px - R       // capsule starts on the start day; circle is centred
+      const midX = left + spanW / 2
       const words = item.title.split(' '), half = Math.ceil(words.length / 2)
       return (
         <g key={`m-${px}-s${item.id}`} {...handlers}>
-          {isMultiDay
-            ? <rect x={px} y={axisY - 22 - 9} width={endX - px} height={9} rx="5" fill={col + '22'} stroke={col} strokeWidth="1" pointerEvents="none" />
-            : <line x1={px} y1={sessionDotY + R} x2={px} y2={arcY} stroke={col + '44'} strokeWidth="1" strokeDasharray="3 2" pointerEvents="none" />}
-          <circle cx={px} cy={sessionDotY} r={R} fill={col + '1a'} stroke={col} strokeWidth="1.5" pointerEvents="none" />
-          <text x={px} y={sessionDotY + 4} textAnchor="middle" fill={col} fontSize="9" fontWeight="600" fontFamily="sans-serif" pointerEvents="none">{`${item.session_number}${item.session_sub ?? ''}`}</text>
-          <text x={px} y={sessionDotY - R - 10} textAnchor="middle" fill="#6b6558" fontSize="8" fontFamily="sans-serif" pointerEvents="none">{words.slice(0, half).join(' ')}</text>
-          {words.length > half && <text x={px} y={sessionDotY - R - 2} textAnchor="middle" fill="#6b6558" fontSize="8" fontFamily="sans-serif" pointerEvents="none">{words.slice(half).join(' ')}</text>}
-          <circle cx={px} cy={sessionDotY} r={R + 4} fill="transparent" />
+          <line x1={midX} y1={sessionDotY + R} x2={midX} y2={arcY} stroke={col + '44'} strokeWidth="1" strokeDasharray="3 2" pointerEvents="none" />
+          <rect x={left} y={sessionDotY - R} width={spanW} height={2 * R} rx={R} ry={R} fill={col + '1a'} stroke={col} strokeWidth="1.5" pointerEvents="none" />
+          <text x={midX} y={sessionDotY + 4} textAnchor="middle" fill={col} fontSize="9" fontWeight="600" fontFamily="sans-serif" pointerEvents="none">{`${item.session_number}${item.session_sub ?? ''}`}</text>
+          <text x={midX} y={sessionDotY - R - 10} textAnchor="middle" fill="#6b6558" fontSize="8" fontFamily="sans-serif" pointerEvents="none">{words.slice(0, half).join(' ')}</text>
+          {words.length > half && <text x={midX} y={sessionDotY - R - 2} textAnchor="middle" fill="#6b6558" fontSize="8" fontFamily="sans-serif" pointerEvents="none">{words.slice(half).join(' ')}</text>}
+          <rect x={left - 4} y={sessionDotY - R - 4} width={spanW + 8} height={2 * R + 8} rx={R + 4} fill="transparent" />
         </g>
       )
     }

@@ -179,7 +179,7 @@ function TableEditorPanel({ table, onUpdate, onDelete }: {
           <button
             onClick={() => trigger(onDelete)}
             className="btn btn-ghost btn-icon btn-sm"
-            style={{ color: confirming ? '#ff7777' : 'var(--text-muted)' }}
+            style={{ color: confirming ? 'var(--danger-hover)' : 'var(--text-muted)' }}
             title={confirming ? 'Click again to confirm' : 'Delete table'}
           >
             <Trash2 size={13} />

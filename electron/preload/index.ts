@@ -15,23 +15,26 @@ contextBridge.exposeInMainWorld('api', {
   createSession:   (data: any)    => ipcRenderer.invoke('sessions:create', data),
   updateSession:   (id: number, data: any) => ipcRenderer.invoke('sessions:update', id, data),
   deleteSession:   (id: number)   => ipcRenderer.invoke('sessions:delete', id),
+  promoteSession:  (id: number)   => ipcRenderer.invoke('sessions:promote', id),
+  reorderDrafts:   (orders: { id: number; sort_order: number }[]) => ipcRenderer.invoke('sessions:reorder-drafts', orders),
 
   // Arcs
   getArcs:    (campaignId: number)          => ipcRenderer.invoke('arcs:get-all', campaignId),
   createArc:  (data: any)                   => ipcRenderer.invoke('arcs:create', data),
   updateArc:  (id: number, data: any)       => ipcRenderer.invoke('arcs:update', id, data),
   deleteArc:  (id: number)                  => ipcRenderer.invoke('arcs:delete', id),
+  reorderArcs:(orders: { id: number; sort_order: number }[]) => ipcRenderer.invoke('arcs:reorder', orders),
 
   // Maps
   getMaps:            (sessionId: number)  => ipcRenderer.invoke('maps:get-all', sessionId),
   getMapsForArticle:  (articleId: number)  => ipcRenderer.invoke('maps:get-by-article', articleId),
   createMap:          (data: any)          => ipcRenderer.invoke('maps:create', data),
   updateMap:          (id: number, data: any) => ipcRenderer.invoke('maps:update', id, data),
+  reorderMaps:        (orders: { id: number; sort_order: number }[]) => ipcRenderer.invoke('maps:reorder', orders),
   deleteMap:          (id: number)         => ipcRenderer.invoke('maps:delete', id),
   importMapImage:     (sessionId: number)  => ipcRenderer.invoke('maps:import-image', sessionId),
   replaceMapImage:    (...args)            => ipcRenderer.invoke('maps:replace-image', ...args),
   importMapForArticle:(articleId: number)  => ipcRenderer.invoke('maps:import-for-article', articleId),
-  getCampaignMapImages: (campaignId: number) => ipcRenderer.invoke('maps:get-campaign-images', campaignId),
   getMapsForCampaign:   (campaignId: number) => ipcRenderer.invoke('maps:get-by-campaign', campaignId),
   importMapForCampaign: (campaignId: number) => ipcRenderer.invoke('maps:import-for-campaign', campaignId),
 
@@ -138,7 +141,13 @@ contextBridge.exposeInMainWorld('api', {
   updateRelationEdge:  (...args) => ipcRenderer.invoke('relation-edges:update', ...args),
   deleteRelationEdge:  (...args) => ipcRenderer.invoke('relation-edges:delete', ...args),
   getArticleRelations: (...args) => ipcRenderer.invoke('relation-edges:get-for-article', ...args),
-  
-  createUnionNode:        (...args: any[]) => ipcRenderer.invoke('relation-nodes:create-union',            ...args),
+  getRelationWebForArticle: (articleId: number) => ipcRenderer.invoke('relation-webs:get-for-article', articleId),
+  listRelationWebsForArticle: (articleId: number) => ipcRenderer.invoke('relation-webs:list-for-article', articleId),
+  listRelationWebsForMember:  (articleId: number) => ipcRenderer.invoke('relation-webs:list-for-member', articleId),
+  getRelationWebArticles:   (webId: number) => ipcRenderer.invoke('relation-webs:get-linked-articles', webId),
+  linkRelationWebArticle:   (webId: number, articleId: number) => ipcRenderer.invoke('relation-webs:link-article', webId, articleId),
+  unlinkRelationWebArticle: (webId: number, articleId: number) => ipcRenderer.invoke('relation-webs:unlink-article', webId, articleId),
+  getArticleMemberCount:    (articleId: number) => ipcRenderer.invoke('articles:member-count', articleId),
+
   syncDerivedRelations:   (webId: number)  => ipcRenderer.invoke('relation-webs:sync-derived-relations',   webId),
 })

@@ -85,6 +85,16 @@ function seedDefaultTables(campaignId: number): any[] {
 }
 
 // ── Family tree relation derivation ───────────────────────────────────────────
+
+// Map a parent's union role (e.g. "husband of", "wife of") to the term the
+// child uses for them ("father", "mother", or a neutral "parent").
+function parentRoleFromUnionLabel(label: string | null | undefined): string {
+  const l = (label || '').toLowerCase()
+  if (l.includes('husband') || l.includes('father')) return 'father'
+  if (l.includes('wife') || l.includes('mother')) return 'mother'
+  return 'parent'
+}
+
 function deriveRelationsForNode(
   nodeId: number,
   nodes: any[],
@@ -104,7 +114,9 @@ function deriveRelationsForNode(
     edges.filter(e => e.edge_type === 'person_to_union' && e.to_node_id === unionId && e.from_node_id !== nodeId)
       .forEach(e => {
         const p = nodes.find(n => n.id === e.from_node_id)
-        if (p) partners.push({ nodeId: p.id, articleId: p.article_id, name: p.article_title || p.label, role: ue.label_from || 'partner', vitality: p.vitality ?? null })
+        // Use the partner's OWN role in the union (so it reads from the current
+        // person's perspective: "Gandalf — husband"), not the current node's role.
+        if (p) partners.push({ nodeId: p.id, articleId: p.article_id, name: p.article_title || p.label, role: (e.label_from || '').replace(/ of$/i, '').trim() || 'partner', vitality: p.vitality ?? null })
       })
     edges.filter(e => e.edge_type === 'union_to_child' && e.from_node_id === unionId)
       .forEach(e => {
@@ -119,7 +131,9 @@ function deriveRelationsForNode(
     const unionMembers = edges.filter(e => e.edge_type === 'person_to_union' && e.to_node_id === unionId)
     unionMembers.forEach(e => {
       const p = nodes.find(n => n.id === e.from_node_id)
-      if (p) parents.push({ nodeId: p.id, articleId: p.article_id, name: p.article_title || p.label, role: (e.label_from || '').replace(/ of$/i, '').trim() || 'parent', vitality: p.vitality ?? null })
+      // From the child's perspective: show "mother"/"father" rather than the
+      // parent's union role ("wife of"/"husband of").
+      if (p) parents.push({ nodeId: p.id, articleId: p.article_id, name: p.article_title || p.label, role: parentRoleFromUnionLabel(e.label_from), vitality: p.vitality ?? null })
     })
     if (unionMembers.length < 2) {
       parents.push({ nodeId: null, articleId: null, name: 'Unknown parent', role: 'parent', vitality: null })
@@ -135,6 +149,78 @@ function deriveRelationsForNode(
   }
 
   return { webId, webName, partners, parents, children, siblings }
+}
+
+// ── Hierarchy relation derivation ─────────────────────────────────────────────
+// For a node in a hierarchy web: its rank, who it reports to (superiors), and
+// who reports to it (direct reports / oversees). reports_to edges are stored
+// subordinate → superior (from = subordinate, to = superior).
+function deriveHierarchyForNode(nodeId: number, nodes: any[], edges: any[], ranks: any[]) {
+  const node = nodes.find(n => n.id === nodeId)
+  const rank = node?.rank_id ? (ranks.find(r => r.id === node.rank_id) || null) : null
+
+  const superiors: any[] = []
+  const reports: any[] = []
+
+  edges.filter(e => e.edge_type === 'reports_to' && e.from_node_id === nodeId).forEach(e => {
+    const s = nodes.find(n => n.id === e.to_node_id)
+    if (s) superiors.push({ nodeId: s.id, articleId: s.article_id, name: s.article_title || s.label, vitality: s.vitality ?? null })
+  })
+  edges.filter(e => e.edge_type === 'reports_to' && e.to_node_id === nodeId).forEach(e => {
+    const r = nodes.find(n => n.id === e.from_node_id)
+    if (r) reports.push({ nodeId: r.id, articleId: r.article_id, name: r.article_title || r.label, vitality: r.vitality ?? null })
+  })
+
+  return { rankName: rank?.name ?? null, superiors, reports }
+}
+
+// Leaders of a hierarchy web: occupants of the highest rank present, or — if no
+// ranks are assigned — the roots of the reporting tree (have reports, report to none).
+function computeHierarchyLeaders(nodes: any[], edges: any[], ranks: any[]): any[] {
+  const persons = nodes.filter(n => n.node_type === 'person')
+  const rankIdx = (id: string | null) => {
+    const i = ranks.findIndex((r: any) => r.id === id)
+    return i === -1 ? Infinity : i
+  }
+  const assigned = persons.filter(n => rankIdx(n.rank_id) !== Infinity)
+  if (assigned.length) {
+    const minIdx = Math.min(...assigned.map(n => rankIdx(n.rank_id)))
+    return assigned.filter(n => rankIdx(n.rank_id) === minIdx)
+  }
+  const reportsToSomeone = new Set(edges.filter(e => e.edge_type === 'reports_to').map(e => e.from_node_id))
+  const hasReports = new Set(edges.filter(e => e.edge_type === 'reports_to').map(e => e.to_node_id))
+  return persons.filter(n => hasReports.has(n.id) && !reportsToSomeone.has(n.id))
+}
+
+// For a hierarchy web linked to an article: derive the leader(s) from the
+// structure and write them into the linked article's "Leader" track.
+function syncHierarchyForWeb(webId: number) {
+  const web = db.prepare('SELECT * FROM relation_webs WHERE id = ?').get(webId) as any
+  if (!web || web.template !== 'org_hierarchy' || !web.article_id) return
+
+  const nodes = db.prepare(`
+    SELECT n.id, n.node_type, n.rank_id, n.label, a.title AS article_title
+    FROM relation_nodes n
+    LEFT JOIN articles a ON a.id = n.article_id
+    WHERE n.web_id = ?
+  `).all(webId) as any[]
+  const edges = db.prepare('SELECT * FROM relation_edges WHERE web_id = ?').all(webId) as any[]
+  let ranks: any[] = []
+  try { ranks = JSON.parse(web.ranks || '[]') } catch {}
+
+  const leaders = computeHierarchyLeaders(nodes, edges, ranks)
+  const leaderStr = leaders.map(n => n.article_title || n.label).filter(Boolean).join(', ')
+  // Don't clobber a manually-set Leader when the structure has no leader yet.
+  if (!leaderStr) return
+
+  const art = db.prepare('SELECT tracks FROM articles WHERE id = ?').get(web.article_id) as any
+  if (!art) return
+  let tracks: Record<string, any> = {}
+  try { tracks = JSON.parse(art.tracks || '{}') } catch {}
+  if ((tracks.Leader || '') !== leaderStr) {
+    tracks.Leader = leaderStr
+    db.prepare('UPDATE articles SET tracks = ? WHERE id = ?').run(JSON.stringify(tracks), web.article_id)
+  }
 }
 
 function initDatabase() {
@@ -163,6 +249,7 @@ function initDatabase() {
       name        TEXT    NOT NULL,
       color       TEXT    NOT NULL DEFAULT '#c8a84b',
       is_default  INTEGER NOT NULL DEFAULT 0,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
       created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -175,6 +262,8 @@ function initDatabase() {
       arc_id         INTEGER,
       date           TEXT,
       notes          TEXT    NOT NULL DEFAULT '',
+      is_draft       INTEGER NOT NULL DEFAULT 0,
+      sort_order     INTEGER NOT NULL DEFAULT 0,
       created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -184,6 +273,7 @@ function initDatabase() {
       article_id INTEGER REFERENCES articles(id) ON DELETE CASCADE,
       name       TEXT    NOT NULL,
       image_path TEXT    NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -211,9 +301,9 @@ function initDatabase() {
       portrait_image   TEXT,
       tracks           TEXT    NOT NULL DEFAULT '{}',
       statblock        TEXT    NOT NULL DEFAULT '{}',
+      item_block       TEXT    NOT NULL DEFAULT '',
       loot_table       TEXT    NOT NULL DEFAULT '{"name":"Loot","items":[]}',
       status           TEXT    NOT NULL DEFAULT '',
-      derived_relations TEXT   NOT NULL DEFAULT '{}',
       created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
       UNIQUE(campaign_id, title)
@@ -283,6 +373,8 @@ function initDatabase() {
       name        TEXT    NOT NULL DEFAULT 'New Web',
       description TEXT    NOT NULL DEFAULT '',
       template    TEXT    NOT NULL DEFAULT 'custom',
+      ranks       TEXT    NOT NULL DEFAULT '[]',
+      article_id  INTEGER REFERENCES articles(id) ON DELETE SET NULL,
       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
@@ -293,6 +385,7 @@ function initDatabase() {
       article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
       label      TEXT    NOT NULL DEFAULT 'New node',
       node_type  TEXT    NOT NULL DEFAULT 'person',
+      rank_id    TEXT    NOT NULL DEFAULT '',
       pos_x      REAL    NOT NULL DEFAULT 100,
       pos_y      REAL    NOT NULL DEFAULT 100,
       created_at TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -306,7 +399,16 @@ function initDatabase() {
       label_from   TEXT    NOT NULL DEFAULT '',
       label_to     TEXT    NOT NULL DEFAULT '',
       edge_type    TEXT    NOT NULL DEFAULT 'standard',
+      from_handle  TEXT    NOT NULL DEFAULT '',
+      to_handle    TEXT    NOT NULL DEFAULT '',
       created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS relation_web_articles (
+      web_id     INTEGER NOT NULL REFERENCES relation_webs(id) ON DELETE CASCADE,
+      article_id INTEGER NOT NULL REFERENCES articles(id)      ON DELETE CASCADE,
+      created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (web_id, article_id)
     );
   `)
 
@@ -318,14 +420,14 @@ function initDatabase() {
   if (!articleCols.some(c => c.name === 'statblock')) {
     db.exec(`ALTER TABLE articles ADD COLUMN statblock TEXT NOT NULL DEFAULT '{}'`)
   }
+  if (!articleCols.some(c => c.name === 'item_block')) {
+    db.exec(`ALTER TABLE articles ADD COLUMN item_block TEXT NOT NULL DEFAULT ''`)
+  }
   if (!articleCols.some(c => c.name === 'loot_table')) {
     db.exec(`ALTER TABLE articles ADD COLUMN loot_table TEXT NOT NULL DEFAULT '{"name":"Loot","items":[]}'`)
   }
   if (!articleCols.some(c => c.name === 'loot_table_id')) {
     db.exec(`ALTER TABLE articles ADD COLUMN loot_table_id INTEGER REFERENCES loot_tables(id) ON DELETE SET NULL`)
-  }
-  if (!articleCols.some(c => c.name === 'derived_relations')) {
-    db.exec(`ALTER TABLE articles ADD COLUMN derived_relations TEXT NOT NULL DEFAULT '{}'`)
   }
   if (!articleCols.some(c => c.name === 'substeps')) {
   db.exec(`ALTER TABLE articles ADD COLUMN substeps TEXT NOT NULL DEFAULT '[]'`)
@@ -390,6 +492,12 @@ function initDatabase() {
   if (!sessionCols.some(c => c.name === 'in_world_day_end')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN in_world_day_end INTEGER`)
   }
+  if (!sessionCols.some(c => c.name === 'is_draft')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0`)
+  }
+  if (!sessionCols.some(c => c.name === 'sort_order')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
+  }
 
   const mapCols = db.pragma('table_info(maps)') as { name: string; notnull: number }[]
     if (!mapCols.some(c => c.name === 'campaign_id')) {
@@ -414,6 +522,19 @@ function initDatabase() {
       `)
     }
 
+  const arcCols = db.pragma('table_info(arcs)') as { name: string }[]
+  if (!arcCols.some(c => c.name === 'sort_order')) {
+    db.exec(`ALTER TABLE arcs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
+    // Preserve the previous name-alphabetical ordering as the initial manual order,
+    // per campaign, so existing arc lists don't visually shuffle on first launch.
+    const campaigns = db.prepare('SELECT id FROM campaigns').all() as { id: number }[]
+    const setOrder = db.prepare('UPDATE arcs SET sort_order = ? WHERE id = ?')
+    for (const c of campaigns) {
+      const arcs = db.prepare('SELECT id FROM arcs WHERE campaign_id = ? ORDER BY name ASC').all(c.id) as { id: number }[]
+      arcs.forEach((a, i) => setOrder.run(i, a.id))
+    }
+  }
+
   const dmNotesPageCols = db.pragma('table_info(dm_notes_pages)') as { name: string }[]
   if (!dmNotesPageCols.some(c => c.name === 'group_id')) {
     db.exec(`ALTER TABLE dm_notes_pages ADD COLUMN group_id INTEGER REFERENCES dm_notes_groups(id) ON DELETE SET NULL`)
@@ -423,9 +544,27 @@ function initDatabase() {
     db.exec(`UPDATE dm_notes_pages SET sort_order = id`)
   }
 
+  const mapSortCols = db.pragma('table_info(maps)') as { name: string }[]
+  if (!mapSortCols.some(c => c.name === 'sort_order')) {
+    db.exec(`ALTER TABLE maps ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
+    // Seed manual order from the previous created_at ordering, per session,
+    // so existing map tab rows don't visually shuffle on first launch.
+    const owners = db.prepare('SELECT DISTINCT session_id FROM maps WHERE session_id IS NOT NULL').all() as { session_id: number }[]
+    const setOrder = db.prepare('UPDATE maps SET sort_order = ? WHERE id = ?')
+    for (const o of owners) {
+      const ms = db.prepare('SELECT id FROM maps WHERE session_id = ? ORDER BY created_at ASC').all(o.session_id) as { id: number }[]
+      ms.forEach((m, i) => setOrder.run(i, m.id))
+    }
+  }
+
+  // Partial index: only sequenced (non-draft) sessions must be unique by number.
+  // Drafts all share session_number 0 and are exempt. Drop-and-recreate so DBs
+  // that already have the non-partial index pick up the new predicate.
+  db.exec(`DROP INDEX IF EXISTS idx_sessions_unique`)
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_unique
     ON sessions(campaign_id, session_number, session_sub)
+    WHERE is_draft = 0
   `)
 
   // ── Relation table migrations (additive, safe for existing DBs) ───────────
@@ -433,14 +572,49 @@ function initDatabase() {
   if (!webCols.some(c => c.name === 'template')) {
     db.exec(`ALTER TABLE relation_webs ADD COLUMN template TEXT NOT NULL DEFAULT 'custom'`)
   }
+  if (!webCols.some(c => c.name === 'ranks')) {
+    db.exec(`ALTER TABLE relation_webs ADD COLUMN ranks TEXT NOT NULL DEFAULT '[]'`)
+  }
+  if (!webCols.some(c => c.name === 'article_id')) {
+    db.exec(`ALTER TABLE relation_webs ADD COLUMN article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL`)
+  }
+  // Many-to-many web↔article links. Backfill from the legacy single article_id
+  // (which is retained as the "primary" link used by hierarchy derivation).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS relation_web_articles (
+      web_id     INTEGER NOT NULL REFERENCES relation_webs(id) ON DELETE CASCADE,
+      article_id INTEGER NOT NULL REFERENCES articles(id)      ON DELETE CASCADE,
+      created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (web_id, article_id)
+    );
+  `)
+  db.exec(`
+    INSERT OR IGNORE INTO relation_web_articles (web_id, article_id)
+    SELECT id, article_id FROM relation_webs WHERE article_id IS NOT NULL
+  `)
   const nodeCols2 = db.pragma('table_info(relation_nodes)') as { name: string }[]
   if (!nodeCols2.some(c => c.name === 'node_type')) {
     db.exec(`ALTER TABLE relation_nodes ADD COLUMN node_type TEXT NOT NULL DEFAULT 'person'`)
+  }
+  if (!nodeCols2.some(c => c.name === 'rank_id')) {
+    db.exec(`ALTER TABLE relation_nodes ADD COLUMN rank_id TEXT NOT NULL DEFAULT ''`)
   }
   const edgeCols2 = db.pragma('table_info(relation_edges)') as { name: string }[]
   if (!edgeCols2.some(c => c.name === 'edge_type')) {
     db.exec(`ALTER TABLE relation_edges ADD COLUMN edge_type TEXT NOT NULL DEFAULT 'standard'`)
   }
+  if (!edgeCols2.some(c => c.name === 'from_handle')) {
+    db.exec(`ALTER TABLE relation_edges ADD COLUMN from_handle TEXT NOT NULL DEFAULT ''`)
+  }
+  if (!edgeCols2.some(c => c.name === 'to_handle')) {
+    db.exec(`ALTER TABLE relation_edges ADD COLUMN to_handle TEXT NOT NULL DEFAULT ''`)
+  }
+  // Give existing union-member edges a neat default: partner's bottom dot → union's
+  // top dot. Only touches auto-created edges that never had handles set.
+  db.exec(`
+    UPDATE relation_edges SET from_handle = 'bottom', to_handle = 'top'
+    WHERE edge_type = 'person_to_union' AND from_handle = '' AND to_handle = ''
+  `)
 
   return { userDataPath, imagesPath }
 }
@@ -466,6 +640,36 @@ function processAndSaveImage(
   const outName = baseName + '.jpg'
   fs.writeFileSync(path.join(destDir, outName), processed.toJPEG(quality))
   return outName
+}
+
+// ── Resilient directory copy (for backup export/import) ─────────────────────────
+// Copies every file from srcDir into dstDir. Each entry is wrapped in its own
+// try/catch so a single unreadable/locked/odd entry can never abort the whole
+// transfer — historically a mid-loop throw here left maps (which sort after
+// profile images) un-copied while the DB had already been swapped in.
+function copyDirContents(srcDir: string, dstDir: string): { copied: number; failed: string[] } {
+  const failed: string[] = []
+  let copied = 0
+  if (!fs.existsSync(srcDir)) return { copied, failed }
+  fs.mkdirSync(dstDir, { recursive: true })
+  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    const src = path.join(srcDir, entry.name)
+    const dst = path.join(dstDir, entry.name)
+    try {
+      if (entry.isDirectory()) {
+        const sub = copyDirContents(src, dst)
+        copied += sub.copied
+        failed.push(...sub.failed)
+      } else {
+        fs.copyFileSync(src, dst)
+        copied++
+      }
+    } catch (err: any) {
+      failed.push(entry.name)
+      log.warn(`Backup: failed to copy "${src}": ${err?.message ?? err}`)
+    }
+  }
+  return { copied, failed }
 }
 
 // ── Inline Image Cleanup ───────────────────────────────────────────────────────
@@ -613,15 +817,26 @@ function registerIPC(imagesPath: string) {
       LEFT JOIN maps m ON m.session_id = s.id
       WHERE s.campaign_id = ?
       GROUP BY s.id
-      ORDER BY s.session_number ASC, s.session_sub ASC
+      ORDER BY s.is_draft ASC, s.session_number ASC, s.session_sub ASC, s.sort_order ASC
     `).all(campaignId)
   })
 
   ipcMain.handle('sessions:create', (_e, data: any) => {
+    const isDraft = data.is_draft ? 1 : 0
+    let sessionNumber = data.session_number ?? 1
+    let sortOrder = 0
+    if (isDraft) {
+      // Drafts aren't sequenced: park them at number 0 and append to the prep list.
+      sessionNumber = 0
+      const { m } = db.prepare(
+        'SELECT COALESCE(MAX(sort_order), -1) AS m FROM sessions WHERE campaign_id = @campaign_id AND is_draft = 1'
+      ).get(data) as { m: number }
+      sortOrder = m + 1
+    }
     const result = db.prepare(`
-      INSERT INTO sessions (campaign_id, name, session_number, session_sub, arc_id, date, notes)
-      VALUES (@campaign_id, @name, @session_number, @session_sub, @arc_id, @date, @notes)
-    `).run({ date: null, notes: '', session_sub: '', arc_id: null, ...data })
+      INSERT INTO sessions (campaign_id, name, session_number, session_sub, arc_id, date, notes, is_draft, sort_order)
+      VALUES (@campaign_id, @name, @session_number, @session_sub, @arc_id, @date, @notes, @is_draft, @sort_order)
+    `).run({ date: null, notes: '', session_sub: '', arc_id: null, ...data, session_number: sessionNumber, is_draft: isDraft, sort_order: sortOrder })
     return db.prepare('SELECT * FROM sessions WHERE id = ?').get(result.lastInsertRowid)
   })
 
@@ -629,6 +844,26 @@ function registerIPC(imagesPath: string) {
     const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE sessions SET ${fields} WHERE id = @id`).run({ ...data, id })
     return db.prepare('SELECT * FROM sessions WHERE id = ?').get(id)
+  })
+
+  // Promote a draft into the sequenced list: append it as the next whole number.
+  ipcMain.handle('sessions:promote', (_e, id: number) => {
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as any
+    if (!session) return null
+    const { m } = db.prepare(
+      'SELECT COALESCE(MAX(session_number), 0) AS m FROM sessions WHERE campaign_id = ? AND is_draft = 0'
+    ).get(session.campaign_id) as { m: number }
+    db.prepare(
+      "UPDATE sessions SET is_draft = 0, session_number = ?, session_sub = '', sort_order = 0 WHERE id = ?"
+    ).run(m + 1, id)
+    return db.prepare('SELECT * FROM sessions WHERE id = ?').get(id)
+  })
+
+  ipcMain.handle('sessions:reorder-drafts', (_e, orders: { id: number; sort_order: number }[]) => {
+    const stmt = db.prepare('UPDATE sessions SET sort_order = @sort_order WHERE id = @id')
+    db.transaction((list: { id: number; sort_order: number }[]) => {
+      for (const o of list) stmt.run(o)
+    })(orders)
   })
 
   ipcMain.handle('sessions:get-poi-texts', (_e, campaignId: number) => {
@@ -652,7 +887,7 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('arcs:get-all', (_e, campaignId: number) => {
     let arcs = db.prepare(
-      'SELECT * FROM arcs WHERE campaign_id = ? ORDER BY name ASC'
+      'SELECT * FROM arcs WHERE campaign_id = ? ORDER BY sort_order ASC, name ASC'
     ).all(campaignId) as any[]
     if (arcs.length === 0) {
       const result = db.prepare(`
@@ -665,12 +900,22 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('arcs:create', (_e, data: any) => {
+    const { m } = db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) as m FROM arcs WHERE campaign_id = @campaign_id'
+    ).get(data) as { m: number }
     const result = db.prepare(`
-      INSERT INTO arcs (campaign_id, name, color, is_default)
-      VALUES (@campaign_id, @name, @color, 0)
-    `).run({ color: '#c8a84b', ...data })
+      INSERT INTO arcs (campaign_id, name, color, is_default, sort_order)
+      VALUES (@campaign_id, @name, @color, 0, @sort_order)
+    `).run({ color: '#c8a84b', sort_order: m + 1, ...data })
     const arc = db.prepare('SELECT * FROM arcs WHERE id = ?').get(result.lastInsertRowid) as any
     return { ...arc, is_default: false }
+  })
+
+  ipcMain.handle('arcs:reorder', (_e, orders: { id: number; sort_order: number }[]) => {
+    const stmt = db.prepare('UPDATE arcs SET sort_order = @sort_order WHERE id = @id')
+    db.transaction((list: { id: number; sort_order: number }[]) => {
+      for (const o of list) stmt.run(o)
+    })(orders)
   })
 
   ipcMain.handle('arcs:update', (_e, id: number, data: any) => {
@@ -696,6 +941,33 @@ function registerIPC(imagesPath: string) {
 
   // ── Maps ──────────────────────────────────────────────────────────────────────
 
+  // Opens the native file explorer (defaulting to the app's images folder) so the
+  // user can either import a fresh image or simply re-pick one that was already
+  // imported. If the chosen file already lives in our images dir we reference it
+  // directly — that's the "reuse" path, no duplicate copy or re-encode.
+  async function pickMapImage(
+    title: string,
+    baseNamePrefix: string,
+  ): Promise<{ path: string; name: string } | null> {
+    if (!mainWindow) return null
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title,
+      defaultPath: imagesPath,
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    const srcPath = result.filePaths[0]
+    const name = path.basename(srcPath, path.extname(srcPath))
+    if (path.resolve(path.dirname(srcPath)) === path.resolve(imagesPath)) {
+      // Already an imported image — reuse in place.
+      return { path: `images/${path.basename(srcPath)}`, name }
+    }
+    const baseName = `${baseNamePrefix}_${Date.now()}`
+    const filename = processAndSaveImage(srcPath, imagesPath, baseName, 4000, 85)
+    return { path: `images/${filename}`, name }
+  }
+
   ipcMain.handle('maps:get-all', (_e, sessionId: number) => {
     return db.prepare(`
       SELECT m.*, COUNT(p.id) as poi_count
@@ -703,7 +975,7 @@ function registerIPC(imagesPath: string) {
       LEFT JOIN pois p ON p.map_id = m.id
       WHERE m.session_id = ?
       GROUP BY m.id
-      ORDER BY m.created_at ASC
+      ORDER BY m.sort_order ASC, m.created_at ASC
     `).all(sessionId)
   })
 
@@ -719,16 +991,37 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('maps:create', (_e, data: any) => {
+    const full = { session_id: null, article_id: null, campaign_id: null, ...data }
+    // Append after existing maps owned by the same parent (NULL-safe match via IS).
+    const { m } = db.prepare(
+      `SELECT COALESCE(MAX(sort_order), -1) AS m FROM maps
+       WHERE session_id IS @session_id AND article_id IS @article_id AND campaign_id IS @campaign_id`
+    ).get(full) as { m: number }
     const result = db.prepare(
-      'INSERT INTO maps (session_id, article_id, campaign_id, name, image_path) VALUES (@session_id, @article_id, @campaign_id, @name, @image_path)'
-    ).run({ session_id: null, article_id: null, campaign_id: null, ...data })
+      'INSERT INTO maps (session_id, article_id, campaign_id, name, image_path, sort_order) VALUES (@session_id, @article_id, @campaign_id, @name, @image_path, @sort_order)'
+    ).run({ ...full, sort_order: m + 1 })
     return db.prepare('SELECT * FROM maps WHERE id = ?').get(result.lastInsertRowid)
   })
 
   ipcMain.handle('maps:update', (_e, id: number, data: any) => {
+    // When moving a map to another session, append it to the end of that
+    // session's tab order so it doesn't collide with an existing sort_order.
+    if (data.session_id != null && data.sort_order === undefined) {
+      const { m } = db.prepare(
+        'SELECT COALESCE(MAX(sort_order), -1) AS m FROM maps WHERE session_id = ?'
+      ).get(data.session_id) as { m: number }
+      data = { ...data, sort_order: m + 1 }
+    }
     const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE maps SET ${fields} WHERE id = @id`).run({ ...data, id })
     return db.prepare('SELECT * FROM maps WHERE id = ?').get(id)
+  })
+
+  ipcMain.handle('maps:reorder', (_e, orders: { id: number; sort_order: number }[]) => {
+    const stmt = db.prepare('UPDATE maps SET sort_order = @sort_order WHERE id = @id')
+    db.transaction((list: { id: number; sort_order: number }[]) => {
+      for (const o of list) stmt.run(o)
+    })(orders)
   })
 
   ipcMain.handle('maps:delete', (_e, id: number) => {
@@ -738,49 +1031,16 @@ function registerIPC(imagesPath: string) {
     if (map?.image_path) safeUnlinkRelative(map.image_path, userDataPath)
   })
 
-  ipcMain.handle('maps:import-image', async (_e, sessionId: number) => {
-    if (!mainWindow) return null
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Select Map Image',
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-      properties: ['openFile'],
-    })
-    if (result.canceled || !result.filePaths.length) return null
-    const srcPath = result.filePaths[0]
-    const baseName = `map_${sessionId}_${Date.now()}`
-    const filename = processAndSaveImage(srcPath, imagesPath, baseName, 4000, 85)
-    const name = path.basename(srcPath, path.extname(srcPath))
-    return { path: `images/${filename}`, name }
-  })
+  ipcMain.handle('maps:import-image', (_e, sessionId: number) =>
+    pickMapImage('Select Map Image', `map_${sessionId}`))
 
   ipcMain.handle('maps:replace-image', async (_e, mapId: number) => {
-  if (!mainWindow) return null
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Select Replacement Map Image',
-    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-    properties: ['openFile'],
+    const result = await pickMapImage('Select Replacement Map Image', `map_${mapId}_replace`)
+    return result ? { path: result.path } : null
   })
-  if (result.canceled || !result.filePaths.length) return null
-  const srcPath = result.filePaths[0]
-  const baseName = `map_${mapId}_replace_${Date.now()}`
-  const filename = processAndSaveImage(srcPath, imagesPath, baseName, 4000, 85)
-  return { path: `images/${filename}` }
-})
 
-  ipcMain.handle('maps:import-for-article', async (_e, articleId: number) => {
-    if (!mainWindow) return null
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Select Map Image',
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-      properties: ['openFile'],
-    })
-    if (result.canceled || !result.filePaths.length) return null
-    const srcPath = result.filePaths[0]
-    const baseName = `map_article_${articleId}_${Date.now()}`
-    const filename = processAndSaveImage(srcPath, imagesPath, baseName, 4000, 85)
-    const name = path.basename(srcPath, path.extname(srcPath))
-    return { path: `images/${filename}`, name }
-  })
+  ipcMain.handle('maps:import-for-article', (_e, articleId: number) =>
+    pickMapImage('Select Map Image', `map_article_${articleId}`))
 
   ipcMain.handle('maps:get-by-campaign', (_e, campaignId: number) => {
     return db.prepare(`
@@ -793,39 +1053,9 @@ function registerIPC(imagesPath: string) {
     `).all(campaignId)
   })
 
-  ipcMain.handle('maps:import-for-campaign', async (_e, campaignId: number) => {
-    if (!mainWindow) return null
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Select Map Image',
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-      properties: ['openFile'],
-    })
-    if (result.canceled || !result.filePaths.length) return null
-    const srcPath = result.filePaths[0]
-    const baseName = `map_campaign_${campaignId}_${Date.now()}`
-    const filename = processAndSaveImage(srcPath, imagesPath, baseName, 4000, 85)
-    const name = path.basename(srcPath, path.extname(srcPath))
-    return { path: `images/${filename}`, name }
-  })
+  ipcMain.handle('maps:import-for-campaign', (_e, campaignId: number) =>
+    pickMapImage('Select Map Image', `map_campaign_${campaignId}`))
 
-  ipcMain.handle('maps:get-campaign-images', (_e, campaignId: number) => {
-    return db.prepare(`
-      SELECT m.image_path, m.name,
-        CASE
-          WHEN s.id IS NOT NULL THEN 'Session ' || s.session_number || COALESCE(s.session_sub,'') || ': ' || s.name
-          WHEN a.id IS NOT NULL THEN a.title || ' (' || a.article_type || ')'
-          ELSE 'Unknown'
-        END as label,
-        m.created_at
-      FROM maps m
-      LEFT JOIN sessions s ON s.id = m.session_id
-      LEFT JOIN articles a ON a.id = m.article_id
-      WHERE s.campaign_id = @campaignId OR a.campaign_id = @campaignId
-      GROUP BY m.image_path
-      ORDER BY m.created_at DESC
-    `).all({ campaignId })
-  })
-  
   // ── POIs ──────────────────────────────────────────────────────────────────────
 
   ipcMain.handle('pois:get-all', (_e, mapId: number) => {
@@ -969,7 +1199,19 @@ function registerIPC(imagesPath: string) {
       'SELECT content, cover_image, portrait_image FROM articles WHERE id = ?'
     ).get(id) as { content: string; cover_image: string | null; portrait_image: string | null } | undefined
 
+    // Hierarchy webs that reference this article — refresh their linked article's
+    // Leader track after deletion (family relations are computed live, so they
+    // need no resync). Captured before the delete cascades article_id to NULL.
+    const affectedWebs = db.prepare(`
+      SELECT DISTINCT n.web_id
+      FROM relation_nodes n
+      JOIN relation_webs w ON w.id = n.web_id
+      WHERE n.article_id = ? AND w.template = 'org_hierarchy'
+    `).all(id) as { web_id: number }[]
+
     db.prepare('DELETE FROM articles WHERE id = ?').run(id)
+
+    for (const { web_id } of affectedWebs) syncHierarchyForWeb(web_id)
 
     if (article) {
       extractInlineImagePaths(article.content, userDataPath).forEach(safeUnlink)
@@ -1166,13 +1408,11 @@ function registerIPC(imagesPath: string) {
       if (fs.existsSync(dbSrc)) fs.copyFileSync(dbSrc, path.join(backupDir, 'dmforge.db'))
       const imgSrc = path.join(userDataPath, 'images')
       const imgDst = path.join(backupDir, 'images')
-      if (fs.existsSync(imgSrc)) {
-        fs.mkdirSync(imgDst, { recursive: true })
-        for (const file of fs.readdirSync(imgSrc)) {
-          fs.copyFileSync(path.join(imgSrc, file), path.join(imgDst, file))
-        }
+      const { failed } = copyDirContents(imgSrc, imgDst)
+      if (failed.length) {
+        log.warn(`Backup export: ${failed.length} image(s) could not be copied: ${failed.join(', ')}`)
       }
-      return { success: true, path: backupDir }
+      return { success: true, path: backupDir, failedImages: failed.length }
     } catch (err: any) {
       return { success: false, error: err.message }
     }
@@ -1194,19 +1434,31 @@ function registerIPC(imagesPath: string) {
       const userDataPath = app.getPath('userData')
       db.pragma('wal_checkpoint(TRUNCATE)')
       db.close()
-      fs.copyFileSync(backupDb, path.join(userDataPath, 'dmforge.db'))
+      const dbDst = path.join(userDataPath, 'dmforge.db')
+      fs.copyFileSync(backupDb, dbDst)
+      // Drop any stale journal files belonging to the previous database — left in
+      // place they can be replayed over the freshly-imported db and corrupt it.
+      for (const journal of ['dmforge.db-wal', 'dmforge.db-shm']) {
+        try { fs.rmSync(path.join(userDataPath, journal), { force: true }) } catch { /* ignore */ }
+      }
+      // Copy a matching journal from the backup only if one was captured alongside it.
+      for (const journal of ['dmforge.db-wal', 'dmforge.db-shm']) {
+        const src = path.join(backupDir, journal)
+        if (fs.existsSync(src)) {
+          try { fs.copyFileSync(src, path.join(userDataPath, journal)) } catch { /* ignore */ }
+        }
+      }
       const backupImages = path.join(backupDir, 'images')
       const imagesDir = path.join(userDataPath, 'images')
-      if (fs.existsSync(backupImages)) {
-        if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir, { recursive: true })
-        for (const file of fs.readdirSync(backupImages)) {
-          fs.copyFileSync(path.join(backupImages, file), path.join(imagesDir, file))
-        }
+      const { failed } = copyDirContents(backupImages, imagesDir)
+      if (failed.length) {
+        log.warn(`Backup import: ${failed.length} image(s) could not be copied: ${failed.join(', ')}`)
       }
       app.relaunch()
       app.exit(0)
       return { success: true }
     } catch (err: any) {
+      log.error(`Backup import failed: ${err?.message ?? err}`)
       return { success: false, error: err.message }
     }
   })
@@ -1381,17 +1633,31 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('relation-webs:create', (_e, data: any) => {
     const result = db.prepare(`
-      INSERT INTO relation_webs (campaign_id, name, description, template)
-      VALUES (@campaign_id, @name, @description, @template)
-    `).run({ description: '', template: 'custom', ...data })
+      INSERT INTO relation_webs (campaign_id, name, description, template, ranks, article_id)
+      VALUES (@campaign_id, @name, @description, @template, @ranks, @article_id)
+    `).run({ description: '', template: 'custom', ranks: '[]', article_id: null, ...data })
+    const webId = result.lastInsertRowid as number
+    // Mirror the primary link into the join table so it appears in the rail.
+    if (data.article_id) {
+      db.prepare(`INSERT OR IGNORE INTO relation_web_articles (web_id, article_id) VALUES (?, ?)`)
+        .run(webId, data.article_id)
+    }
     return db.prepare(`
       SELECT w.*, 0 AS node_count FROM relation_webs w WHERE w.id = ?
-    `).get(result.lastInsertRowid)
+    `).get(webId)
   })
 
   ipcMain.handle('relation-webs:update', (_e, id: number, data: any) => {
-    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
-    db.prepare(`UPDATE relation_webs SET ${fields}, updated_at = datetime('now') WHERE id = @id`).run({ ...data, id })
+    const allowed = ['name', 'description', 'template', 'ranks']
+    const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)))
+    if (Object.keys(clean).length === 0) {
+      return db.prepare(`
+        SELECT w.*, (SELECT COUNT(*) FROM relation_nodes n WHERE n.web_id = w.id) AS node_count
+        FROM relation_webs w WHERE w.id = ?
+      `).get(id)
+    }
+    const fields = Object.keys(clean).map(k => `${k} = @${k}`).join(', ')
+    db.prepare(`UPDATE relation_webs SET ${fields}, updated_at = datetime('now') WHERE id = @id`).run({ ...clean, id })
     return db.prepare(`
       SELECT w.*, (SELECT COUNT(*) FROM relation_nodes n WHERE n.web_id = w.id) AS node_count
       FROM relation_webs w WHERE w.id = ?
@@ -1404,7 +1670,7 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('relation-webs:get-data', (_e, webId: number) => {
     const nodes = db.prepare(`
-      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.pos_x, n.pos_y,
+      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.pos_x, n.pos_y,
              a.title AS article_title, a.article_type, a.tracks
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
@@ -1434,14 +1700,14 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('relation-nodes:create', (_e, data: any) => {
     const result = db.prepare(`
-      INSERT INTO relation_nodes (web_id, article_id, label, node_type, pos_x, pos_y)
-      VALUES (@web_id, @article_id, @label, @node_type, @pos_x, @pos_y)
-    `).run({ article_id: null, node_type: 'person', pos_x: 100, pos_y: 100, ...data })
+      INSERT INTO relation_nodes (web_id, article_id, label, node_type, rank_id, pos_x, pos_y)
+      VALUES (@web_id, @article_id, @label, @node_type, @rank_id, @pos_x, @pos_y)
+    `).run({ article_id: null, node_type: 'person', rank_id: '', pos_x: 100, pos_y: 100, ...data })
 
     db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(data.web_id)
 
     const node = db.prepare(`
-      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.pos_x, n.pos_y,
+      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.pos_x, n.pos_y,
              a.title AS article_title, a.article_type, a.tracks
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
@@ -1457,11 +1723,14 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('relation-nodes:update', (_e, id: number, data: any) => {
-    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
-    db.prepare(`UPDATE relation_nodes SET ${fields} WHERE id = @id`).run({ ...data, id })
+    const allowed = ['article_id', 'label', 'node_type', 'rank_id', 'pos_x', 'pos_y']
+    const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)))
+    if (Object.keys(clean).length === 0) return null
+    const fields = Object.keys(clean).map(k => `${k} = @${k}`).join(', ')
+    db.prepare(`UPDATE relation_nodes SET ${fields} WHERE id = @id`).run({ ...clean, id })
 
     const node = db.prepare(`
-      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.pos_x, n.pos_y,
+      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.pos_x, n.pos_y,
              a.title AS article_title, a.article_type, a.tracks
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
@@ -1481,24 +1750,31 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('relation-nodes:delete', (_e, id: number) => {
+    const node = db.prepare('SELECT web_id FROM relation_nodes WHERE id = ?').get(id) as any
     db.prepare('DELETE FROM relation_edges WHERE from_node_id = ? OR to_node_id = ?').run(id, id)
     db.prepare('DELETE FROM relation_nodes WHERE id = ?').run(id)
+    // Refresh the linked article's Leader track in case the deleted node was a
+    // leader (no-op for non-hierarchy webs). Family relations are computed live.
+    if (node?.web_id) syncHierarchyForWeb(node.web_id)
   })
 
   // ── Relation Edges ────────────────────────────────────────────────────────────
 
   ipcMain.handle('relation-edges:create', (_e, data: any) => {
     const result = db.prepare(`
-      INSERT INTO relation_edges (web_id, from_node_id, to_node_id, label_from, label_to, edge_type)
-      VALUES (@web_id, @from_node_id, @to_node_id, @label_from, @label_to, @edge_type)
-    `).run({ label_from: '', label_to: '', edge_type: 'standard', ...data })
+      INSERT INTO relation_edges (web_id, from_node_id, to_node_id, label_from, label_to, edge_type, from_handle, to_handle)
+      VALUES (@web_id, @from_node_id, @to_node_id, @label_from, @label_to, @edge_type, @from_handle, @to_handle)
+    `).run({ label_from: '', label_to: '', edge_type: 'standard', from_handle: '', to_handle: '', ...data })
     db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(data.web_id)
     return db.prepare('SELECT * FROM relation_edges WHERE id = ?').get(result.lastInsertRowid)
   })
 
   ipcMain.handle('relation-edges:update', (_e, id: number, data: any) => {
-    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
-    db.prepare(`UPDATE relation_edges SET ${fields} WHERE id = @id`).run({ ...data, id })
+    const allowed = ['label_from', 'label_to', 'edge_type', 'from_node_id', 'to_node_id']
+    const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)))
+    if (Object.keys(clean).length === 0) return db.prepare('SELECT * FROM relation_edges WHERE id = ?').get(id)
+    const fields = Object.keys(clean).map(k => `${k} = @${k}`).join(', ')
+    db.prepare(`UPDATE relation_edges SET ${fields} WHERE id = @id`).run({ ...clean, id })
     return db.prepare('SELECT * FROM relation_edges WHERE id = ?').get(id)
   })
 
@@ -1529,7 +1805,6 @@ function registerIPC(imagesPath: string) {
       WHERE w.campaign_id = ?
         AND (fn.article_id = ? OR tn.article_id = ?)
         AND (e.edge_type = 'standard' OR e.edge_type IS NULL)
-        AND w.template != 'family_tree'
       ORDER BY w.name, e.id
     `).all(campaignId, articleId, articleId) as any[]).map(row => {
       let fromVitality: string | null = null
@@ -1540,39 +1815,51 @@ function registerIPC(imagesPath: string) {
       return { ...rest, from_vitality: fromVitality, to_vitality: toVitality }
     })
 
-    // 2) Derived family-tree relations from articles.derived_relations
-    const article = db.prepare('SELECT derived_relations FROM articles WHERE id = ?').get(articleId) as any
-    let derivedMap: Record<string, any> = {}
-    try { derivedMap = JSON.parse(article?.derived_relations || '{}') } catch {}
+    // 2) Derived family-tree relations — computed live from the web graph so
+    //    labels, names, and vitality always reflect the current data (no stale
+    //    cache, and partner roles read from the current person's perspective).
+    const familyNodes = db.prepare(`
+      SELECT n.id, n.web_id, w.name AS web_name
+      FROM relation_nodes n
+      JOIN relation_webs w ON w.id = n.web_id
+      WHERE n.article_id = ? AND w.campaign_id = ? AND w.template = 'family_tree'
+    `).all(articleId, campaignId) as { id: number; web_id: number; web_name: string }[]
 
-    // Resolve vitality for derived entries: prefer the entry's stored vitality;
-    // if it has an articleId, refresh from the live tracks (kept in sync, but defensive).
-    const articleVitality = (aid: number | null): string | null => {
-      if (!aid) return null
-      const a = db.prepare('SELECT tracks FROM articles WHERE id = ?').get(aid) as any
-      if (!a) return null
-      try { return JSON.parse(a.tracks || '{}').Vitality || null } catch { return null }
+    const webGraphCache: Record<number, { nodes: any[]; edges: any[]; ranks: any[] }> = {}
+    const loadWebGraph = (webId: number) => {
+      if (!webGraphCache[webId]) {
+        const wn = db.prepare(`
+          SELECT n.id, n.article_id, n.node_type, n.rank_id, n.label, a.title AS article_title, a.tracks
+          FROM relation_nodes n
+          LEFT JOIN articles a ON a.id = n.article_id
+          WHERE n.web_id = ?
+        `).all(webId) as any[]
+        const nodes = wn.map(n => {
+          let vitality: string | null = null
+          try { vitality = JSON.parse(n.tracks || '{}').Vitality || null } catch {}
+          return { ...n, vitality }
+        })
+        const edges = db.prepare('SELECT * FROM relation_edges WHERE web_id = ?').all(webId) as any[]
+        const webRow = db.prepare('SELECT ranks FROM relation_webs WHERE id = ?').get(webId) as any
+        let ranks: any[] = []
+        try { ranks = JSON.parse(webRow?.ranks || '[]') } catch {}
+        webGraphCache[webId] = { nodes, edges, ranks }
+      }
+      return webGraphCache[webId]
     }
 
     const derivedRows: any[] = []
-    for (const [webIdStr, data] of Object.entries(derivedMap)) {
-      const d = data as any
-      const webId = Number(webIdStr)
-      if (!d || !d.webName) continue
-
-      // Skip if web no longer exists or belongs to a different campaign
-      const web = db.prepare('SELECT id FROM relation_webs WHERE id = ? AND campaign_id = ?').get(webId, campaignId) as any
-      if (!web) continue
-
+    for (const fn of familyNodes) {
+      const { nodes, edges } = loadWebGraph(fn.web_id)
+      const derived = deriveRelationsForNode(fn.id, nodes, edges, fn.web_name, fn.web_id)
       const push = (entries: any[], roleFallback: string) => {
         for (const e of entries) {
           const role = (e.role || roleFallback || '').trim()
-          const otherVit = e.articleId ? articleVitality(e.articleId) : (e.vitality ?? null)
           derivedRows.push({
             // Synthesise an edge_id that won't collide with real edge ids — negative
             edge_id: --edgeRowId,
-            web_id: webId,
-            web_name: d.webName,
+            web_id: fn.web_id,
+            web_name: fn.web_name,
             // We render from the perspective of the current article, so put it on `from`
             from_node_id: 0,
             to_node_id: e.nodeId ?? 0,
@@ -1583,17 +1870,70 @@ function registerIPC(imagesPath: string) {
             from_node_label: '',
             to_node_label: e.name || '',
             from_vitality: null,
-            to_vitality: otherVit,
+            to_vitality: e.vitality ?? null,
             label_from: '',
             label_to: role,
           })
         }
       }
 
-      push(d.parents  ?? [], 'parent')
-      push(d.partners ?? [], 'partner')
-      push(d.children ?? [], 'child')
-      push(d.siblings ?? [], 'sibling')
+      push(derived.parents,  'parent')
+      push(derived.partners, 'partner')
+      push(derived.children, 'child')
+      push(derived.siblings, 'sibling')
+    }
+
+    // 3) Derived hierarchy relations — rank, reports-to (superiors), oversees
+    //    (direct reports), computed live from the web graph.
+    const hierarchyNodes = db.prepare(`
+      SELECT n.id, n.web_id, w.name AS web_name
+      FROM relation_nodes n
+      JOIN relation_webs w ON w.id = n.web_id
+      WHERE n.article_id = ? AND w.campaign_id = ? AND w.template = 'org_hierarchy'
+    `).all(articleId, campaignId) as { id: number; web_id: number; web_name: string }[]
+
+    for (const hn of hierarchyNodes) {
+      const { nodes, edges, ranks } = loadWebGraph(hn.web_id)
+      const d = deriveHierarchyForNode(hn.id, nodes, edges, ranks)
+      const pushH = (entries: any[], role: string) => {
+        for (const e of entries) {
+          derivedRows.push({
+            edge_id: --edgeRowId,
+            web_id: hn.web_id,
+            web_name: hn.web_name,
+            from_node_id: 0,
+            to_node_id: e.nodeId ?? 0,
+            from_article_id: articleId,
+            to_article_id: e.articleId ?? null,
+            from_article_title: null,
+            to_article_title: e.articleId ? e.name : null,
+            from_node_label: '',
+            to_node_label: e.name || '',
+            from_vitality: null,
+            to_vitality: e.vitality ?? null,
+            label_from: '',
+            label_to: role,
+          })
+        }
+      }
+      // Pushed in reverse of desired display order — rows sort by ascending
+      // (most-negative) edge_id, so the last pushed shows first: Rank, Reports to, Oversees.
+      pushH(d.reports, 'oversees')
+      pushH(d.superiors, 'reports to')
+      if (d.rankName) {
+        derivedRows.push({
+          edge_id: --edgeRowId,
+          web_id: hn.web_id,
+          web_name: hn.web_name,
+          from_node_id: 0, to_node_id: 0,
+          from_article_id: articleId, to_article_id: null,
+          from_article_title: null, to_article_title: null,
+          from_node_label: '', to_node_label: d.rankName,
+          from_vitality: null, to_vitality: null,
+          label_from: '', label_to: 'rank',
+          is_rank: true,
+        })
+      }
     }
 
     return [...standardRows, ...derivedRows].sort((a, b) =>
@@ -1601,73 +1941,94 @@ function registerIPC(imagesPath: string) {
     )
   })
 
-  // ── Union node creation ────────────────────────────────────────────────────────
-
-  ipcMain.handle('relation-nodes:create-union', (_e, data: {
-    web_id: number; person1_id: number; person2_id: number; label1: string; label2: string
-  }) => {
-    const n1 = db.prepare('SELECT pos_x, pos_y FROM relation_nodes WHERE id = ?').get(data.person1_id) as any
-    const n2 = db.prepare('SELECT pos_x, pos_y FROM relation_nodes WHERE id = ?').get(data.person2_id) as any
-    const unionX = Math.round(((n1?.pos_x ?? 100) + (n2?.pos_x ?? 200)) / 2)
-    const unionY = Math.round(((n1?.pos_y ?? 100) + (n2?.pos_y ?? 100)) / 2) + 70
-
-    return db.transaction(() => {
-      const unionResult = db.prepare(`
-        INSERT INTO relation_nodes (web_id, label, node_type, pos_x, pos_y)
-        VALUES (?, '∪', 'union', ?, ?)
-      `).run(data.web_id, unionX, unionY)
-      const unionId = Number(unionResult.lastInsertRowid)
-
-      db.prepare(`
-        INSERT INTO relation_edges (web_id, from_node_id, to_node_id, label_from, label_to, edge_type)
-        VALUES (?, ?, ?, ?, '', 'person_to_union')
-      `).run(data.web_id, data.person1_id, unionId, data.label1 || '')
-
-      db.prepare(`
-        INSERT INTO relation_edges (web_id, from_node_id, to_node_id, label_from, label_to, edge_type)
-        VALUES (?, ?, ?, ?, '', 'person_to_union')
-      `).run(data.web_id, data.person2_id, unionId, data.label2 || '')
-
-      db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(data.web_id)
-      return unionId
-    })()
-  })
-
   // ── Derived relations sync ─────────────────────────────────────────────────────
 
   ipcMain.handle('relation-webs:sync-derived-relations', (_e, webId: number) => {
-    const web = db.prepare('SELECT * FROM relation_webs WHERE id = ?').get(webId) as any
-    if (!web || web.template !== 'family_tree') return
+    syncHierarchyForWeb(webId)
+  })
 
-    const nodes = db.prepare(`
-      SELECT n.id, n.article_id, n.node_type, n.label,
-             a.title AS article_title, a.tracks
-      FROM relation_nodes n
-      LEFT JOIN articles a ON a.id = n.article_id
-      WHERE n.web_id = ?
-    `).all(webId) as any[]
+  // The hierarchy web (if any) linked to a given article.
+  ipcMain.handle('relation-webs:get-for-article', (_e, articleId: number) => {
+    return db.prepare(`
+      SELECT w.*, (SELECT COUNT(*) FROM relation_nodes n WHERE n.web_id = w.id) AS node_count
+      FROM relation_webs w
+      WHERE w.article_id = ? AND w.template = 'org_hierarchy'
+      ORDER BY w.id LIMIT 1
+    `).get(articleId) || null
+  })
 
-    const edges = db.prepare('SELECT * FROM relation_edges WHERE web_id = ?').all(webId) as any[]
+  // All webs (any template) linked to an article, via the many-to-many table.
+  ipcMain.handle('relation-webs:list-for-article', (_e, articleId: number) => {
+    return db.prepare(`
+      SELECT w.*, (SELECT COUNT(*) FROM relation_nodes n WHERE n.web_id = w.id) AS node_count
+      FROM relation_web_articles wa
+      JOIN relation_webs w ON w.id = wa.web_id
+      WHERE wa.article_id = ?
+      ORDER BY w.updated_at DESC
+    `).all(articleId)
+  })
 
-    const nodesWithVitality = nodes.map(n => {
-      let vitality: string | null = null
-      try { vitality = JSON.parse(n.tracks || '{}').Vitality || null } catch {}
-      return { ...n, vitality }
-    })
+  // Every web an article participates in — as a node OR as a linked article.
+  // Used to surface web-membership "tags" on member articles.
+  ipcMain.handle('relation-webs:list-for-member', (_e, articleId: number) => {
+    return db.prepare(`
+      SELECT w.id, w.name, w.template
+      FROM relation_webs w
+      WHERE w.id IN (
+        SELECT web_id FROM relation_nodes        WHERE article_id = @articleId
+        UNION
+        SELECT web_id FROM relation_web_articles WHERE article_id = @articleId
+      )
+      ORDER BY w.name COLLATE NOCASE
+    `).all({ articleId })
+  })
 
-    const personNodes = nodesWithVitality.filter(n => n.node_type === 'person' && n.article_id)
+  // Articles linked to a web (for the canvas left rail). is_primary marks the
+  // legacy article_id link used by hierarchy derivation.
+  ipcMain.handle('relation-webs:get-linked-articles', (_e, webId: number) => {
+    return db.prepare(`
+      SELECT a.id, a.title, a.article_type,
+             (a.id = (SELECT article_id FROM relation_webs WHERE id = ?)) AS is_primary
+      FROM relation_web_articles wa
+      JOIN articles a ON a.id = wa.article_id
+      WHERE wa.web_id = ?
+      ORDER BY is_primary DESC, a.title COLLATE NOCASE
+    `).all(webId, webId)
+  })
 
-    db.transaction(() => {
-      for (const node of personNodes) {
-        const derived = deriveRelationsForNode(node.id, nodesWithVitality, edges, web.name, webId)
-        const article = db.prepare('SELECT derived_relations FROM articles WHERE id = ?').get(node.article_id) as any
-        let existing: Record<string, any> = {}
-        try { existing = JSON.parse(article?.derived_relations || '{}') } catch {}
-        existing[String(webId)] = derived
-        db.prepare('UPDATE articles SET derived_relations = ? WHERE id = ?')
-          .run(JSON.stringify(existing), node.article_id)
-      }
-    })()
+  ipcMain.handle('relation-webs:link-article', (_e, webId: number, articleId: number) => {
+    db.prepare(`INSERT OR IGNORE INTO relation_web_articles (web_id, article_id) VALUES (?, ?)`)
+      .run(webId, articleId)
+    // First link on a web with no primary becomes the primary.
+    const web = db.prepare('SELECT article_id FROM relation_webs WHERE id = ?').get(webId) as any
+    if (web && web.article_id == null) {
+      db.prepare(`UPDATE relation_webs SET article_id = ? WHERE id = ?`).run(articleId, webId)
+    }
+  })
+
+  ipcMain.handle('relation-webs:unlink-article', (_e, webId: number, articleId: number) => {
+    db.prepare(`DELETE FROM relation_web_articles WHERE web_id = ? AND article_id = ?`).run(webId, articleId)
+    // If the primary was removed, repoint it at any remaining link (or NULL).
+    const web = db.prepare('SELECT article_id FROM relation_webs WHERE id = ?').get(webId) as any
+    if (web && web.article_id === articleId) {
+      const next = db.prepare(
+        `SELECT article_id FROM relation_web_articles WHERE web_id = ? ORDER BY created_at LIMIT 1`
+      ).get(webId) as any
+      db.prepare(`UPDATE relation_webs SET article_id = ? WHERE id = ?`).run(next?.article_id ?? null, webId)
+    }
+  })
+
+  // Count article-backed members of an org/faction/religion: character or PC
+  // articles whose Faction or Religion track points at this article's title.
+  ipcMain.handle('articles:member-count', (_e, articleId: number) => {
+    const art = db.prepare('SELECT title, campaign_id FROM articles WHERE id = ?').get(articleId) as any
+    if (!art) return 0
+    const row = db.prepare(`
+      SELECT COUNT(*) AS c FROM articles
+      WHERE campaign_id = ? AND article_type IN ('character', 'playerCharacter')
+        AND (json_extract(tracks, '$.Faction') = ? OR json_extract(tracks, '$.Religion') = ?)
+    `).get(art.campaign_id, art.title, art.title) as any
+    return row?.c || 0
   })
 }
 

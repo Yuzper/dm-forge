@@ -48,12 +48,15 @@ interface AppStore {
 
   // Session state
   sessions: Session[]
+  drafts: Session[]
   currentSession: Session | null
   loadSessions: (campaignId: number) => Promise<void>
   selectSession: (s: Session) => void
-  createSession: (data: { name: string; session_number: number; session_sub?: string; arc_id?: number | null; date?: string }) => Promise<void>
+  createSession: (data: { name: string; session_number: number; session_sub?: string; arc_id?: number | null; date?: string; is_draft?: number }) => Promise<void>
   deleteSession: (id: number) => Promise<void>
   updateSession: (id: number, data: Partial<Session>) => Promise<void>
+  promoteSession: (id: number) => Promise<void>
+  reorderDrafts: (orders: { id: number; sort_order: number }[]) => Promise<void>
 
   arcs: Arc[]
   lastUsedArcId: Record<number, number>
@@ -61,6 +64,7 @@ interface AppStore {
   createArc: (data: { name: string; color?: string }) => Promise<void>
   updateArc: (id: number, data: { name?: string; color?: string }) => Promise<void>
   deleteArc: (id: number) => Promise<void>
+  reorderArcs: (orders: { id: number; sort_order: number }[]) => Promise<void>
   setLastUsedArcId: (campaignId: number, arcId: number) => void
 
   // Map state
@@ -71,6 +75,8 @@ interface AppStore {
   importMap: (sessionId: number) => Promise<void>
   deleteMap: (id: number) => Promise<void>
   updateMap: (id: number, data: { name: string }) => Promise<void>
+  reorderMaps: (orders: { id: number; sort_order: number }[]) => Promise<void>
+  moveMapToSession: (mapId: number, sessionId: number) => Promise<void>
 
   // POI state
   pois: POI[]
@@ -108,6 +114,8 @@ interface AppStore {
   setWikiShowTags: (v: boolean) => void
   relationsOpenWebId: number | null // Relations navigation — used to deep-link from article sidebar into a specific web
   setRelationsOpenWebId: (id: number | null) => void
+  relationsFocusArticleId: number | null // Deep-link: select + center the node linked to this article when the web opens
+  setRelationsFocusArticleId: (id: number | null) => void
   getArticleBacklinks: (title: string) => Promise<ArticleSummary[]>
 
   // UI Preferences
@@ -134,7 +142,25 @@ export const useStore = create<AppStore>((set, get) => ({
   setBgStyle: (bgStyle) => { localStorage.setItem('bgStyle', bgStyle); set({ bgStyle }) },
 
   view: 'campaigns',
-  setView: (view) => set({ view }),
+  setView: (view) => set(s => {
+    // Track the campaign-context pages in nav history so they appear under
+    // "Recent" and can be revisited. (campaign/session/article are tracked by
+    // their own select/open actions.)
+    const PAGE_LABELS: Partial<Record<View, string>> = {
+      wiki: 'Wiki', relations: 'Relations', 'dm-notes': 'DM Notes',
+      'loot-tables': 'Loot Tables', timeline: 'Timeline',
+    }
+    const label = PAGE_LABELS[view]
+    if (label && s.currentCampaign) {
+      return {
+        view,
+        navigationHistory: pushEntry(s.navigationHistory, {
+          type: view as any, label, campaign: s.currentCampaign,
+        }),
+      }
+    }
+    return { view }
+  }),
   campaignSubView: 'hub',
   setCampaignSubView: (campaignSubView) => set({ campaignSubView }),
   navigationHistory: [],
@@ -162,7 +188,7 @@ export const useStore = create<AppStore>((set, get) => ({
         set({
           currentCampaign: entry.campaign, view: 'campaign',
           campaignSubView: 'hub',
-          sessions: [], currentSession: null,
+          sessions: [], drafts: [], currentSession: null,
           arcs: [],
           maps: [], currentMap: null,
           pois: [], selectedPOI: null,
@@ -204,6 +230,14 @@ export const useStore = create<AppStore>((set, get) => ({
         if (get().articles.length === 0) await get().loadArticles()
         break
       }
+
+      case 'relations':
+      case 'dm-notes':
+      case 'loot-tables':
+      case 'timeline':
+        // These pages load their own data on mount; just restore campaign + view.
+        set({ currentCampaign: entry.campaign, view: entry.type })
+        break
     }
   },
 
@@ -234,7 +268,7 @@ export const useStore = create<AppStore>((set, get) => ({
     set(s => ({
       currentCampaign: campaign, view: 'campaign',
       campaignSubView: 'hub',
-      sessions: [], currentSession: null,
+      sessions: [], drafts: [], currentSession: null,
       arcs: [],
       maps: [], currentMap: null,
       pois: [], selectedPOI: null,
@@ -302,11 +336,17 @@ export const useStore = create<AppStore>((set, get) => ({
   // ── Sessions ────────────────────────────────────────────────────────────────
 
   sessions: [],
+  drafts: [],
   currentSession: null,
 
   loadSessions: async (campaignId) => {
-    const sessions = await window.api.getSessions(campaignId)
-    set({ sessions })
+    const all = await window.api.getSessions(campaignId)
+    // Drafts ("future sessions") are kept in a separate bucket so they stay out
+    // of the sequenced list, the timeline, and the hub until promoted.
+    set({
+      sessions: all.filter(s => !s.is_draft),
+      drafts: all.filter(s => s.is_draft),
+    })
   },
 
   selectSession: (session) => {
@@ -319,7 +359,9 @@ export const useStore = create<AppStore>((set, get) => ({
       sessionReadMode: true,
       navigationHistory: pushEntry(s.navigationHistory, {
         type: 'session',
-        label: `Session ${session.session_number}${session.session_sub ?? ''}: ${session.name}`,
+        label: session.is_draft
+          ? `Future Session: ${session.name}`
+          : `Session ${session.session_number}${session.session_sub ?? ''}: ${session.name}`,
         campaign: currentCampaign,
         session,
       }),
@@ -340,6 +382,7 @@ export const useStore = create<AppStore>((set, get) => ({
     await window.api.updateSession(id, data)
     set(s => ({
       sessions: s.sessions.map(s2 => s2.id === id ? { ...s2, ...data } : s2),
+      drafts: s.drafts.map(d => d.id === id ? { ...d, ...data } : d),
       currentSession: s.currentSession?.id === id ? { ...s.currentSession!, ...data } : s.currentSession,
       navigationHistory: s.navigationHistory.map(e =>
         e.type === 'session' && e.session.id === id
@@ -347,6 +390,26 @@ export const useStore = create<AppStore>((set, get) => ({
           : e
       ),
     }))
+  },
+
+  promoteSession: async (id) => {
+    await window.api.promoteSession(id)
+    const { currentCampaign } = get()
+    if (currentCampaign) await get().loadSessions(currentCampaign.id)
+    await get().loadCampaigns()
+  },
+
+  reorderDrafts: async (orders) => {
+    // Optimistic: apply new sort_order locally and re-sort the prep list.
+    set(s => ({
+      drafts: s.drafts
+        .map(d => {
+          const o = orders.find(x => x.id === d.id)
+          return o ? { ...d, sort_order: o.sort_order } : d
+        })
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+    }))
+    await window.api.reorderDrafts(orders)
   },
 
   deleteSession: async (id) => {
@@ -381,6 +444,17 @@ export const useStore = create<AppStore>((set, get) => ({
   updateArc: async (id, data) => {
     await window.api.updateArc(id, data)
     set(s => ({ arcs: s.arcs.map(a => a.id === id ? { ...a, ...data } : a) }))
+  },
+
+  reorderArcs: async (orders) => {
+    // Optimistic: apply new sort_order locally, then persist.
+    set(s => ({
+      arcs: s.arcs.map(a => {
+        const o = orders.find(x => x.id === a.id)
+        return o ? { ...a, sort_order: o.sort_order } : a
+      }),
+    }))
+    await window.api.reorderArcs(orders)
   },
 
   deleteArc: async (id) => {
@@ -434,6 +508,30 @@ export const useStore = create<AppStore>((set, get) => ({
       maps: s.maps.map(m => m.id === id ? { ...m, ...data } : m),
       currentMap: s.currentMap?.id === id ? { ...s.currentMap!, ...data } : s.currentMap,
     }))
+  },
+
+  reorderMaps: async (orders) => {
+    // Optimistic: apply new sort_order locally and re-sort the tab array.
+    set(s => ({
+      maps: s.maps
+        .map(m => {
+          const o = orders.find(x => x.id === m.id)
+          return o ? { ...m, sort_order: o.sort_order } : m
+        })
+        .sort((a, b) => a.sort_order - b.sort_order),
+    }))
+    await window.api.reorderMaps(orders)
+  },
+
+  moveMapToSession: async (mapId, sessionId) => {
+    await window.api.updateMap(mapId, { session_id: sessionId })
+    // Map (and its POIs) now belong to another session: drop it from the
+    // current session's tabs and refresh map counts in the session list.
+    const { currentSession, currentCampaign } = get()
+    if (currentSession) await get().loadMaps(currentSession.id)
+    else set(s => ({ maps: s.maps.filter(m => m.id !== mapId) }))
+    if (get().maps.length === 0) set({ currentMap: null, pois: [], selectedPOI: null, poiPanelOpen: false })
+    if (currentCampaign) get().loadSessions(currentCampaign.id)
   },
 
   deleteMap: async (id) => {
@@ -652,4 +750,6 @@ export const useStore = create<AppStore>((set, get) => ({
   setWikiShowTags: (wikiShowTags) => set({ wikiShowTags }),
   relationsOpenWebId: null,
   setRelationsOpenWebId: (relationsOpenWebId) => set({ relationsOpenWebId }),
+  relationsFocusArticleId: null,
+  setRelationsFocusArticleId: (relationsFocusArticleId) => set({ relationsFocusArticleId }),
 }))

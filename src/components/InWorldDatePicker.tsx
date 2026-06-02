@@ -381,6 +381,10 @@ interface InWorldDatePickerProps {
 }
 
 const deriveYear = (day: number, baseYear: number) => baseYear + Math.floor((day - 1) / YEAR_LENGTH)
+// 1-based day within its year (1..YEAR_LENGTH), correct for pre-campaign (≤0) days.
+const dayOfYear = (day: number) => ((day - 1) % YEAR_LENGTH + YEAR_LENGTH) % YEAR_LENGTH + 1
+// Absolute campaign day for a given world year, keeping the same day-of-year.
+const dayForYear = (year: number, doy: number, baseYear: number) => (year - baseYear) * YEAR_LENGTH + doy
 
 export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEAR, label = 'In-world date' }: InWorldDatePickerProps) {
   const { currentCampaign, sessions, arcs } = useStore()
@@ -391,6 +395,11 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
   const containerRef = useRef<HTMLDivElement>(null)
 
   const year = day !== 0 ? deriveYear(day, baseYear) : baseYear
+
+  // Local text buffer for the editable year field, so partial edits (and
+  // clearing the box) don't snap the marker around mid-type.
+  const [yearInput, setYearInput] = useState<string>(String(year))
+  useEffect(() => { setYearInput(String(year)) }, [year])
 
   // Sync inbound value
   useEffect(() => {
@@ -435,6 +444,17 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
     commit(n)
   }
 
+  // Editing the year shifts the absolute day by whole years, keeping the
+  // day-of-year fixed (so the marker lands on the same day in the new year).
+  const handleYearInput = (v: string) => {
+    setYearInput(v)
+    const y = parseInt(v)
+    if (isNaN(y)) return
+    const newDay = dayForYear(y, dayOfYear(day || 1), baseYear)
+    setDay(newDay)
+    commit(newDay)
+  }
+
   const displayValue = day !== 0 ? `Day ${day}, Year ${year}` : ''
   const ctx = day !== 0 ? contextLabel(day, sessions as any[], arcs) : ''
 
@@ -472,8 +492,15 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
                 style={{ width: 56, padding: '3px 6px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: day <= 0 ? '#e88c3a' : 'var(--gold)', fontSize: 12, fontFamily: 'var(--font-ui)', textAlign: 'center' }}
               />
               {day !== 0 && (
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', padding: '3px 8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
-                  Year <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{year}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)' }}>
+                  Year
+                  <input
+                    type="number" value={yearInput}
+                    onChange={e => handleYearInput(e.target.value)}
+                    onBlur={() => setYearInput(String(year))}
+                    title="Edit the year — shifts the date by whole years"
+                    style={{ width: 60, padding: '3px 6px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-ui)', textAlign: 'center' }}
+                  />
                 </span>
               )}
             </div>
@@ -511,9 +538,9 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
             <div style={{ padding: 8, borderTop: '1px solid var(--border)' }}>
               <button
                 onClick={() => { setDay(0); onChange(''); setOpen(false) }}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', background: '#e0555518', border: '1px solid #e0555555', borderRadius: 'var(--radius-sm)', color: '#e87070', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all var(--transition)' }}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', background: '#e0555518', border: '1px solid #e0555555', borderRadius: 'var(--radius-sm)', color: 'var(--danger-soft)', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all var(--transition)' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#e0555530'; (e.currentTarget as HTMLElement).style.color = '#ff8888' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#e0555518'; (e.currentTarget as HTMLElement).style.color = '#e87070' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#e0555518'; (e.currentTarget as HTMLElement).style.color = 'var(--danger-soft)' }}
               >
                 <Trash2 size={13} /> Clear date
               </button>

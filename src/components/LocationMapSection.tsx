@@ -3,7 +3,6 @@ import { Map, Upload, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import { MapContext } from '../context/MapContext'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
-import MapPickerModal from '../components/MapPickerModal'
 import type { GameMap, POI } from '../types'
 import type { MapContextValue } from '../context/MapContext'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
@@ -80,7 +79,7 @@ function MapTabMenu({ map, onRename, onDelete }: { map: GameMap; onRename: () =>
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
           <button
             onClick={e => { e.stopPropagation(); trigger(() => { onDelete(); setOpen(false) }) }}
-            style={{ ...menuItemStyle, color: confirming ? '#ff7777' : '#e05555' }}
+            style={{ ...menuItemStyle, color: confirming ? 'var(--danger-hover)' : '#e05555' }}
           >
             <Trash2 size={13} /> {confirming ? 'Confirm delete' : 'Delete'}
           </button>
@@ -92,7 +91,7 @@ function MapTabMenu({ map, onRename, onDelete }: { map: GameMap; onRename: () =>
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function LocationMapSection({ articleId, readMode, campaignId }: { articleId: number; readMode: boolean; campaignId: number }) {
+export default function LocationMapSection({ articleId, readMode }: { articleId: number; readMode: boolean; campaignId?: number }) {
   const [maps, setMaps] = useState<GameMap[]>([])
   const [currentMap, setCurrentMap] = useState<GameMap | null>(null)
   const [pois, setPois] = useState<POI[]>([])
@@ -100,7 +99,6 @@ export default function LocationMapSection({ articleId, readMode, campaignId }: 
   const [poiPanelOpen, setPoiPanelOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [renamingMap, setRenamingMap] = useState<GameMap | null>(null)
-  const [showPicker, setShowPicker] = useState(false)
 
   const editMode = !readMode
 
@@ -141,7 +139,6 @@ export default function LocationMapSection({ articleId, readMode, campaignId }: 
   }
 
   const handleUploadNew = async () => {
-    setShowPicker(false)
     setImporting(true)
     const result = await window.api.importMapForArticle(articleId)
     if (result) await handleImport(result)
@@ -269,7 +266,7 @@ export default function LocationMapSection({ articleId, readMode, campaignId }: 
 
         {editMode && (
           <button
-            onClick={() => setShowPicker(true)}
+            onClick={handleUploadNew}
             disabled={importing}
             style={{
               display: 'flex', alignItems: 'center', gap: 5,
@@ -319,15 +316,6 @@ export default function LocationMapSection({ articleId, readMode, campaignId }: 
         />
       )}
 
-      {/* ── Map picker modal ── */}
-      {showPicker && (
-        <MapPickerModal
-          campaignId={campaignId}
-          onPickExisting={result => { setShowPicker(false); handleImport(result) }}
-          onUploadNew={handleUploadNew}
-          onClose={() => setShowPicker(false)}
-        />
-      )}
     </MapContext.Provider>
   )
 }

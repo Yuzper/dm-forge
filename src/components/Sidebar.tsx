@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import POIList from './POIList'
 import type { HistoryEntry } from '../store/store'
-import { StoreMapProvider } from '@/context/MapContext'
+import { StoreMapProvider } from '../context/MapContext'
 
 function historyIcon(entry: HistoryEntry) {
   switch (entry.type) {
@@ -17,6 +17,8 @@ function historyIcon(entry: HistoryEntry) {
     case 'wiki':     return <BookOpen size={11} />
     case 'article':  return <FileText size={11} />
     case 'relations': return <Network size={11} />
+    case 'dm-notes': return <Sparkles size={11} />
+    case 'loot-tables': return <ShoppingBag size={11} />
     case 'timeline': return <Clock size={11} />
   }
 }
@@ -25,7 +27,7 @@ export default function Sidebar() {
   const {
     view, setView, currentCampaign,
     navigationHistory, navigateBack, navigateToHistoryEntry,
-    setCampaignSubView,
+    campaignSubView, setCampaignSubView,
   } = useStore()
 
   const inCampaignContext =
@@ -78,12 +80,31 @@ export default function Sidebar() {
           </button>
 
           {currentCampaign && (
-            <div style={{ marginTop: 6 }}>
+            <div style={{ marginTop: 8 }}>
+              {/* Parent campaign hub */}
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{
+                  width: '100%', justifyContent: 'flex-start', padding: '5px 6px', fontSize: 12,
+                  fontFamily: 'var(--font-display)', letterSpacing: '0.02em',
+                  color: view === 'campaign' && campaignSubView === 'hub' ? 'var(--gold)' : 'var(--text-secondary)',
+                }}
+                onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
+                title={`${currentCampaign.name} — campaign hub`}
+              >
+                <Layers size={13} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {currentCampaign.name}
+                </span>
+              </button>
+
+              {/* Sub-views */}
+              <div style={{ marginTop: 4, paddingLeft: 9, marginLeft: 6, borderLeft: '1px solid var(--border)' }}>
               <button
                 className="btn btn-ghost btn-sm"
                 style={{
                   width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12,
-                  color: view === 'campaign' ? 'var(--gold)' : 'var(--text-secondary)',
+                  color: view === 'campaign' && campaignSubView === 'sessions' ? 'var(--gold)' : 'var(--text-secondary)',
                 }}
                 onClick={() => { setView('campaign'); setCampaignSubView('sessions') }}
               >
@@ -147,6 +168,7 @@ export default function Sidebar() {
               >
                 <Clock size={13} /> Timeline
               </button>
+              </div>
             </div>
           )}
         </div>

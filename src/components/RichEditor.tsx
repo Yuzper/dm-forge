@@ -16,6 +16,9 @@ import TableHeader from '@tiptap/extension-table-header'
 import { WikiLink } from './WikiLinkExtension'
 import { SessionLink } from './SessionLinkExtension'
 import { SpellLink } from './SpellLinkExtension'
+import { SpellCard } from './SpellCard'
+import { ItemCard, type ItemCardData } from './ItemCard'
+import { parseItemStatBlock } from '../types'
 import { useStore } from '../store/store'
 import spellsData from '../data/spells_2014.json'
 import {
@@ -59,13 +62,14 @@ type Spell = {
 
 const spells: Spell[] = spellsData as Spell[]
 
-function levelLabel(level: number): string {
-  if (level === 0) return 'Cantrip'
-  if (level === 1) return '1st-level'
-  if (level === 2) return '2nd-level'
-  if (level === 3) return '3rd-level'
-  return `${level}th-level`
+// Flatten a TipTap doc to readable plain text (case preserved, for previews).
+function richTextToPlain(json: string): string {
+  try {
+    const walk = (node: any): string => node.type === 'text' ? (node.text ?? '') : (node.content ?? []).map(walk).join(' ')
+    return walk(JSON.parse(json)).replace(/\s+/g, ' ').trim()
+  } catch { return '' }
 }
+
 
 // ── Custom Extensions ──────────────────────────────────────────────────────────
 
@@ -537,67 +541,6 @@ function SpellLinkPopover({ query, coords, onSelect, onClose }: {
   )
 }
 
-function SpellHoverCard({ spell, x, y }: { spell: Spell; x: number; y: number }) {
-  const cardHeight = 280
-  const top = y - cardHeight - 12 < 0 ? y + 16 : y - cardHeight - 12
-
-  return (
-    <div style={{
-      position: 'fixed', left: Math.min(x, window.innerWidth - 340), top,
-      width: 320, zIndex: 2000, pointerEvents: 'none',
-      background: 'var(--bg-elevated)',
-      border: '1px solid var(--border-gold)',
-      borderRadius: 'var(--radius-md)',
-      boxShadow: 'var(--shadow-lg)',
-      overflow: 'hidden',
-    }}>
-      <div style={{
-        padding: '10px 14px',
-        background: 'var(--bg-surface)',
-        borderBottom: '1px solid var(--border-gold)',
-      }}>
-        <div style={{
-          fontFamily: 'var(--font-display)', fontSize: 15,
-          color: 'var(--gold)', letterSpacing: '0.04em', marginBottom: 2,
-        }}>
-          {spell.name}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-          {levelLabel(spell.level)} {spell.school}
-        </div>
-      </div>
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 1fr',
-        gap: 0, borderBottom: '1px solid var(--border)',
-      }}>
-        {[
-          ['Casting Time', spell.casting_time],
-          ['Range', spell.range],
-          ['Duration', spell.duration],
-          ['Components', spell.components],
-        ].map(([label, value]) => (
-          <div key={label} style={{ padding: '6px 12px', borderBottom: '1px solid var(--border-light)', borderRight: '1px solid var(--border-light)' }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>
-              {label}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ padding: '10px 14px', maxHeight: 120, overflowY: 'auto' }}>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          {spell.desc}
-        </div>
-        {spell.higher_levels && (
-          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.4 }}>
-            <strong>At Higher Levels. </strong>{spell.higher_levels}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ── Main Editor ────────────────────────────────────────────────────────────────
 
 interface RichEditorProps {
@@ -629,6 +572,60 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
   } | null>(null)
 
   const [hoveredSpell, setHoveredSpell] = useState<{ spell: Spell; x: number; y: number } | null>(null)
+  // Delayed-close timer lets the cursor travel from the link onto the card
+  // (so the card stays open long enough to scroll its content).
+  const spellHoverTimer = useRef<ReturnType<typeof setTimeout>>()
+  const cancelSpellClose = () => { if (spellHoverTimer.current) clearTimeout(spellHoverTimer.current) }
+  const scheduleSpellClose = () => { cancelSpellClose(); spellHoverTimer.current = setTimeout(() => setHoveredSpell(null), 150) }
+
+  // Item article links get the same hover-card treatment as spells: clicking
+  // still navigates to the article, but hovering an item-type wiki link shows
+  // a quick item card. Summary fields render instantly; the description is
+  // fetched lazily and filled in.
+  const [hoveredItem, setHoveredItem] = useState<(ItemCardData & { x: number; y: number }) | null>(null)
+  const itemHoverTimer = useRef<ReturnType<typeof setTimeout>>()
+  const cancelItemClose = () => { if (itemHoverTimer.current) clearTimeout(itemHoverTimer.current) }
+  const scheduleItemClose = () => { cancelItemClose(); itemHoverTimer.current = setTimeout(() => setHoveredItem(null), 150) }
+  const showItemCard = (title: string, x: number, y: number) => {
+    // Read live store state — this runs from a mouseover listener bound once,
+    // so closing over render-time `articles` would go stale.
+    const { articles: liveArticles, currentCampaign: liveCampaign } = useStore.getState()
+    const summary = liveArticles.find(a => a.title === title && a.article_type === 'item')
+    if (!summary) { scheduleItemClose(); return }
+    cancelItemClose()
+    let tracks: Record<string, string> = {}
+    try { tracks = JSON.parse(summary.tracks || '{}') } catch { /* ignore */ }
+    let tags: string[] = []
+    try { const t = JSON.parse(summary.tags || '[]'); if (Array.isArray(t)) tags = t.filter(Boolean) } catch { /* ignore */ }
+    setHoveredItem({
+      x, y,
+      name: summary.title,
+      rarity: tracks.Rarity || undefined,
+      status: tracks.Status || undefined,
+      location: tracks.Location || undefined,
+      tags,
+      coverImage: summary.cover_image ? `file://${summary.cover_image}` : null,
+      desc: undefined,
+    })
+    // Enrich from the full article (item stat block + lore) without blocking.
+    if (liveCampaign) {
+      window.api.getArticleByTitle(title, liveCampaign.id).then(full => {
+        if (!full) return
+        const ib = parseItemStatBlock((full as any).item_block || '')
+        const attunement = ib.requiresAttunement
+          ? (ib.attunementNote.trim() ? `requires attunement ${ib.attunementNote.trim()}` : 'requires attunement')
+          : undefined
+        const desc = (ib.description.trim() || richTextToPlain(full.content)).slice(0, 320)
+        setHoveredItem(prev => prev && prev.name === title ? {
+          ...prev,
+          category: ib.category || prev.category,
+          rarity: ib.rarity || prev.rarity,
+          attunement,
+          desc: desc || undefined,
+        } : prev)
+      }).catch(() => { /* ignore */ })
+    }
+  }
   const [showToolbarPopover, setShowToolbarPopover] = useState(false)
   const [showColorPalette, setShowColorPalette] = useState(false)
   const [displayFontSize, setDisplayFontSize] = useState<number | ''>('')
@@ -763,16 +760,25 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     const onSpellClose = () => setSpellSearch(null)
 
     const onMouseOver = (e: MouseEvent) => {
-      const target = (e.target as HTMLElement).closest('[data-spell-link]') as HTMLElement | null
-      if (!target) { setHoveredSpell(null); return }
-      const spellName = target.getAttribute('data-spell-link')
-      if (!spellName) return
-      const spell = spells.find(s => s.name === spellName)
-      if (spell) setHoveredSpell({ spell, x: e.clientX, y: e.clientY })
+      // Spell links → spell card.
+      const spellTarget = (e.target as HTMLElement).closest('[data-spell-link]') as HTMLElement | null
+      if (spellTarget) {
+        const spellName = spellTarget.getAttribute('data-spell-link')
+        const spell = spellName ? spells.find(s => s.name === spellName) : null
+        if (spell) { cancelSpellClose(); setHoveredSpell({ spell, x: e.clientX, y: e.clientY }) }
+      } else {
+        scheduleSpellClose()
+      }
+
+      // Wiki links that point to an item article → item card.
+      const wikiTarget = (e.target as HTMLElement).closest('[data-wiki-link]') as HTMLElement | null
+      const title = wikiTarget?.getAttribute('data-wiki-link')
+      if (title) showItemCard(title, e.clientX, e.clientY)
+      else scheduleItemClose()
     }
     const onMouseOut = (e: MouseEvent) => {
-      const target = (e.target as HTMLElement).closest('[data-spell-link]')
-      if (target) setHoveredSpell(null)
+      if ((e.target as HTMLElement).closest('[data-spell-link]')) scheduleSpellClose()
+      if ((e.target as HTMLElement).closest('[data-wiki-link]')) scheduleItemClose()
     }
 
     el.addEventListener('wikilinkSearch', onWikiSearch)
@@ -1116,10 +1122,22 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       )}
 
       {hoveredSpell && (
-        <SpellHoverCard
+        <SpellCard
           spell={hoveredSpell.spell}
           x={hoveredSpell.x}
           y={hoveredSpell.y}
+          onMouseEnter={cancelSpellClose}
+          onMouseLeave={() => setHoveredSpell(null)}
+        />
+      )}
+
+      {hoveredItem && (
+        <ItemCard
+          item={hoveredItem}
+          x={hoveredItem.x}
+          y={hoveredItem.y}
+          onMouseEnter={cancelItemClose}
+          onMouseLeave={() => setHoveredItem(null)}
         />
       )}
     </div>

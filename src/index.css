@@ -17,6 +17,20 @@
   --crimson-dim:   #5a1820;
   --teal:          #2a7a6e;
 
+  /* Semantic state colors — UI chrome (alerts, confirmations, status).
+     NOTE: these are for interface feedback, not data hues. Article-type,
+     POI, and arc colors live in their own constants, not here. */
+  --danger:         #e05555;
+  --danger-hover:   #ff7777;
+  --danger-soft:    #e87070;
+  --danger-bg:      rgba(224, 85, 85, 0.09);
+  --danger-border:  rgba(224, 85, 85, 0.33);
+  --success:        #49c185;
+  --success-bg:     rgba(73, 193, 133, 0.09);
+  --success-border: rgba(73, 193, 133, 0.28);
+  --warning:        #e88c3a;
+  --info:           #5b9fe8;
+
   --text-primary:  #e8dcc8;
   --text-secondary:#a09070;
   --text-muted:    #5a5040;
@@ -43,6 +57,7 @@
   --radius-sm:     4px;
   --radius-md:     8px;
   --radius-lg:     12px;
+  --radius:        8px;   /* default card radius (alias of --radius-md) */
 
   /* Transitions */
   --transition: 150ms ease;
@@ -95,8 +110,8 @@ p, li, blockquote { font-family: var(--font-body); font-size: 16px; line-height:
   font-weight: 600;
 }
 .btn-primary:hover { background: #dab84f; border-color: #dab84f; color: var(--text-inverse); }
-.btn-danger { border-color: var(--crimson-dim); color: #e05555; }
-.btn-danger:hover { background: var(--crimson-dim); border-color: var(--crimson); color: #ff7777; }
+.btn-danger { border-color: var(--crimson-dim); color: var(--danger); }
+.btn-danger:hover { background: var(--crimson-dim); border-color: var(--crimson); color: var(--danger-hover); }
 .btn-ghost { background: transparent; border-color: transparent; }
 .btn-ghost:hover { background: var(--bg-hover); border-color: var(--border-light); color: var(--text-primary); }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
@@ -201,8 +216,8 @@ select.input {
   cursor: pointer; text-align: left; transition: all 120ms ease;
 }
 .menu-item:hover { background: var(--bg-hover); }
-.menu-item-danger { color: #e05555; }
-.menu-item-danger:hover { background: var(--bg-hover); color: #ff7777; }
+.menu-item-danger { color: var(--danger); }
+.menu-item-danger:hover { background: var(--bg-hover); color: var(--danger-hover); }
 .menu-item-sm { padding: 7px 12px; font-size: 12px; }
 
 /* ─── Hover utilities ─────────────────────────────────────────────────────── */

@@ -1,12 +1,11 @@
 // path: src/pages/SessionPage.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
-import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft } from 'lucide-react'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
 import RichEditor from '../components/RichEditor'
 import { StoreMapProvider } from '../context/MapContext'
-import MapPickerModal from '../components/MapPickerModal'
 import { InWorldDatePicker, parseInWorldDate } from '../components/InWorldDatePicker'
 import type { GameMap, Session } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
@@ -52,7 +51,56 @@ function EditMapModal({ map, onClose }: { map: GameMap; onClose: () => void }) {
   )
 }
 
-function MapTabMenu({ map, onEdit, onReplace }: { map: GameMap; onEdit: () => void; onReplace: () => void }) {
+function MoveMapModal({ map, onClose }: { map: GameMap; onClose: () => void }) {
+  const { sessions, currentSession, moveMapToSession } = useStore()
+  const [moving, setMoving] = useState(false)
+  const targets = sessions.filter(s => s.id !== currentSession?.id)
+
+  const handleMove = async (sessionId: number) => {
+    setMoving(true)
+    try {
+      await moveMapToSession(map.id, sessionId)
+      onClose()
+    } catch {
+      setMoving(false)
+    }
+  }
+
+  return (
+    <Modal title={`Move "${map.name}" to…`} onClose={onClose}>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+        The map and all its POIs move with it.
+      </div>
+      {targets.length === 0 ? (
+        <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '8px 0' }}>
+          No other sessions in this campaign yet.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 320, overflowY: 'auto' }}>
+          {targets.map(s => (
+            <button
+              key={s.id}
+              className="menu-item"
+              disabled={moving}
+              onClick={() => handleMove(s.id)}
+              style={{ width: '100%', justifyContent: 'flex-start', textAlign: 'left' }}
+            >
+              <Map size={13} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Session {s.session_number}{s.session_sub}: {s.name}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+      </div>
+    </Modal>
+  )
+}
+
+function MapTabMenu({ map, onEdit, onReplace, onMove }: { map: GameMap; onEdit: () => void; onReplace: () => void; onMove: () => void }) {
   const { deleteMap, selectMap } = useStore()
   const [open, setOpen] = useState(false)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
@@ -111,8 +159,11 @@ function MapTabMenu({ map, onEdit, onReplace }: { map: GameMap; onEdit: () => vo
           <button onClick={() => { onReplace(); setOpen(false) }} className="menu-item">
             <ImageIcon size={13} /> Replace image
           </button>
+          <button onClick={() => { onMove(); setOpen(false) }} className="menu-item">
+            <ArrowRightLeft size={13} /> Move to session…
+          </button>
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-          <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteMap(map.id); setOpen(false) }) }} className={`menu-item menu-item-danger${confirmDelete ? '' : ''}`} style={confirmDelete ? { color: '#ff7777' } : undefined}>
+          <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteMap(map.id); setOpen(false) }) }} className={`menu-item menu-item-danger${confirmDelete ? '' : ''}`} style={confirmDelete ? { color: 'var(--danger-hover)' } : undefined}>
             <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
           </button>
         </div>
@@ -340,27 +391,34 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
 export default function SessionPage() {
   const {
     currentSession, currentCampaign, setView, setCampaignSubView,
-    maps, currentMap, selectMap, importMap, sessionReadMode, setSessionReadMode,
+    maps, currentMap, selectMap, importMap, reorderMaps, sessionReadMode, setSessionReadMode,
   } = useStore()
 
   const [importing, setImporting] = useState(false)
   const [editingMap, setEditingMap] = useState<GameMap | null>(null)
+  const [movingMap, setMovingMap] = useState<GameMap | null>(null)
   const [showNotes, setShowNotes] = useState(false)
-  const [showPicker, setShowPicker] = useState(false)
+  const [dragId, setDragId] = useState<number | null>(null)
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
+
+  const handleTabDrop = (targetIndex: number) => {
+    if (dragId === null) { setDropIndex(null); return }
+    const from = maps.findIndex(m => m.id === dragId)
+    setDragId(null)
+    setDropIndex(null)
+    if (from === -1 || from === targetIndex) return
+    const next = [...maps]
+    const [moved] = next.splice(from, 1)
+    next.splice(targetIndex, 0, moved)
+    reorderMaps(next.map((m, i) => ({ id: m.id, sort_order: i })))
+  }
 
   if (!currentSession) return null
 
-  const handleImportMap = async (result?: { path: string; name: string }) => {
+  const handleImportMap = async () => {
     if (!currentSession) return
     setImporting(true)
-    if (result) {
-      const map = await window.api.createMap({ session_id: currentSession.id, name: result.name, image_path: result.path })
-      useStore.setState(s => ({ maps: [...s.maps, map] }))
-      useStore.getState().selectMap(map)
-      if (currentCampaign) useStore.getState().loadSessions(currentCampaign.id)
-    } else {
-      await importMap(currentSession.id)
-    }
+    await importMap(currentSession.id)
     setImporting(false)
   }
 
@@ -412,7 +470,9 @@ export default function SessionPage() {
         {/* Session title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px', borderRight: '1px solid var(--border)' }}>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 400 }}>
-            Session {currentSession.session_number}{currentSession.session_sub} · {currentSession.name}
+            {(currentSession as any).is_draft
+              ? <>Future Session · {currentSession.name}</>
+              : <>Session {currentSession.session_number}{currentSession.session_sub} · {currentSession.name}</>}
           </div>
         </div>
 
@@ -421,21 +481,28 @@ export default function SessionPage() {
 
         {/* Map tabs */}
         <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, flex: 1, overflowX: 'auto', overflowY: 'visible' }}>
-          {maps.map(map => (
+          {maps.map((map, index) => (
             <div
               key={map.id}
+              draggable={!sessionReadMode}
               onClick={() => selectMap(map)}
+              onDragStart={e => { if (sessionReadMode) return; setDragId(map.id); e.dataTransfer.effectAllowed = 'move' }}
+              onDragOver={e => { if (dragId === null) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropIndex(index) }}
+              onDrop={e => { e.preventDefault(); handleTabDrop(index) }}
+              onDragEnd={() => { setDragId(null); setDropIndex(null) }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '0 10px 0 14px',
-                cursor: 'pointer',
+                cursor: sessionReadMode ? 'pointer' : 'grab',
                 borderRight: '1px solid var(--border)',
+                borderLeft: dropIndex === index && dragId !== null && dragId !== map.id ? '2px solid var(--gold)' : '2px solid transparent',
                 borderBottom: currentMap?.id === map.id ? '2px solid var(--gold)' : '2px solid transparent',
                 background: currentMap?.id === map.id ? 'var(--bg-active)' : 'transparent',
                 color: currentMap?.id === map.id ? 'var(--gold)' : 'var(--text-secondary)',
                 fontSize: 12,
                 fontWeight: currentMap?.id === map.id ? 600 : 400,
-                transition: 'all var(--transition)',
+                opacity: dragId === map.id ? 0.4 : 1,
+                transition: 'background var(--transition), color var(--transition), opacity var(--transition)',
                 whiteSpace: 'nowrap',
                 userSelect: 'none',
               }}
@@ -449,6 +516,7 @@ export default function SessionPage() {
                   map={map}
                   onEdit={() => setEditingMap(map)}
                   onReplace={() => handleReplaceMapImage(map)}
+                  onMove={() => setMovingMap(map)}
                 />
               )}
             </div>
@@ -457,7 +525,7 @@ export default function SessionPage() {
           {/* Import map button — edit mode only */}
           {!sessionReadMode && (
             <button
-              onClick={() => setShowPicker(true)}
+              onClick={handleImportMap}
               disabled={importing}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
@@ -513,7 +581,7 @@ export default function SessionPage() {
               <div style={{ fontSize: 13 }}>Import a PNG or JPEG map image to get started</div>
             </div>
             {!sessionReadMode && (
-              <button className="btn btn-primary" onClick={() => setShowPicker(true)} disabled={importing}>
+              <button className="btn btn-primary" onClick={handleImportMap} disabled={importing}>
                 <Upload size={14} /> {importing ? 'Importing…' : 'Import Map Image'}
               </button>
             )}
@@ -527,16 +595,9 @@ export default function SessionPage() {
       </div>
 
       {editingMap && <EditMapModal map={editingMap} onClose={() => setEditingMap(null)} />}
+      {movingMap && <MoveMapModal map={movingMap} onClose={() => setMovingMap(null)} />}
       {showNotes && currentSession && (
         <SessionNotesPanel session={currentSession} onClose={() => setShowNotes(false)} />
-      )}
-      {showPicker && currentCampaign && (
-        <MapPickerModal
-          campaignId={currentCampaign.id}
-          onPickExisting={result => { setShowPicker(false); handleImportMap(result) }}
-          onUploadNew={() => { setShowPicker(false); handleImportMap() }}
-          onClose={() => setShowPicker(false)}
-        />
       )}
       <style>{`
         @keyframes slideUp {
