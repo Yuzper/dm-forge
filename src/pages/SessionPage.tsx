@@ -4,6 +4,7 @@ import { useStore } from '../store/store'
 import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft } from 'lucide-react'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
+import HintBox from '../components/HintBox'
 import RichEditor from '../components/RichEditor'
 import { StoreMapProvider } from '../context/MapContext'
 import { InWorldDatePicker, parseInWorldDate } from '../components/InWorldDatePicker'
@@ -570,6 +571,21 @@ export default function SessionPage() {
           <ScrollText size={13} /> Notes
         </button>
       </div>
+
+      {maps.length > 0 && !sessionReadMode && (
+        <div style={{ padding: '8px 16px 0' }}>
+          <HintBox
+            hintKey="session-maps"
+            title="Maps, pins & encounters"
+            items={[
+              <>Drag map tabs to reorder them; click a pin to open its location panel.</>,
+              <>A location's panel holds notes and a combat tracker for running encounters there.</>,
+              <>Move a map to another session and all its pins travel with it.</>,
+            ]}
+            style={{ maxWidth: 760 }}
+          />
+        </div>
+      )}
 
       {/* Main area */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>

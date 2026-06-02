@@ -4,7 +4,7 @@ import { useStore } from '../store/store'
 import {
   ChevronLeft, Map, Scroll, Download, Upload, Check,
   AlertCircle, BookOpen, Clock, ArrowLeft, Timer,
-  FileText, Layers, Sparkles, ShoppingBag, Network, Paintbrush,
+  FileText, Layers, Sparkles, ShoppingBag, Network, Paintbrush, Lightbulb,
 } from 'lucide-react'
 import POIList from './POIList'
 import type { HistoryEntry } from '../store/store'
@@ -250,6 +250,7 @@ export default function Sidebar() {
       {/* Footer */}
       <div style={{ padding: '12px 12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <BackgroundPicker />
+        <HintsToggle />
         <BackupButton />
         <ImportButton />
         <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.05em', paddingLeft: 4 }}>v{version}</div>
@@ -335,6 +336,30 @@ function BackgroundPicker() {
         </div>
       )}
     </div>
+  )
+}
+
+function HintsToggle() {
+  const { showHints, setShowHints } = useStore()
+  return (
+    <button
+      onClick={() => setShowHints(!showHints)}
+      title={showHints ? 'Hide feature hints' : 'Show feature hints'}
+      style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+        padding: '7px 10px', background: 'transparent',
+        border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)',
+        color: showHints ? 'var(--gold)' : 'var(--text-muted)',
+        fontSize: 12, fontFamily: 'var(--font-ui)', cursor: 'pointer',
+        transition: 'all var(--transition)',
+      }}
+      onMouseEnter={e => { if (!showHints) (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
+      onMouseLeave={e => { if (!showHints) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+    >
+      <Lightbulb size={13} />
+      Hints
+      <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>{showHints ? 'On' : 'Off'}</span>
+    </button>
   )
 }
 

@@ -11,7 +11,7 @@ export type RewardType = 'gold' | 'item' | 'information' | 'property' | 'other'
 export interface Reward {
   id: string
   type: RewardType
-  description: string  // free text — can use [[Article]] / @spell / ((session)) links via RichEditor in body if desired
+  description: string  // free text — can use [[Article]] / @@spell / \\session links via RichEditor in body if desired
   quantity: string     // optional, only meaningful for gold/item
   notes: string
 }

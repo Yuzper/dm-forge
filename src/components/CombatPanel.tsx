@@ -5,6 +5,7 @@ import { useMapContext } from '../context/MapContext'
 import { X, Trash2, Plus, Search, Save, Dices } from 'lucide-react'
 import RichEditor from './RichEditor'
 import CombatantRow from './CombatantRow'
+import HintBox from './HintBox'
 import type { CombatEncounter, CombatCreature, ArticleSummary, LootItem } from '../types'
 import { parseStatBlock, calcHpAverage, rollHp } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
@@ -404,6 +405,18 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
           )}
 
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+            {!readMode && (
+              <HintBox
+                hintKey="combat-tracker"
+                title="Running an encounter"
+                items={[
+                  <>Add a creature with average or rolled HP — rows auto-sort by initiative.</>,
+                  <>Type initiative, click AC to override, and toggle the box to deal damage or heal.</>,
+                  <>Track limited-use resources per creature, and roll loot from its stat block.</>,
+                ]}
+                style={{ margin: '8px 10px 4px' }}
+              />
+            )}
             {sortedCreatures.length === 0 ? (
               <div style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center',

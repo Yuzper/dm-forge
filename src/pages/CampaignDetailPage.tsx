@@ -18,6 +18,7 @@ import Modal from '../components/Modal'
 import EmptyState from '../components/EmptyState'
 import { InWorldDatePicker } from '../components/InWorldDatePicker'
 import TimelineEmbed from '../components/TimelineEmbed'
+import HintBox from '../components/HintBox'
 
 // Extend Session with in_world_day / in_world_day_end which exist in DB but not the shared type yet
 type SessionExt = Session & { in_world_day?: number | null; in_world_day_end?: number | null }
@@ -2081,6 +2082,16 @@ export default function CampaignDetailPage() {
 
       {/* Scrollable body */}
       <div style={{ flex: 1, overflow: 'auto', padding: '28px 40px 40px' }}>
+
+        <HintBox
+          hintKey="hub-customise"
+          title="Make this hub yours"
+          items={[
+            <>Use <strong>Customise</strong> (top right) to show or hide the world map and dashboard panels.</>,
+            <>Panels surface recent edits, articles by type, active quests, and a session timeline at a glance.</>,
+          ]}
+          style={{ marginBottom: 24, maxWidth: 760 }}
+        />
 
         {/* World map embedded */}
         {hubPanels.worldMap && <HubWorldMap />}

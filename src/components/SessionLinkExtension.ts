@@ -43,11 +43,11 @@ export const SessionLink = Mark.create({
   },
 
   addProseMirrorPlugins() {
-    // Matches ((anything)) with optional closing ))
-    const sessionLinkRegex = /\(\(([^()]+)\)\)/g
+    // Matches \\anything\\
+    const sessionLinkRegex = /\\\\([^\\]+)\\\\/g
 
     return [
-      // ── Convert ((Label)) to link on space/Enter ──────────────────────────
+      // ── Convert \\Label\\ to link on space/Enter ──────────────────────────
       new Plugin({
         appendTransaction: (transactions, _oldState, newState) => {
           if (!transactions.some(tr => tr.docChanged)) return null
@@ -91,7 +91,7 @@ export const SessionLink = Mark.create({
         },
       }),
 
-      // ── Fire DOM events for live (( search ───────────────────────────────
+      // ── Fire DOM events for live \\ search ───────────────────────────────
       new Plugin({
         key: sessionSearchKey,
         view(editorView) {
@@ -101,11 +101,11 @@ export const SessionLink = Mark.create({
               const $from = view.state.doc.resolve(from)
               const blockStart = $from.start()
               const textBeforeCursor = view.state.doc.textBetween(blockStart, from)
-              const match = textBeforeCursor.match(/\(\(([^()]*)$/)
+              const match = textBeforeCursor.match(/\\\\([^\\]*)$/)
 
               if (match) {
                 const query = match[1]
-                const matchFrom = blockStart + textBeforeCursor.lastIndexOf('((')
+                const matchFrom = blockStart + textBeforeCursor.lastIndexOf('\\\\')
                 const coords = view.coordsAtPos(from)
                 view.dom.dispatchEvent(new CustomEvent('sessionlinkSearch', {
                   detail: { query, from: matchFrom, to: from, coords },

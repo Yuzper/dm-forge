@@ -10,6 +10,7 @@ import {
   Network, ChevronDown, ChevronRight, Skull,
 } from 'lucide-react'
 import RichEditor from '../components/RichEditor'
+import HintBox, { Kbd } from '../components/HintBox'
 import type { Article, ArticleSummary, ArticleType, MasterLootTable, LootItem } from '../types'
 import StatBlockEditor from '../components/StatBlockEditor'
 import { parseStatBlock, parseItemStatBlock, itemBlockHasData } from '../types'
@@ -443,6 +444,11 @@ function RelationWebsSection({ articleId, articleTitle, canCreate, webs, loaded,
   return (
     <div style={{ borderBottom: '1px solid var(--border)', padding: '12px 16px' }}>
       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Webs</div>
+      {canCreate && (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.45, marginBottom: 8 }}>
+          Add an optional hierarchy, family tree, or other relation web that's part of this article. For example, on a crime org's article, a web could map its hierarchy of members.
+        </div>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         {webs.map(w => (
           <button key={w.id} style={btnStyle} onClick={() => onOpenWeb(w.id)}
@@ -1078,6 +1084,20 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto' }}>
+        {readMode && (
+          <div style={{ padding: '12px 24px 0' }}>
+            <HintBox
+              hintKey="article-read-edit"
+              title="Reading vs. editing"
+              items={[
+                <>Articles open read-only — click <strong>Edit</strong> (top right) to make changes.</>,
+                <>Changes save on their own when you hit Save or leave the article.</>,
+                <>Fill in <strong>tracks</strong> (Vitality, Attitude…) to set the status shown on relation nodes and the timeline.</>,
+              ]}
+              style={{ maxWidth: 720 }}
+            />
+          </div>
+        )}
         {/* Banner */}
         {coverImage ? (
           <div style={{ height: 200, position: 'relative', overflow: 'hidden' }}>
@@ -1123,8 +1143,21 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
 
             {/* Editor */}
             <div style={{ padding: '0 8px' }}>
+              {!readMode && (
+                <HintBox
+                  hintKey="wiki-linking"
+                  title="Link as you write"
+                  items={[
+                    <>Type <Kbd>[[</Kbd> to link a wiki article</>,
+                    <>Type <Kbd>@@</Kbd> to link a spell</>,
+                    <>Type <Kbd>\\</Kbd> to link a session</>,
+                    <>Relationships drawn in <strong>Relations</strong> show up here on their own.</>,
+                  ]}
+                  style={{ marginBottom: 12 }}
+                />
+              )}
               <RichEditor key={article.id} content={content} onChange={v => { setContent(v); setDirty(true) }}
-                placeholder="Start writing… Use [[Article Title]] to link wiki articles, (( for sessions, @ for spells."
+                placeholder="Start writing… Use [[ to link wiki articles, @@ for spells, \\\\ for sessions."
                 onWikiLinkClick={navigateToArticleByTitle} expandable readOnly={readMode} />
             </div>
 

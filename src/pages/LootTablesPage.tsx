@@ -8,6 +8,7 @@ import {
 import type { MasterLootTable, LootTableCategory, LootItem } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 import LootTableEditor from '../components/LootTableEditor'
+import HintBox from '../components/HintBox'
 import SectionDivider from '../components/SectionDivider'
 
 // ── Category config ────────────────────────────────────────────────────────────
@@ -178,11 +179,11 @@ function TableEditorPanel({ table, onUpdate, onDelete }: {
           }
           <button
             onClick={() => trigger(onDelete)}
-            className="btn btn-ghost btn-icon btn-sm"
-            style={{ color: confirming ? 'var(--danger-hover)' : 'var(--text-muted)' }}
+            className="btn btn-ghost btn-sm"
+            style={{ color: confirming ? 'var(--danger-hover)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}
             title={confirming ? 'Click again to confirm' : 'Delete table'}
           >
-            <Trash2 size={13} />
+            <Trash2 size={13} /> {confirming ? 'Confirm delete' : 'Delete'}
           </button>
         </div>
       </div>
@@ -505,6 +506,17 @@ export default function LootTablesPage() {
               <button className="btn btn-primary" onClick={() => handleCreate('creature')}>
                 <Plus size={14} /> New Table
               </button>
+              <HintBox
+                hintKey="loot-tables"
+                title="How loot tables work"
+                items={[
+                  <>Tables are grouped by category in the sidebar — hit + on a category to add one there.</>,
+                  <>Give each item a drop chance %; tables save as you edit.</>,
+                  <>Attach a table to a creature's stat block, then roll it from the combat tracker.</>,
+                  <><strong>Reset defaults</strong> restores the built-in tables if you need them back.</>,
+                ]}
+                style={{ maxWidth: 520, textAlign: 'left', marginTop: 6 }}
+              />
             </div>
           )}
         </div>

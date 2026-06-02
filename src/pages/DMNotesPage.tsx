@@ -29,6 +29,7 @@ const DropLine = () => (
   <div style={{ height: 2, background: '#9b7de8', borderRadius: 2, margin: '2px 6px' }} />
 )
 import RichEditor from '../components/RichEditor'
+import HintBox, { Kbd } from '../components/HintBox'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -595,7 +596,7 @@ function PageEditor({ page, onDeleted, onTitleChange }: {
           key={page.id}
           content={content}
           onChange={v => { setContent(v); setDirty(true) }}
-          placeholder="Start a DM note… Use [[Article Title]] to link wiki articles, (( to link sessions, and @ to link spells."
+          placeholder="Start a DM note… Use [[ to link wiki articles, @@ for spells, \\\\ for sessions."
           onWikiLinkClick={navigateToArticleByTitle}
           expandable
         />
@@ -908,6 +909,16 @@ export default function DMNotesPage() {
 
           {/* Page list */}
           <div style={{ flex: 1, overflow: 'auto', padding: '6px 4px' }}>
+
+            <HintBox
+              hintKey="dmnotes-organize"
+              title="Organise your notes"
+              items={[
+                <>Drag pages to reorder them, or drop them into a folder.</>,
+                <>Notes support the same <Kbd>[[</Kbd> <Kbd>@@</Kbd> <Kbd>\\</Kbd> links as articles.</>,
+              ]}
+              style={{ margin: '2px 4px 8px' }}
+            />
 
             {/* Ungrouped pages — always a drop target so pages can be moved out of groups */}
             {(ungroupedPages.length > 0 || dragItem?.kind === 'page') && (

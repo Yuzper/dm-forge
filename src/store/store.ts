@@ -121,6 +121,12 @@ interface AppStore {
   // UI Preferences
   bgStyle: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood'
   setBgStyle: (s: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood') => void
+
+  // Feature hints — small contextual tip boxes shown around the app.
+  showHints: boolean
+  setShowHints: (v: boolean) => void
+  dismissedHints: string[]
+  dismissHint: (key: string) => void
 }
 
 function pushEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
@@ -140,6 +146,23 @@ function pushEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[]
 export const useStore = create<AppStore>((set, get) => ({
   bgStyle: (localStorage.getItem('bgStyle') as AppStore['bgStyle']) || 'none',
   setBgStyle: (bgStyle) => { localStorage.setItem('bgStyle', bgStyle); set({ bgStyle }) },
+
+  showHints: localStorage.getItem('dmforge:show-hints') !== 'false',
+  setShowHints: (v) => {
+    localStorage.setItem('dmforge:show-hints', String(v))
+    // Re-enabling hints brings back any that were individually dismissed.
+    if (v) { localStorage.removeItem('dmforge:dismissed-hints'); set({ showHints: v, dismissedHints: [] }) }
+    else set({ showHints: v })
+  },
+  dismissedHints: (() => {
+    try { return JSON.parse(localStorage.getItem('dmforge:dismissed-hints') ?? '[]') } catch { return [] }
+  })(),
+  dismissHint: (key) => set(s => {
+    if (s.dismissedHints.includes(key)) return s
+    const next = [...s.dismissedHints, key]
+    localStorage.setItem('dmforge:dismissed-hints', JSON.stringify(next))
+    return { dismissedHints: next }
+  }),
 
   view: 'campaigns',
   setView: (view) => set(s => {

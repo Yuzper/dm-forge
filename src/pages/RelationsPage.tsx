@@ -19,6 +19,7 @@ import {
   Network, Plus, ArrowLeft, Trash2, Pencil, Check, X, Search, ExternalLink, Filter, ChevronDown, MoreHorizontal, GitMerge, LayoutGrid,
   Download, Unlink, Link2, Users, Layers, ChevronUp,
 } from 'lucide-react'
+import HintBox from '../components/HintBox'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -683,13 +684,18 @@ function LinkedArticlesRail({ webId, articles, onReload, onClose }: {
 
   return (
     <div style={{ width: 210, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, background: 'var(--bg-surface)', overflow: 'auto', fontFamily: 'var(--font-ui)' }}>
-      <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Linked articles</span>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}><X size={13} /></button>
+      <div style={{ padding: '12px 14px 8px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Linked articles</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}><X size={13} /></button>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.45, marginTop: 6 }}>
+          The article this web belongs to — e.g. a religion or crime org whose hierarchy this maps. Linking it makes the web appear on that article.
+        </div>
       </div>
       <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
         {articles.length === 0 && (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 4px 8px', lineHeight: 1.4 }}>No linked articles yet.</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 4px 8px', lineHeight: 1.4 }}>No articles linked yet — link one below.</div>
         )}
         {articles.map(a => (
           <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -970,8 +976,9 @@ export function NewWebModal({ onClose, onCreated, lockedArticle }: {
   )
 }
 
-function AddNodeModal({ webId, existingNodes, onClose, onAdded }: {
+function AddNodeModal({ webId, existingNodes, onClose, onAdded, typeFilter, onTypeFilterChange }: {
   webId: number; existingNodes: DBRelationNode[]; onClose: () => void; onAdded: (nodes: DBRelationNode[]) => void
+  typeFilter: string | null; onTypeFilterChange: (t: string | null) => void
 }) {
   const { currentCampaign } = useStore()
   // 'search' = link existing article(s), 'new' = create a stub node
@@ -997,9 +1004,10 @@ function AddNodeModal({ webId, existingNodes, onClose, onAdded }: {
       const articles = await (window as any).api.getArticlesList({
         campaignId: currentCampaign.id, search: search.trim(), searchTitle: true, searchTags: false,
       })
-      setResults(articles.slice(0, 12))
+      const filtered = typeFilter ? articles.filter((a: any) => a.article_type === typeFilter) : articles
+      setResults(filtered.slice(0, 12))
     }, 200)
-  }, [search, currentCampaign])
+  }, [search, currentCampaign, typeFilter])
 
   const selectedIds = new Set(selected.map(a => a.id))
   const visibleResults = results.filter(a => !selectedIds.has(a.id) && !existingArticleIds.has(a.id))
@@ -1084,9 +1092,30 @@ function AddNodeModal({ webId, existingNodes, onClose, onAdded }: {
                 <label className="input-label">
                   Search for existing articles <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(select multiple)</span>
                 </label>
+                {/* Article type filter chips */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+                  {ALL_ARTICLE_TYPES.map(t => (
+                    <button key={t} onClick={() => onTypeFilterChange(typeFilter === t ? null : t)}
+                      style={{
+                        fontSize: 10, padding: '2px 8px', borderRadius: 99, cursor: 'pointer',
+                        background: typeFilter === t ? '#7F77DD' : 'var(--bg-elevated)',
+                        border: typeFilter === t ? '1px solid #7F77DD' : '1px solid var(--border)',
+                        color: typeFilter === t ? '#fff' : 'var(--text-secondary)',
+                        transition: 'all 0.12s',
+                      }}>
+                      {ARTICLE_TYPE_LABELS[t] || t}
+                    </button>
+                  ))}
+                  {typeFilter && (
+                    <button onClick={() => onTypeFilterChange(null)}
+                      style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, cursor: 'pointer', background: 'none', border: '1px solid var(--border-light)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <X size={9} /> Clear
+                    </button>
+                  )}
+                </div>
                 <div style={{ position: 'relative' }}>
                   <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-                  <input className="input" style={{ paddingLeft: 30 }} placeholder="Search articles…"
+                  <input className="input" style={{ paddingLeft: 30 }} placeholder={typeFilter ? `Search ${ARTICLE_TYPE_LABELS[typeFilter] || typeFilter} articles…` : 'Search articles…'}
                     value={search} onChange={e => setSearch(e.target.value)} autoFocus />
                 </div>
                 {visibleResults.length > 0 && (
@@ -1587,6 +1616,17 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
+        <HintBox
+          hintKey="relations-overview"
+          title="Mapping relationships"
+          items={[
+            <>Edges you draw here appear automatically on each linked article.</>,
+            <>Pick a <strong>template</strong> when creating a web — family trees add union nodes, hierarchies add editable rank tiers.</>,
+            <>Drag from any of a node's four dots to connect two nodes.</>,
+            <>Export the finished canvas as a PNG or SVG image.</>,
+          ]}
+          style={{ marginBottom: 16, maxWidth: 720 }}
+        />
         {webs.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 200, gap: 12, color: 'var(--text-muted)' }}>
             <Network size={32} strokeWidth={1} />
@@ -1654,6 +1694,7 @@ function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [showAddNode, setShowAddNode] = useState(false)
+  const [addNodeTypeFilter, setAddNodeTypeFilter] = useState<string | null>(null)
   const [pendingConnection, setPendingConnection] = useState<Connection | null>(null)
   const [pendingConnectionMode, setPendingConnectionMode] = useState<'standard' | 'person_to_union'>('standard')
   const [editingEdge, setEditingEdge] = useState<DBRelationEdge | null>(null)
@@ -2461,7 +2502,7 @@ function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb
         )}
       </div>
 
-      {showAddNode && <AddNodeModal webId={web.id} existingNodes={dbNodes} onClose={() => setShowAddNode(false)} onAdded={handleNodeAdded} />}
+      {showAddNode && <AddNodeModal webId={web.id} existingNodes={dbNodes} onClose={() => setShowAddNode(false)} onAdded={handleNodeAdded} typeFilter={addNodeTypeFilter} onTypeFilterChange={setAddNodeTypeFilter} />}
       {pendingConnection && (
         <EdgeLabelModal
           mode={pendingConnectionMode}

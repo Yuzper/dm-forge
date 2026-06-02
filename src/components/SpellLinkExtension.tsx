@@ -51,12 +51,12 @@ export const SpellLink = Mark.create({
               const $from = view.state.doc.resolve(from)
               const blockStart = $from.start()
               const textBeforeCursor = view.state.doc.textBetween(blockStart, from)
-              // Match @ followed by non-space characters
-              const match = textBeforeCursor.match(/@([^@\s]*)$/)
+              // Match @@ followed by non-space characters
+              const match = textBeforeCursor.match(/@@([^@\s]*)$/)
 
               if (match) {
                 const query = match[1]
-                const matchFrom = blockStart + textBeforeCursor.lastIndexOf('@')
+                const matchFrom = blockStart + textBeforeCursor.lastIndexOf('@@')
                 const coords = view.coordsAtPos(from)
                 view.dom.dispatchEvent(new CustomEvent('spelllinkSearch', {
                   detail: { query, from: matchFrom, to: from, coords },
