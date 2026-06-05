@@ -10,7 +10,14 @@ function getStarterMonsters(system: string) {
   return []
 }
 
-type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables' | 'relations' | 'timeline'
+type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables' | 'relations' | 'timeline' | 'soundboard'
+
+export interface StatBlockOverlayEntry {
+  id: string                    // dedup key: `${articleId}:${nameOverride ?? ''}`
+  articleId: number
+  statblockOverride?: string    // variant statblock JSON, if any
+  nameOverride?: string         // variant name, if any
+}
 
 
 // ── Navigation History ────────────────────────────────────────────────────────
@@ -118,15 +125,30 @@ interface AppStore {
   setRelationsFocusArticleId: (id: number | null) => void
   getArticleBacklinks: (title: string) => Promise<ArticleSummary[]>
 
+  // Soundboard widget
+  soundboardOpen: boolean
+  setSoundboardOpen: (v: boolean) => void
+  soundboardMinimized: boolean
+  setSoundboardMinimized: (v: boolean) => void
+
+  // Stat block overlays
+  statBlockOverlays: StatBlockOverlayEntry[]
+  openStatBlockOverlay: (articleId: number, overrides?: { statblock?: string; name?: string }) => void
+  closeStatBlockOverlay: (id: string) => void
+
   // UI Preferences
   bgStyle: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood'
   setBgStyle: (s: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood') => void
 
-  // Feature hints — small contextual tip boxes shown around the app.
+  // Feature hints — a floating widget shows the hint for the current context.
   showHints: boolean
   setShowHints: (v: boolean) => void
   dismissedHints: string[]
   dismissHint: (key: string) => void
+  hintContext: string | null            // which hint the floating widget should show
+  setHintContext: (key: string | null) => void
+  hintMinimized: boolean
+  setHintMinimized: (v: boolean) => void
 }
 
 function pushEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
@@ -144,6 +166,22 @@ function pushEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[]
 }
 
 export const useStore = create<AppStore>((set, get) => ({
+  soundboardOpen: false,
+  setSoundboardOpen: (soundboardOpen) => set({ soundboardOpen }),
+  soundboardMinimized: false,
+  setSoundboardMinimized: (soundboardMinimized) => set({ soundboardMinimized }),
+
+  statBlockOverlays: [],
+  openStatBlockOverlay: (articleId, overrides) => {
+    const id = `${articleId}:${overrides?.name ?? ''}`
+    set(s => {
+      // Already open — don't duplicate (same dedup logic as the old BrowserWindow)
+      if (s.statBlockOverlays.some(o => o.id === id)) return s
+      return { statBlockOverlays: [...s.statBlockOverlays, { id, articleId, statblockOverride: overrides?.statblock, nameOverride: overrides?.name }] }
+    })
+  },
+  closeStatBlockOverlay: (id) => set(s => ({ statBlockOverlays: s.statBlockOverlays.filter(o => o.id !== id) })),
+
   bgStyle: (localStorage.getItem('bgStyle') as AppStore['bgStyle']) || 'none',
   setBgStyle: (bgStyle) => { localStorage.setItem('bgStyle', bgStyle); set({ bgStyle }) },
 
@@ -163,6 +201,10 @@ export const useStore = create<AppStore>((set, get) => ({
     localStorage.setItem('dmforge:dismissed-hints', JSON.stringify(next))
     return { dismissedHints: next }
   }),
+  hintContext: null,
+  setHintContext: (hintContext) => set({ hintContext }),
+  hintMinimized: false,
+  setHintMinimized: (hintMinimized) => set({ hintMinimized }),
 
   view: 'campaigns',
   setView: (view) => set(s => {
@@ -380,6 +422,8 @@ export const useStore = create<AppStore>((set, get) => ({
       maps: [], currentMap: null,
       pois: [], selectedPOI: null, poiPanelOpen: false,
       sessionReadMode: true,
+      soundboardOpen: true,
+      soundboardMinimized: false,
       navigationHistory: pushEntry(s.navigationHistory, {
         type: 'session',
         label: session.is_draft

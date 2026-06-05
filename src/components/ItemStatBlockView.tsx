@@ -10,7 +10,7 @@ function Rule() {
   return <div style={{ height: 2, background: 'linear-gradient(90deg, var(--gold-dim), transparent)', margin: '10px 0' }} />
 }
 
-export default function ItemStatBlockView({ itemBlock: ib, name }: { itemBlock: ItemStatBlock; name: string }) {
+export default function ItemStatBlockView({ itemBlock: ib, name, image }: { itemBlock: ItemStatBlock; name: string; image?: string | null }) {
   const subtitle = itemBlockSubtitle(ib)
   const paragraphs = ib.description.split(/\n+/).map(s => s.trim()).filter(Boolean)
 
@@ -22,13 +22,24 @@ export default function ItemStatBlockView({ itemBlock: ib, name }: { itemBlock: 
       overflow: 'hidden',
     }}>
       {/* Header */}
-      <div style={{ background: 'var(--bg-elevated)', borderBottom: '2px solid var(--gold-dim)', padding: '12px 16px' }}>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, color: 'var(--gold)', letterSpacing: '0.04em', marginBottom: subtitle ? 2 : 0 }}>
-          {name}
-        </div>
-        {subtitle && (
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontStyle: 'italic' }}>{subtitle}</div>
+      <div style={{ background: 'var(--bg-elevated)', borderBottom: '2px solid var(--gold-dim)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
+        {image && (
+          <img
+            src={image}
+            style={{
+              width: 60, height: 60, flexShrink: 0, borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--gold-dim)', objectFit: 'cover', display: 'block',
+            }}
+          />
         )}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, color: 'var(--gold)', letterSpacing: '0.04em', marginBottom: subtitle ? 2 : 0 }}>
+            {name}
+          </div>
+          {subtitle && (
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontStyle: 'italic' }}>{subtitle}</div>
+          )}
+        </div>
       </div>
 
       <div style={{ padding: '12px 16px' }}>

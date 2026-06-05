@@ -7,7 +7,7 @@ import {
   Scroll, Sparkles, ArrowLeft, ShoppingBag, Upload, X, Search,
   ExternalLink, Network, Clock, GripVertical,
   Maximize, Eye, Image as ImageIcon,
-  PanelRight, ArrowUpToLine, Hammer,
+  PanelRight, ArrowUpToLine, Hammer, Music2,
 } from 'lucide-react'
 import type { Session, Arc, GameMap, POI } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
@@ -18,7 +18,6 @@ import Modal from '../components/Modal'
 import EmptyState from '../components/EmptyState'
 import { InWorldDatePicker } from '../components/InWorldDatePicker'
 import TimelineEmbed from '../components/TimelineEmbed'
-import HintBox from '../components/HintBox'
 
 // Extend Session with in_world_day / in_world_day_end which exist in DB but not the shared type yet
 type SessionExt = Session & { in_world_day?: number | null; in_world_day_end?: number | null }
@@ -1219,7 +1218,7 @@ function ArcMenu({ arc, onEdit }: { arc: Arc; onEdit: () => void }) {
       {open && (
         <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 140, zIndex: 50, overflow: 'hidden' }}>
           <button onClick={() => { onEdit(); setOpen(false) }} className="menu-item">
-            <Pencil size={13} /> Rename
+            <Pencil size={13} /> Edit Arc
           </button>
           {!arc.is_default && (
             <>
@@ -2028,10 +2027,16 @@ function ArticlesByTypePanel() {
 export default function CampaignDetailPage() {
   const { currentCampaign, sessions, setView } = useStore()
   const { campaignSubView: subView, setCampaignSubView: setSubView } = useStore()
+  const setHintContext = useStore(s => s.setHintContext)
+  useEffect(() => {
+    setHintContext(subView === 'hub' ? 'campaign-hub' : null)
+    return () => setHintContext(null)
+  }, [subView, setHintContext])
   const [noteCount, setNoteCount] = useState(0)
   const [articleCount, setArticleCount] = useState(0)
   const [lootCount, setLootCount] = useState(0)
   const [relationsCount, setRelationsCount] = useState(0)
+  const [soundboardCount, setSoundboardCount] = useState(0)
   const [hubPanels, setHubPanels] = useState<Record<HubPanelKey, boolean>>(() =>
     currentCampaign ? loadHubPanels(currentCampaign.id) : { ...HUB_PANEL_DEFAULTS }
   )
@@ -2055,6 +2060,7 @@ export default function CampaignDetailPage() {
     window.api.getArticlesList({ campaignId: currentCampaign.id }).then((a: any[]) => setArticleCount(a.length))
     window.api.getLootTables(currentCampaign.id).then((t: any[]) => setLootCount(t.length))
     window.api.getRelationWebs(currentCampaign.id).then((w: any[]) => setRelationsCount(w.length))
+    window.api.getSoundBoards(currentCampaign.id).then((b: any[]) => setSoundboardCount(b.length))
   }, [currentCampaign?.id])
 
   if (!currentCampaign) return null
@@ -2083,15 +2089,6 @@ export default function CampaignDetailPage() {
       {/* Scrollable body */}
       <div style={{ flex: 1, overflow: 'auto', padding: '28px 40px 40px' }}>
 
-        <HintBox
-          hintKey="hub-customise"
-          title="Make this hub yours"
-          items={[
-            <>Use <strong>Customise</strong> (top right) to show or hide the world map and dashboard panels.</>,
-            <>Panels surface recent edits, articles by type, active quests, and a session timeline at a glance.</>,
-          ]}
-          style={{ marginBottom: 24, maxWidth: 760 }}
-        />
 
         {/* World map embedded */}
         {hubPanels.worldMap && <HubWorldMap />}
@@ -2149,6 +2146,12 @@ export default function CampaignDetailPage() {
             icon={<Clock size={20} />} title="Timeline"
             description="Visualise your campaign history — arc spans, sessions, and world events on a scrollable in-world timeline."
             onClick={() => setView('timeline')} accent="#5bbfb0"
+          />
+          <HubCard
+            icon={<Music2 size={20} />} title="Soundboard"
+            description="Manage sound boards for live sessions — ambient loops, music tracks, and one-shot effects with hotkeys."
+            stat={soundboardCount > 0 ? `${soundboardCount} board${soundboardCount !== 1 ? 's' : ''}` : undefined}
+            onClick={() => setView('soundboard')} accent="#3b82f6"
           />
         </div>
       </div>

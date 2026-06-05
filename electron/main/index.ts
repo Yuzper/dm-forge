@@ -32,6 +32,59 @@ function initUpdater(mainWindow: BrowserWindow) {
 
 let db!: InstanceType<typeof Database>
 
+// ── Default Soundboard scan ─────────────────────────────────────────────────────
+// Bundled audio under src/data/soundboard/{ambient,music,effects} becomes a
+// read-only "Default Sounds" board. Read live (no DB seeding) so adding a file +
+// shipping a release updates defaults on every device. Name derived from filename.
+
+const DEFAULT_SOUND_EXTS = new Set(['.mp3', '.ogg', '.wav', '.flac', '.m4a', '.aac', '.webm'])
+const DEFAULT_SOUND_FOLDERS: { folder: string; category: string }[] = [
+  { folder: 'ambient', category: 'ambience' },
+  { folder: 'music',   category: 'music' },
+  { folder: 'effects', category: 'effect' },
+]
+
+function defaultSoundboardDir(): string | null {
+  const candidates = [
+    path.join(__dirname, '../../src/data/soundboard'),     // dev (__dirname = out/main)
+    path.join(__dirname, '../renderer/soundboard'),        // packaged renderer copy, if present
+    path.join(process.resourcesPath ?? '', 'soundboard'),  // prod (extraResources)
+  ]
+  return candidates.find(p => fs.existsSync(p)) ?? null
+}
+
+function deriveSoundName(filename: string): string {
+  const ext  = path.extname(filename)
+  return filename
+    .slice(0, filename.length - ext.length)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function scanDefaultSounds(): { category: string; name: string; url: string; ref: string }[] {
+  const baseDir = defaultSoundboardDir()
+  if (!baseDir) return []
+  const out: { category: string; name: string; url: string; ref: string }[] = []
+  for (const { folder, category } of DEFAULT_SOUND_FOLDERS) {
+    const dir = path.join(baseDir, folder)
+    if (!fs.existsSync(dir)) continue
+    let entries: string[] = []
+    try { entries = fs.readdirSync(dir) } catch { continue }
+    for (const entry of entries.sort((a, b) => a.localeCompare(b))) {
+      if (!DEFAULT_SOUND_EXTS.has(path.extname(entry).toLowerCase())) continue
+      out.push({
+        category,
+        name: deriveSoundName(entry),
+        url: `file://${path.join(dir, entry)}`,
+        ref: `default:${folder}/${entry}`,   // stable reference for "Add to board"
+      })
+    }
+  }
+  return out
+}
+
 function loadDefaultLootTables(): any[] {
   try {
     const candidates = [
@@ -74,6 +127,8 @@ function seedDefaultTables(campaignId: number): any[] {
             description: item.description ?? '',
             quantity: item.quantity ?? '1',
             chance: item.chance ?? 100,
+            price: item.price ?? '',
+            weight: item.weight ?? '',
           }))
         ),
       })
@@ -223,11 +278,115 @@ function syncHierarchyForWeb(webId: number) {
   }
 }
 
+// Auto-generate & maintain the campaign's single "Territory" web from location
+// "Within" links. Reconciles nodes/edges to the current containment graph,
+// preserving positions of nodes that already exist so the layout grows gradually.
+function syncTerritoryWeb(campaignId: number) {
+  const locations = db.prepare(
+    `SELECT id, title, tracks FROM articles WHERE campaign_id = ? AND article_type = 'location'`
+  ).all(campaignId) as any[]
+
+  // Map lowercased title → article id, to resolve the "Within" title reference.
+  const titleToId = new Map<string, number>()
+  for (const l of locations) titleToId.set(l.title.toLowerCase(), l.id)
+
+  const withinOf = (tracks: string): string => {
+    try { return (JSON.parse(tracks || '{}').Within || '').trim() } catch { return '' }
+  }
+
+  // Containment links: child article → parent article.
+  const links: { childId: number; parentId: number }[] = []
+  for (const l of locations) {
+    const within = withinOf(l.tracks)
+    if (!within) continue
+    const parentId = titleToId.get(within.toLowerCase())
+    if (parentId && parentId !== l.id) links.push({ childId: l.id, parentId })
+  }
+
+  let web = db.prepare(
+    `SELECT * FROM relation_webs WHERE campaign_id = ? AND template = 'territory' LIMIT 1`
+  ).get(campaignId) as any
+
+  // No containment anywhere — remove the auto web entirely if it exists.
+  if (links.length === 0) {
+    if (web) db.prepare(`DELETE FROM relation_webs WHERE id = ?`).run(web.id)
+    return
+  }
+
+  if (!web) {
+    const res = db.prepare(`
+      INSERT INTO relation_webs (campaign_id, name, description, template, ranks, article_id)
+      VALUES (?, 'Territory', 'Auto-generated from location “Within” links — edits here are overwritten.', 'territory', '[]', NULL)
+    `).run(campaignId)
+    web = db.prepare(`SELECT * FROM relation_webs WHERE id = ?`).get(res.lastInsertRowid)
+  }
+  const webId = web.id as number
+
+  // Every location that participates in at least one containment link.
+  const participating = new Set<number>()
+  for (const { childId, parentId } of links) { participating.add(childId); participating.add(parentId) }
+
+  const existingNodes = db.prepare(
+    `SELECT id, article_id, pos_x, pos_y FROM relation_nodes WHERE web_id = ?`
+  ).all(webId) as any[]
+  const nodeByArticle = new Map<number, any>(existingNodes.map(n => [n.article_id, n]))
+  const locById = new Map<number, any>(locations.map(l => [l.id, l]))
+
+  // Drop nodes whose location no longer participates (cascades their edges).
+  for (const n of existingNodes) {
+    if (!participating.has(n.article_id)) {
+      db.prepare(`DELETE FROM relation_nodes WHERE id = ?`).run(n.id)
+      nodeByArticle.delete(n.article_id)
+    }
+  }
+
+  // Add nodes for newly participating locations, placed near their parent.
+  const insertNode = db.prepare(`
+    INSERT INTO relation_nodes (web_id, article_id, label, node_type, pos_x, pos_y)
+    VALUES (?, ?, ?, 'person', ?, ?)
+  `)
+  for (const artId of participating) {
+    if (nodeByArticle.has(artId)) continue
+    const loc = locById.get(artId)
+    const link = links.find(l => l.childId === artId)
+    let px = 120 + Math.random() * 60, py = 120
+    if (link) {
+      const parent = nodeByArticle.get(link.parentId)
+      if (parent) { px = parent.pos_x + (Math.random() * 80 - 40); py = parent.pos_y + 140 }
+    }
+    const res = insertNode.run(webId, artId, loc?.title ?? 'Location', px, py)
+    nodeByArticle.set(artId, { id: res.lastInsertRowid as number, article_id: artId, pos_x: px, pos_y: py })
+  }
+
+  // Reconcile edges to exactly the parent→child set.
+  // Edges are fully derived — wipe and rebuild so styling stays consistent.
+  // 'reports_to' renders as clean stepped org-chart connectors with an arrowhead
+  // and no label pills; bottom→top handles keep the lines flowing straight down.
+  db.prepare(`DELETE FROM relation_edges WHERE web_id = ?`).run(webId)
+  const insertEdge = db.prepare(`
+    INSERT INTO relation_edges (web_id, from_node_id, to_node_id, label_from, label_to, edge_type, from_handle, to_handle)
+    VALUES (?, ?, ?, '', '', 'reports_to', 'bottom', 'top')
+  `)
+  const made = new Set<string>()
+  for (const { childId, parentId } of links) {
+    const pn = nodeByArticle.get(parentId), cn = nodeByArticle.get(childId)
+    if (!pn || !cn) continue
+    const key = `${pn.id}-${cn.id}`
+    if (made.has(key)) continue
+    made.add(key)
+    insertEdge.run(webId, pn.id, cn.id)
+  }
+
+  db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(webId)
+}
+
 function initDatabase() {
   const userDataPath = app.getPath('userData')
   const dbPath = path.join(userDataPath, 'dmforge.db')
   const imagesPath = path.join(userDataPath, 'images')
   if (!fs.existsSync(imagesPath)) fs.mkdirSync(imagesPath, { recursive: true })
+  const soundsPath = path.join(userDataPath, 'sounds')
+  if (!fs.existsSync(soundsPath)) fs.mkdirSync(soundsPath, { recursive: true })
 
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
@@ -409,6 +568,27 @@ function initDatabase() {
       article_id INTEGER NOT NULL REFERENCES articles(id)      ON DELETE CASCADE,
       created_at TEXT    NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (web_id, article_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS sound_boards (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      name        TEXT    NOT NULL DEFAULT 'New Board',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS sounds (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      board_id   INTEGER NOT NULL REFERENCES sound_boards(id) ON DELETE CASCADE,
+      name       TEXT    NOT NULL DEFAULT 'Untitled',
+      category   TEXT    NOT NULL DEFAULT 'effect',
+      file_path  TEXT    NOT NULL DEFAULT '',
+      hotkey     TEXT    NOT NULL DEFAULT '',
+      volume     REAL    NOT NULL DEFAULT 1.0,
+      loop       INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT    NOT NULL DEFAULT (datetime('now'))
     );
   `)
 
@@ -615,6 +795,55 @@ function initDatabase() {
     UPDATE relation_edges SET from_handle = 'bottom', to_handle = 'top'
     WHERE edge_type = 'person_to_union' AND from_handle = '' AND to_handle = ''
   `)
+
+  // Per-sound loop flag. New column defaults to 1 (loop), but existing effects
+  // should stay one-shots — backfill them to 0 to preserve prior behaviour.
+  const soundCols = db.pragma('table_info(sounds)') as { name: string }[]
+  if (soundCols.length > 0 && !soundCols.some(c => c.name === 'loop')) {
+    db.exec(`ALTER TABLE sounds ADD COLUMN loop INTEGER NOT NULL DEFAULT 1`)
+    db.exec(`UPDATE sounds SET loop = 0 WHERE category = 'effect'`)
+  }
+
+  // Optional default soundboard per session — auto-selected in the widget on entry.
+  const sessionCols2 = db.pragma('table_info(sessions)') as { name: string }[]
+  if (!sessionCols2.some(c => c.name === 'soundboard_id')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN soundboard_id INTEGER REFERENCES sound_boards(id) ON DELETE SET NULL`)
+  }
+
+  // Backfill price / weight / description onto already-seeded default loot tables.
+  // Earlier seeds dropped these fields; here we fill only blanks (matched by item
+  // name against the bundled defaults), so existing campaigns get the values
+  // without a manual reset and any user edits are preserved. Idempotent.
+  try {
+    const defs = loadDefaultLootTables()
+    if (defs.length > 0) {
+      const meta: Record<string, { price: string; weight: string; description: string }> = {}
+      for (const t of defs) {
+        for (const it of (t.items ?? [])) {
+          if (!meta[it.name]) {
+            meta[it.name] = { price: it.price ?? '', weight: it.weight ?? '', description: it.description ?? '' }
+          }
+        }
+      }
+      const rows = db.prepare('SELECT id, items FROM loot_tables WHERE is_default = 1').all() as { id: number; items: string }[]
+      const upd = db.prepare('UPDATE loot_tables SET items = ? WHERE id = ?')
+      for (const row of rows) {
+        let items: any[]
+        try { items = JSON.parse(row.items) } catch { continue }
+        let changed = false
+        for (const it of items) {
+          const m = meta[it.name]
+          if (!m) continue
+          if (!it.price && m.price)             { it.price = m.price; changed = true }
+          if (!it.weight && m.weight)           { it.weight = m.weight; changed = true }
+          if (!it.description && m.description) { it.description = m.description; changed = true }
+        }
+        if (changed) upd.run(JSON.stringify(items), row.id)
+      }
+    }
+  } catch (e) {
+    log.warn('Loot default backfill failed:', e)
+  }
 
   return { userDataPath, imagesPath }
 }
@@ -1112,17 +1341,45 @@ function registerIPC(imagesPath: string) {
     const params: any[] = []
     if (filter?.campaignId) { query += ' AND campaign_id = ?'; params.push(filter.campaignId) }
     if (filter?.type && filter.type !== 'all') { query += ' AND article_type = ?'; params.push(filter.type) }
-    if (filter?.tag) { query += ' AND tags LIKE ?'; params.push(`%"${filter.tag}"%`) }
+    if (filter?.tag) {
+      // Match stored tags OR articles that are nodes in a web with this name
+      query += ` AND (
+        tags LIKE ?
+        OR id IN (
+          SELECT n.article_id FROM relation_nodes n
+          JOIN relation_webs w ON w.id = n.web_id
+          WHERE n.article_id IS NOT NULL AND w.name = ? COLLATE NOCASE
+          ${filter.campaignId ? 'AND w.campaign_id = ?' : ''}
+        )
+      )`
+      params.push(`%"${filter.tag}"%`, filter.tag)
+      if (filter.campaignId) params.push(filter.campaignId)
+    }
     if (filter?.search) {
       const byTitle = filter.searchTitle !== false
       const byTags  = filter.searchTags  !== false
-      const clauses = [
-        ...(byTitle ? ['title LIKE ?'] : []),
-        ...(byTags  ? ['tags LIKE ?']  : []),
-      ]
+      const clauses: string[] = []
+      const clauseParams: any[] = []
+      if (byTitle) {
+        clauses.push('title LIKE ?')
+        clauseParams.push(`%${filter.search}%`)
+      }
+      if (byTags) {
+        clauses.push('tags LIKE ?')
+        clauseParams.push(`%${filter.search}%`)
+        // Also match articles that are nodes in a web whose name matches the search
+        clauses.push(`id IN (
+          SELECT n.article_id FROM relation_nodes n
+          JOIN relation_webs w ON w.id = n.web_id
+          WHERE n.article_id IS NOT NULL AND w.name LIKE ?
+          ${filter.campaignId ? 'AND w.campaign_id = ?' : ''}
+        )`)
+        clauseParams.push(`%${filter.search}%`)
+        if (filter.campaignId) clauseParams.push(filter.campaignId)
+      }
       if (clauses.length) {
         query += ` AND (${clauses.join(' OR ')})`
-        clauses.forEach(() => params.push(`%${filter.search}%`))
+        params.push(...clauseParams)
       }
     }
     query += ' ORDER BY title ASC'
@@ -1170,11 +1427,16 @@ function registerIPC(imagesPath: string) {
   ipcMain.handle('articles:update', (_e, id: number, data: any) => {
     const userDataPath = app.getPath('userData')
     const old = db.prepare(
-      'SELECT content, cover_image, portrait_image FROM articles WHERE id = ?'
-    ).get(id) as { content: string; cover_image: string | null; portrait_image: string | null } | undefined
+      'SELECT content, cover_image, portrait_image, campaign_id, article_type FROM articles WHERE id = ?'
+    ).get(id) as { content: string; cover_image: string | null; portrait_image: string | null; campaign_id: number; article_type: string } | undefined
 
     const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE articles SET ${fields}, updated_at = datetime('now') WHERE id = @id`).run({ ...data, id })
+
+    // Keep the auto territory web in sync when a location's containment may change.
+    if (old && old.article_type === 'location' && (data.tracks !== undefined || data.title !== undefined)) {
+      try { syncTerritoryWeb(old.campaign_id) } catch (e) { console.error('syncTerritoryWeb failed:', e) }
+    }
 
     if (old) {
       if (old.cover_image && data.cover_image !== undefined && data.cover_image !== old.cover_image) {
@@ -1196,8 +1458,8 @@ function registerIPC(imagesPath: string) {
   ipcMain.handle('articles:delete', (_e, id: number) => {
     const userDataPath = app.getPath('userData')
     const article = db.prepare(
-      'SELECT content, cover_image, portrait_image FROM articles WHERE id = ?'
-    ).get(id) as { content: string; cover_image: string | null; portrait_image: string | null } | undefined
+      'SELECT content, cover_image, portrait_image, campaign_id, article_type FROM articles WHERE id = ?'
+    ).get(id) as { content: string; cover_image: string | null; portrait_image: string | null; campaign_id: number; article_type: string } | undefined
 
     // Hierarchy webs that reference this article — refresh their linked article's
     // Leader track after deletion (family relations are computed live, so they
@@ -1212,6 +1474,12 @@ function registerIPC(imagesPath: string) {
     db.prepare('DELETE FROM articles WHERE id = ?').run(id)
 
     for (const { web_id } of affectedWebs) syncHierarchyForWeb(web_id)
+
+    // A deleted location leaves an orphaned territory node (article_id → NULL) —
+    // resync to prune it and any containment edges that referenced it.
+    if (article && article.article_type === 'location') {
+      try { syncTerritoryWeb(article.campaign_id) } catch (e) { console.error('syncTerritoryWeb failed:', e) }
+    }
 
     if (article) {
       extractInlineImagePaths(article.content, userDataPath).forEach(safeUnlink)
@@ -1385,6 +1653,14 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('file:get-image-path', (_e, relativePath: string) => {
+    // Bundled default sounds are referenced as `default:<folder>/<file>` so they
+    // resolve against the app's read-only soundboard dir, not userData. This lets
+    // a default sound be added to a campaign board and still export/import cleanly.
+    if (relativePath.startsWith('default:')) {
+      const baseDir = defaultSoundboardDir()
+      const rel     = relativePath.slice('default:'.length)
+      return baseDir ? `file://${path.join(baseDir, rel)}` : ''
+    }
     const userDataPath = app.getPath('userData')
     return `file://${path.join(userDataPath, relativePath)}`
   })
@@ -1408,11 +1684,17 @@ function registerIPC(imagesPath: string) {
       if (fs.existsSync(dbSrc)) fs.copyFileSync(dbSrc, path.join(backupDir, 'dmforge.db'))
       const imgSrc = path.join(userDataPath, 'images')
       const imgDst = path.join(backupDir, 'images')
-      const { failed } = copyDirContents(imgSrc, imgDst)
-      if (failed.length) {
-        log.warn(`Backup export: ${failed.length} image(s) could not be copied: ${failed.join(', ')}`)
+      const { failed: imgFailed } = copyDirContents(imgSrc, imgDst)
+      if (imgFailed.length) {
+        log.warn(`Backup export: ${imgFailed.length} image(s) could not be copied: ${imgFailed.join(', ')}`)
       }
-      return { success: true, path: backupDir, failedImages: failed.length }
+      const sndSrc = path.join(userDataPath, 'sounds')
+      const sndDst = path.join(backupDir, 'sounds')
+      const { failed: sndFailed } = copyDirContents(sndSrc, sndDst)
+      if (sndFailed.length) {
+        log.warn(`Backup export: ${sndFailed.length} sound(s) could not be copied: ${sndFailed.join(', ')}`)
+      }
+      return { success: true, path: backupDir, failedImages: imgFailed.length }
     } catch (err: any) {
       return { success: false, error: err.message }
     }
@@ -1450,9 +1732,16 @@ function registerIPC(imagesPath: string) {
       }
       const backupImages = path.join(backupDir, 'images')
       const imagesDir = path.join(userDataPath, 'images')
-      const { failed } = copyDirContents(backupImages, imagesDir)
-      if (failed.length) {
-        log.warn(`Backup import: ${failed.length} image(s) could not be copied: ${failed.join(', ')}`)
+      const { failed: imgFailed2 } = copyDirContents(backupImages, imagesDir)
+      if (imgFailed2.length) {
+        log.warn(`Backup import: ${imgFailed2.length} image(s) could not be copied: ${imgFailed2.join(', ')}`)
+      }
+      const backupSounds = path.join(backupDir, 'sounds')
+      const soundsDir = path.join(userDataPath, 'sounds')
+      fs.mkdirSync(soundsDir, { recursive: true })
+      const { failed: sndFailed2 } = copyDirContents(backupSounds, soundsDir)
+      if (sndFailed2.length) {
+        log.warn(`Backup import: ${sndFailed2.length} sound(s) could not be copied: ${sndFailed2.join(', ')}`)
       }
       app.relaunch()
       app.exit(0)
@@ -1957,78 +2246,207 @@ function registerIPC(imagesPath: string) {
     `).get(articleId) || null
   })
 
-  // All webs (any template) linked to an article, via the many-to-many table.
+  // All webs whose article_id points at this article (one-to-one).
   ipcMain.handle('relation-webs:list-for-article', (_e, articleId: number) => {
     return db.prepare(`
       SELECT w.*, (SELECT COUNT(*) FROM relation_nodes n WHERE n.web_id = w.id) AS node_count
-      FROM relation_web_articles wa
-      JOIN relation_webs w ON w.id = wa.web_id
-      WHERE wa.article_id = ?
+      FROM relation_webs w
+      WHERE w.article_id = ?
       ORDER BY w.updated_at DESC
     `).all(articleId)
   })
 
-  // Every web an article participates in — as a node OR as a linked article.
-  // Used to surface web-membership "tags" on member articles.
+  // Every web an article appears in as a node (membership tags).
   ipcMain.handle('relation-webs:list-for-member', (_e, articleId: number) => {
     return db.prepare(`
-      SELECT w.id, w.name, w.template
+      SELECT DISTINCT w.id, w.name, w.template
       FROM relation_webs w
-      WHERE w.id IN (
-        SELECT web_id FROM relation_nodes        WHERE article_id = @articleId
-        UNION
-        SELECT web_id FROM relation_web_articles WHERE article_id = @articleId
-      )
+      WHERE w.id IN (SELECT web_id FROM relation_nodes WHERE article_id = ?)
       ORDER BY w.name COLLATE NOCASE
-    `).all({ articleId })
+    `).all(articleId)
   })
 
-  // Articles linked to a web (for the canvas left rail). is_primary marks the
-  // legacy article_id link used by hierarchy derivation.
+  // Single article linked to this web (one-to-one). Returns null when unset.
   ipcMain.handle('relation-webs:get-linked-articles', (_e, webId: number) => {
     return db.prepare(`
-      SELECT a.id, a.title, a.article_type,
-             (a.id = (SELECT article_id FROM relation_webs WHERE id = ?)) AS is_primary
-      FROM relation_web_articles wa
-      JOIN articles a ON a.id = wa.article_id
-      WHERE wa.web_id = ?
-      ORDER BY is_primary DESC, a.title COLLATE NOCASE
-    `).all(webId, webId)
+      SELECT a.id, a.title, a.article_type
+      FROM relation_webs w
+      JOIN articles a ON a.id = w.article_id
+      WHERE w.id = ? AND w.article_id IS NOT NULL
+    `).get(webId) ?? null
   })
 
+  // Set the one linked article, replacing any previous link.
   ipcMain.handle('relation-webs:link-article', (_e, webId: number, articleId: number) => {
-    db.prepare(`INSERT OR IGNORE INTO relation_web_articles (web_id, article_id) VALUES (?, ?)`)
-      .run(webId, articleId)
-    // First link on a web with no primary becomes the primary.
-    const web = db.prepare('SELECT article_id FROM relation_webs WHERE id = ?').get(webId) as any
-    if (web && web.article_id == null) {
-      db.prepare(`UPDATE relation_webs SET article_id = ? WHERE id = ?`).run(articleId, webId)
-    }
+    db.prepare(`UPDATE relation_webs SET article_id = ? WHERE id = ?`).run(articleId, webId)
   })
 
-  ipcMain.handle('relation-webs:unlink-article', (_e, webId: number, articleId: number) => {
-    db.prepare(`DELETE FROM relation_web_articles WHERE web_id = ? AND article_id = ?`).run(webId, articleId)
-    // If the primary was removed, repoint it at any remaining link (or NULL).
-    const web = db.prepare('SELECT article_id FROM relation_webs WHERE id = ?').get(webId) as any
-    if (web && web.article_id === articleId) {
-      const next = db.prepare(
-        `SELECT article_id FROM relation_web_articles WHERE web_id = ? ORDER BY created_at LIMIT 1`
-      ).get(webId) as any
-      db.prepare(`UPDATE relation_webs SET article_id = ? WHERE id = ?`).run(next?.article_id ?? null, webId)
-    }
+  // Remove the linked article.
+  ipcMain.handle('relation-webs:unlink-article', (_e, webId: number) => {
+    db.prepare(`UPDATE relation_webs SET article_id = NULL WHERE id = ?`).run(webId)
   })
 
-  // Count article-backed members of an org/faction/religion: character or PC
-  // articles whose Faction or Religion track points at this article's title.
+  // Count article-backed members of an org/faction/religion: distinct character
+  // or PC articles that appear as a node in any web linked to this article.
   ipcMain.handle('articles:member-count', (_e, articleId: number) => {
-    const art = db.prepare('SELECT title, campaign_id FROM articles WHERE id = ?').get(articleId) as any
-    if (!art) return 0
     const row = db.prepare(`
-      SELECT COUNT(*) AS c FROM articles
-      WHERE campaign_id = ? AND article_type IN ('character', 'playerCharacter')
-        AND (json_extract(tracks, '$.Faction') = ? OR json_extract(tracks, '$.Religion') = ?)
-    `).get(art.campaign_id, art.title, art.title) as any
+      SELECT COUNT(DISTINCT a.id) AS c
+      FROM relation_webs w
+      JOIN relation_nodes n ON n.web_id = w.id
+      JOIN articles a       ON a.id = n.article_id
+      WHERE w.article_id = ?
+        AND a.article_type IN ('character', 'playerCharacter')
+    `).get(articleId) as any
     return row?.c || 0
+  })
+
+  // Derived affiliations for a character/PC: the faction/org/religion articles
+  // that own a web this character is a node in. Read-only — webs are the source
+  // of truth, so the Faction/Religion fields are computed, never stored.
+  ipcMain.handle('articles:get-affiliations', (_e, articleId: number) => {
+    return db.prepare(`
+      SELECT DISTINCT a.id, a.title, a.article_type
+      FROM relation_nodes n
+      JOIN relation_webs w ON w.id = n.web_id
+      JOIN articles a      ON a.id = w.article_id
+      WHERE n.article_id = ?
+        AND a.article_type IN ('faction', 'organization', 'religion')
+      ORDER BY a.article_type, a.title COLLATE NOCASE
+    `).all(articleId)
+  })
+
+  // Geographic containment for a location: its ancestry chain (root-first) walked
+  // up the "Within" parent-location track, plus its direct child locations.
+  ipcMain.handle('articles:get-geography', (_e, articleId: number) => {
+    const art = db.prepare(
+      `SELECT id, title, campaign_id, tracks FROM articles WHERE id = ?`
+    ).get(articleId) as any
+    if (!art) return { ancestors: [], children: [] }
+
+    const findParent = db.prepare(`
+      SELECT id, title, tracks FROM articles
+      WHERE campaign_id = ? AND article_type = 'location' AND title = ? COLLATE NOCASE
+      LIMIT 1
+    `)
+    const withinOf = (tracks: string): string => {
+      try { return (JSON.parse(tracks || '{}').Within || '').trim() } catch { return '' }
+    }
+
+    // Walk up the parent chain (cycle-guarded, depth-capped), root-first.
+    const ancestors: { id: number; title: string }[] = []
+    const seen = new Set<number>([art.id])
+    let tracks: string = art.tracks
+    for (let i = 0; i < 20; i++) {
+      const within = withinOf(tracks)
+      if (!within) break
+      const parent = findParent.get(art.campaign_id, within) as any
+      if (!parent || seen.has(parent.id)) break
+      seen.add(parent.id)
+      ancestors.unshift({ id: parent.id, title: parent.title })
+      tracks = parent.tracks
+    }
+
+    const children = db.prepare(`
+      SELECT id, title FROM articles
+      WHERE campaign_id = ? AND article_type = 'location'
+        AND json_extract(tracks, '$.Within') = ? COLLATE NOCASE
+      ORDER BY title COLLATE NOCASE
+    `).all(art.campaign_id, art.title)
+
+    return { ancestors, children }
+  })
+
+  // ── Sound Boards ──────────────────────────────────────────────────────────────
+
+  ipcMain.handle('soundboards:get-all', (_e, campaignId: number) => {
+    return db.prepare(`
+      SELECT sb.*, COUNT(s.id) AS sound_count
+      FROM sound_boards sb
+      LEFT JOIN sounds s ON s.board_id = sb.id
+      WHERE sb.campaign_id = ?
+      GROUP BY sb.id
+      ORDER BY sb.sort_order ASC, sb.created_at ASC
+    `).all(campaignId)
+  })
+
+  ipcMain.handle('soundboards:create', (_e, data: { campaign_id: number; name: string }) => {
+    const maxRow = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM sound_boards WHERE campaign_id = ?').get(data.campaign_id) as { m: number }
+    const result = db.prepare(`
+      INSERT INTO sound_boards (campaign_id, name, sort_order)
+      VALUES (@campaign_id, @name, @sort_order)
+    `).run({ ...data, sort_order: maxRow.m + 1 })
+    return db.prepare('SELECT * FROM sound_boards WHERE id = ?').get(result.lastInsertRowid)
+  })
+
+  ipcMain.handle('soundboards:update', (_e, id: number, data: any) => {
+    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
+    db.prepare(`UPDATE sound_boards SET ${fields} WHERE id = @id`).run({ ...data, id })
+    return db.prepare('SELECT * FROM sound_boards WHERE id = ?').get(id)
+  })
+
+  ipcMain.handle('soundboards:delete', (_e, id: number) => {
+    db.prepare('DELETE FROM sound_boards WHERE id = ?').run(id)
+  })
+
+  // ── Sounds ────────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('sounds:get-all', (_e, boardId: number) => {
+    return db.prepare(`
+      SELECT * FROM sounds WHERE board_id = ? ORDER BY sort_order ASC, created_at ASC
+    `).all(boardId)
+  })
+
+  ipcMain.handle('sounds:create', (_e, data: { board_id: number; name: string; category: string; file_path: string; hotkey: string; volume: number; loop?: number }) => {
+    const maxRow = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM sounds WHERE board_id = ?').get(data.board_id) as { m: number }
+    // Default loop by category when not explicitly provided: effects are one-shot.
+    const loop = data.loop != null ? data.loop : (data.category === 'effect' ? 0 : 1)
+    const result = db.prepare(`
+      INSERT INTO sounds (board_id, name, category, file_path, hotkey, volume, loop, sort_order)
+      VALUES (@board_id, @name, @category, @file_path, @hotkey, @volume, @loop, @sort_order)
+    `).run({ ...data, loop, sort_order: maxRow.m + 1 })
+    return db.prepare('SELECT * FROM sounds WHERE id = ?').get(result.lastInsertRowid)
+  })
+
+  ipcMain.handle('sounds:update', (_e, id: number, data: any) => {
+    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
+    db.prepare(`UPDATE sounds SET ${fields} WHERE id = @id`).run({ ...data, id })
+    return db.prepare('SELECT * FROM sounds WHERE id = ?').get(id)
+  })
+
+  ipcMain.handle('sounds:delete', (_e, id: number) => {
+    db.prepare('DELETE FROM sounds WHERE id = ?').run(id)
+  })
+
+  ipcMain.handle('soundboards:get-defaults', () => {
+    return scanDefaultSounds()
+  })
+
+  ipcMain.handle('sounds:select-file', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select audio file',
+      filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'webm'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+
+    const srcPath = result.filePaths[0]
+    const sndDir  = path.join(app.getPath('userData'), 'sounds')
+    fs.mkdirSync(sndDir, { recursive: true })
+
+    // Already inside sounds dir — reuse without copying
+    if (path.normalize(srcPath).startsWith(path.normalize(sndDir) + path.sep)) {
+      return 'sounds/' + path.basename(srcPath)
+    }
+
+    // Copy to sounds dir, avoiding name collisions
+    const ext  = path.extname(srcPath)
+    const base = path.basename(srcPath, ext)
+    let destName = base + ext
+    if (fs.existsSync(path.join(sndDir, destName))) {
+      destName = `${base}_${Date.now()}${ext}`
+    }
+    fs.copyFileSync(srcPath, path.join(sndDir, destName))
+    return `sounds/${destName}`
   })
 }
 
@@ -2037,6 +2455,13 @@ app.whenReady().then(() => {
   if (mainWindow) initUpdater(mainWindow)
   const { imagesPath } = initDatabase()
   registerIPC(imagesPath)
+  // Reconcile each campaign's auto territory web on launch (picks up edge-style
+  // changes and any out-of-band edits made while the app was closed).
+  try {
+    for (const c of db.prepare('SELECT id FROM campaigns').all() as { id: number }[]) {
+      syncTerritoryWeb(c.id)
+    }
+  } catch (e) { console.error('territory reconcile on launch failed:', e) }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

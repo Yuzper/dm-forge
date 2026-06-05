@@ -146,6 +146,38 @@ select.input {
 .input-group { display: flex; flex-direction: column; gap: 6px; }
 .input-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.08em; }
 
+/* Ghost input — borderless until hover/focus. Used in the loot item cards so
+   editable fields read as plain text until you interact with them. */
+.ghost-input {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 2px 6px;
+  outline: none;
+  transition: background var(--transition), border-color var(--transition);
+}
+.ghost-input:hover { background: var(--bg-hover); }
+.ghost-input:focus { background: var(--bg-base); border-color: var(--gold-dim); }
+.ghost-input::placeholder { color: var(--text-muted); font-style: italic; }
+.ghost-input:disabled { background: transparent; }
+
+select.ghost-input {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 6px;
+}
+
+/* Hide the browser number spinner so the full value fits in the declared width */
+input[type="number"].ghost-input::-webkit-inner-spin-button,
+input[type="number"].ghost-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"].ghost-input { -moz-appearance: textfield; }
+
 /* ─── Cards ───────────────────────────────────────────────────────────────── */
 .card {
   background: var(--bg-surface);

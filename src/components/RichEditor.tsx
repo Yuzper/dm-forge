@@ -616,12 +616,17 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
           ? (ib.attunementNote.trim() ? `requires attunement ${ib.attunementNote.trim()}` : 'requires attunement')
           : undefined
         const desc = (ib.description.trim() || richTextToPlain(full.content)).slice(0, 320)
+        // Prefer the item's portrait, fall back to its cover banner
+        const img = full.portrait_image
+          ? `file://${full.portrait_image}`
+          : full.cover_image ? `file://${full.cover_image}` : null
         setHoveredItem(prev => prev && prev.name === title ? {
           ...prev,
           category: ib.category || prev.category,
           rarity: ib.rarity || prev.rarity,
           attunement,
           desc: desc || undefined,
+          coverImage: img ?? prev.coverImage,
         } : prev)
       }).catch(() => { /* ignore */ })
     }

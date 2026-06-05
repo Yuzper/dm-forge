@@ -5,7 +5,6 @@ import { useMapContext } from '../context/MapContext'
 import { X, Trash2, Plus, Search, Save, Dices } from 'lucide-react'
 import RichEditor from './RichEditor'
 import CombatantRow from './CombatantRow'
-import HintBox from './HintBox'
 import type { CombatEncounter, CombatCreature, ArticleSummary, LootItem } from '../types'
 import { parseStatBlock, calcHpAverage, rollHp } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
@@ -16,7 +15,10 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   // Map state + actions come from context
   const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI } = useMapContext()
   // Campaign context stays in global store
-  const { currentCampaign } = useStore()
+  const { currentCampaign, openStatBlockOverlay, setHintContext } = useStore()
+
+  // Surface the combat-tracker hint while the combatants tab is open; restore the
+  // session hint otherwise (combat panels only ever appear within a session).
 
   // ── General text state ─────────────────────────────────────────────────────
   const [label, setLabel] = useState('')
@@ -30,6 +32,14 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   const [encounter, setEncounter] = useState<CombatEncounter | null>(null)
   const [creatures, setCreatures] = useState<CombatCreature[]>([])
   const [creaturesDirty, setCreaturesDirty] = useState(false)
+
+  // Swap the floating hint to combat guidance while running an encounter
+  useEffect(() => {
+    if (!readMode && activeTab === 'combatants') {
+      setHintContext('combat-tracker')
+      return () => setHintContext('session')
+    }
+  }, [readMode, activeTab, setHintContext])
 
   // ── Picker state ───────────────────────────────────────────────────────────
   const [showPicker, setShowPicker] = useState(false)
@@ -243,13 +253,13 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
     setActiveTab('combatants')
   }
 
-  // ── Open stat block window ─────────────────────────────────────────────────
+  // ── Open stat block overlay ────────────────────────────────────────────────
   const openStatBlock = useCallback((creature: any) => {
-    (window.api as any).openStatBlockWindow(creature.article_id, {
+    openStatBlockOverlay(creature.article_id, {
       statblock: creature.variant_statblock ?? creature.statblock ?? undefined,
       name: creature.display_name ?? creature.title ?? undefined,
     })
-  }, [])
+  }, [openStatBlockOverlay])
 
   // ── Loot generation ─────────────────────────────────────────────────────────
   const handleLootGenerated = useCallback(async (creatureId: number, result: LootItem[], articleId: number): Promise<LootItem[]> => {
@@ -405,18 +415,6 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
           )}
 
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-            {!readMode && (
-              <HintBox
-                hintKey="combat-tracker"
-                title="Running an encounter"
-                items={[
-                  <>Add a creature with average or rolled HP — rows auto-sort by initiative.</>,
-                  <>Type initiative, click AC to override, and toggle the box to deal damage or heal.</>,
-                  <>Track limited-use resources per creature, and roll loot from its stat block.</>,
-                ]}
-                style={{ margin: '8px 10px 4px' }}
-              />
-            )}
             {sortedCreatures.length === 0 ? (
               <div style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center',

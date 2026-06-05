@@ -13,6 +13,10 @@ import StatBlockPage from './pages/StatBlockPage'
 import { UpdateBanner } from './components/UpdateBanner'
 import RelationsPage from './pages/RelationsPage'
 import TimelinePage from './pages/TimelinePage'
+import SoundboardPage from './pages/SoundboardPage'
+import SoundboardWidget from './components/SoundboardWidget'
+import StatBlockOverlay from './components/StatBlockOverlay'
+import HintsWidget from './components/HintsWidget'
 
 const params = new URLSearchParams(window.location.search)
 const statblockMode = params.get('mode') === 'statblock'
@@ -21,7 +25,7 @@ const statblockOverride = statblockMode ? params.get('statblockOverride') : null
 const nameOverride = statblockMode ? params.get('nameOverride') : null
 
 export default function App() {
-  const { view, loadCampaigns, bgStyle } = useStore()
+  const { view, loadCampaigns, bgStyle, currentSession, soundboardOpen, statBlockOverlays } = useStore()
 
   useEffect(() => { if (!statblockMode) loadCampaigns() }, [])
 
@@ -39,6 +43,9 @@ export default function App() {
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', ...bgStyleCSS(bgStyle) }}>
       <Sidebar />
       <UpdateBanner />
+      {currentSession && soundboardOpen && <SoundboardWidget />}
+      {statBlockOverlays.map((o, i) => <StatBlockOverlay key={o.id} overlay={o} index={i} />)}
+      <HintsWidget />
       <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {view === 'campaigns'   && <CampaignsPage />}
         {view === 'campaign'    && <CampaignDetailPage />}
@@ -48,6 +55,7 @@ export default function App() {
         {view === 'loot-tables' && <LootTablesPage />}
         {view === 'relations'   && <RelationsPage />}
         {view === 'timeline'    && <TimelinePage />}
+        {view === 'soundboard'  && <SoundboardPage />}
       </main>
     </div>
   )

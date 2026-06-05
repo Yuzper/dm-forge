@@ -19,7 +19,6 @@ import {
   Network, Plus, ArrowLeft, Trash2, Pencil, Check, X, Search, ExternalLink, Filter, ChevronDown, MoreHorizontal, GitMerge, LayoutGrid,
   Download, Unlink, Link2, Users, Layers, ChevronUp,
 } from 'lucide-react'
-import HintBox from '../components/HintBox'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -45,7 +44,6 @@ export const WEB_TEMPLATES: { id: WebTemplate; label: string; desc: string }[] =
   { id: 'quest_chain',    label: 'Quest chain',      desc: 'Dependencies, unlocks' },
   { id: 'lore_causality', label: 'Lore / causality', desc: 'Events, cause & effect' },
   { id: 'trade_network',  label: 'Trade network',    desc: 'Goods, routes' },
-  { id: 'territory',      label: 'Territory',        desc: 'Control, influence' },
   { id: 'custom',         label: 'Custom',           desc: 'No constraints' },
 ]
 
@@ -57,7 +55,9 @@ export const TEMPLATE_CONFIG: Record<WebTemplate, TemplateConfig> = {
   quest_chain:    { label: 'Quest chain',      unionNodes: false, dagreDir: 'LR', defaultEdgeLabels: ['unlocks', 'requires'] },
   lore_causality: { label: 'Lore / causality', unionNodes: false, dagreDir: 'LR', defaultEdgeLabels: ['caused', 'led to'] },
   trade_network:  { label: 'Trade network',    unionNodes: false, dagreDir: null, defaultEdgeLabels: ['trades with', 'supplies'] },
-  territory:      { label: 'Territory',        unionNodes: false, dagreDir: null, defaultEdgeLabels: ['controls', 'borders'] },
+  // 'territory' is no longer offered as a manual template — it's reserved for the
+  // auto-generated containment web. TB layout + containment labels suit the tree.
+  territory:      { label: 'Territory',        unionNodes: false, dagreDir: 'TB', defaultEdgeLabels: ['contains', 'within'] },
   custom:         { label: 'Custom',           unionNodes: false, dagreDir: null, defaultEdgeLabels: [] },
 }
 
@@ -172,7 +172,7 @@ const ARTICLE_TRACKS: Partial<Record<string, Record<string, string[]>>> = {
     Size: ['Tiny','Small','Medium','Large','Huge','Gargantuan'],
     Habitat: ['Forest','Desert','Mountain','Swamp','Ocean','Underdark','Urban','Arctic','Plains'],
   },
-  location: { State: [], Size: [], Plane: [], Region: [] },
+  location: { State: [], Size: [], Plane: [], Within: [] },
   faction:  { Status: [], Scale: [], Leader: [], HQ: [], Allies: [], Rivals: [] },
   organization: { Status: [], Scale: [], Leader: [], HQ: [], Allies: [], Rivals: [] },
   quest: { Status: [], Difficulty: [] },
@@ -183,19 +183,18 @@ const ARTICLE_TRACKS: Partial<Record<string, Record<string, string[]>>> = {
   lore:  { Status: [] },
   note:  { Sender: [], Intended_Recipient: [], Language: [], Date: [], Location: [] },
   other: { Status: [] },
-  vendor: { Shop_Type: [], Status: [], Location: [], Owner: [] },
 }
 
 export const ALL_ARTICLE_TYPES = [
   'character','playerCharacter','creature','location','faction','organization',
-  'quest','item','event','culture','religion','lore','note','other','vendor',
+  'quest','item','event','culture','religion','lore','note','other',
 ]
 
 export const ARTICLE_TYPE_LABELS: Record<string, string> = {
   character: 'Character', playerCharacter: 'Player Character', creature: 'Creature',
   location: 'Location', faction: 'Faction', organization: 'Organization',
   quest: 'Quest', item: 'Item', event: 'Event', culture: 'Culture',
-  religion: 'Religion', lore: 'Lore', note: 'Note', other: 'Other', vendor: 'Vendor',
+  religion: 'Religion', lore: 'Lore', note: 'Note', other: 'Other',
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -645,104 +644,118 @@ function RankPanel({ ranks, onChange, onClose }: {
   )
 }
 
-// ── Linked Articles Rail ─────────────────────────────────────────────────────
+// ── Linked Article Pill ──────────────────────────────────────────────────────
+// Small corner overlay showing which article owns this web, with a redirect
+// and a way to set/change/remove the link.
 
-// Left rail listing every article linked to this web. Each entry navigates to
-// the article; articles can be linked/unlinked here (many-to-many).
-function LinkedArticlesRail({ webId, articles, onReload, onClose }: {
+function LinkedArticlePill({ webId, article, onReload }: {
   webId: number
-  articles: { id: number; title: string; article_type: string; is_primary: number }[]
+  article: { id: number; title: string; article_type: string } | null
   onReload: () => void
-  onClose: () => void
 }) {
   const { currentCampaign, navigateToArticleByTitle } = useStore()
-  const [adding, setAdding] = useState(false)
+  const [linking, setLinking] = useState(false)
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<{ id: number; title: string; article_type: string }[]>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
-    if (!currentCampaign || !search.trim()) { setResults([]); return }
+    if (!linking || !currentCampaign || !search.trim()) { setResults([]); return }
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(async () => {
       const arts = await (window as any).api.getArticlesList({
         campaignId: currentCampaign.id, search: search.trim(), searchTitle: true, searchTags: false,
       })
-      const linkedIds = new Set(articles.map(a => a.id))
-      setResults((arts || []).filter((a: any) => !linkedIds.has(a.id)).slice(0, 6))
+      setResults((arts || []).slice(0, 6))
     }, 200)
-  }, [search, currentCampaign, articles])
+  }, [search, linking, currentCampaign])
 
   const link = async (articleId: number) => {
     await (window as any).api.linkRelationWebArticle(webId, articleId)
-    setSearch(''); setAdding(false); onReload()
+    setLinking(false); setSearch(''); onReload()
   }
-  const unlink = async (articleId: number) => {
-    await (window as any).api.unlinkRelationWebArticle(webId, articleId)
+  const unlink = async () => {
+    await (window as any).api.unlinkRelationWebArticle(webId)
     onReload()
   }
 
-  return (
-    <div style={{ width: 210, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, background: 'var(--bg-surface)', overflow: 'auto', fontFamily: 'var(--font-ui)' }}>
-      <div style={{ padding: '12px 14px 8px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Linked articles</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}><X size={13} /></button>
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.45, marginTop: 6 }}>
-          The article this web belongs to — e.g. a religion or crime org whose hierarchy this maps. Linking it makes the web appear on that article.
-        </div>
-      </div>
-      <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {articles.length === 0 && (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 4px 8px', lineHeight: 1.4 }}>No articles linked yet — link one below.</div>
-        )}
-        {articles.map(a => (
-          <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button onClick={() => navigateToArticleByTitle(a.title)} title="Open article"
-              style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: 'transparent', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', textAlign: 'left', minWidth: 0 }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-              <ExternalLink size={11} color="#5b9fe8" style={{ flexShrink: 0 }} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{a.title}</span>
-              {!!a.is_primary && <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>primary</span>}
-            </button>
-            <button onClick={() => unlink(a.id)} title="Unlink article"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}>
-              <X size={12} />
-            </button>
-          </div>
-        ))}
-        {adding ? (
-          <div style={{ marginTop: 6 }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-              <input className="input" autoFocus style={{ paddingLeft: 26, fontSize: 12 }} placeholder="Search articles…"
-                value={search} onChange={e => setSearch(e.target.value)} />
-            </div>
-            {results.length > 0 && (
-              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: 4 }}>
-                {results.map(a => (
-                  <button key={a.id} onClick={() => link(a.id)}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 12, color: 'var(--text-primary)', textAlign: 'left' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{a.title}</span>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{a.article_type}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <button onClick={() => { setAdding(false); setSearch('') }}
-              style={{ marginTop: 4, fontSize: 11, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}>Cancel</button>
-          </div>
-        ) : (
-          <button onClick={() => setAdding(true)}
-            style={{ marginTop: 6, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px', fontSize: 12, cursor: 'pointer', background: 'transparent', border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)' }}>
-            <Plus size={12} /> Link article
+  const pillBase: React.CSSProperties = {
+    position: 'absolute', top: 12, left: 12, zIndex: 10,
+    boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+    borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-ui)', fontSize: 12,
+  }
+
+  if (linking) {
+    return (
+      <div style={{ ...pillBase, background: 'var(--bg-elevated)', border: '1px solid var(--border)', width: 220 }}>
+        <div style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Search size={11} color="var(--text-muted)" />
+          <input
+            autoFocus
+            className="ghost-input"
+            style={{ flex: 1, fontSize: 12 }}
+            placeholder="Search articles…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') { setLinking(false); setSearch('') } }}
+          />
+          <button onClick={() => { setLinking(false); setSearch('') }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 1 }}>
+            <X size={11} />
           </button>
+        </div>
+        {results.length > 0 && (
+          <div style={{ borderTop: '1px solid var(--border)' }}>
+            {results.map(a => (
+              <button key={a.id} onClick={() => link(a.id)}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-primary)', textAlign: 'left' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{a.title}</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{a.article_type}</span>
+              </button>
+            ))}
+          </div>
         )}
       </div>
+    )
+  }
+
+  if (!article) {
+    return (
+      <button onClick={() => setLinking(true)}
+        style={{ ...pillBase, display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'var(--bg-elevated)', border: '1px dashed var(--border)', color: 'var(--text-muted)', cursor: 'pointer' }}
+        title="Link this web to an article so it appears there">
+        <Link2 size={11} /> Link to article
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ ...pillBase, display: 'flex', alignItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+      <button
+        onClick={() => navigateToArticleByTitle(article.title)}
+        title={`Go to ${article.title}`}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#7F77DD'}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}
+      >
+        <ExternalLink size={11} color="#7F77DD" style={{ flexShrink: 0 }} />
+        <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{article.title}</span>
+      </button>
+      <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)' }} />
+      <button onClick={() => setLinking(true)} title="Change linked article"
+        style={{ display: 'flex', padding: '5px 7px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}>
+        <Pencil size={10} />
+      </button>
+      <button onClick={unlink} title="Unlink article"
+        style={{ display: 'flex', padding: '5px 7px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#e05555'}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}>
+        <X size={10} />
+      </button>
     </div>
   )
 }
@@ -1616,17 +1629,6 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
-        <HintBox
-          hintKey="relations-overview"
-          title="Mapping relationships"
-          items={[
-            <>Edges you draw here appear automatically on each linked article.</>,
-            <>Pick a <strong>template</strong> when creating a web — family trees add union nodes, hierarchies add editable rank tiers.</>,
-            <>Drag from any of a node's four dots to connect two nodes.</>,
-            <>Export the finished canvas as a PNG or SVG image.</>,
-          ]}
-          style={{ marginBottom: 16, maxWidth: 720 }}
-        />
         {webs.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 200, gap: 12, color: 'var(--text-muted)' }}>
             <Network size={32} strokeWidth={1} />
@@ -1724,23 +1726,15 @@ function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb
 
   const [showFilterPanel, setShowFilterPanel] = useState(false)
 
-  // ── Linked articles (many-to-many web↔article) ──────────────────────────────
-  const [linkedArticles, setLinkedArticles] = useState<{ id: number; title: string; article_type: string; is_primary: number }[]>([])
-  const [showArticleRail, setShowArticleRail] = useState(false)
+  // ── Linked article (one-to-one web↔article) ─────────────────────────────────
+  const [linkedArticle, setLinkedArticle] = useState<{ id: number; title: string; article_type: string } | null>(null)
 
-  const reloadLinkedArticles = useCallback(async () => {
-    const arts = await (window as any).api.getRelationWebArticles(web.id)
-    setLinkedArticles(arts || [])
+  const reloadLinkedArticle = useCallback(async () => {
+    const art = await (window as any).api.getRelationWebArticles(web.id)
+    setLinkedArticle(art ?? null)
   }, [web.id])
 
-  // Load on web change; auto-open the rail when the web already has links.
-  useEffect(() => {
-    ;(async () => {
-      const arts = await (window as any).api.getRelationWebArticles(web.id)
-      setLinkedArticles(arts || [])
-      setShowArticleRail((arts || []).length > 0)
-    })()
-  }, [web.id])
+  useEffect(() => { reloadLinkedArticle() }, [web.id])
 
   // ── Ranks (hierarchy webs) ──────────────────────────────────────────────────
   const [ranks, setRanks] = useState<Rank[]>(() => {
@@ -1760,6 +1754,9 @@ function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb
   )
 
   const cfg = TEMPLATE_CONFIG[web.template] || TEMPLATE_CONFIG.custom
+  // The territory web is auto-generated from location "Located within" links, so
+  // its structure is read-only here — only repositioning (which persists) is allowed.
+  const isTerritory = web.template === 'territory'
 
   // ── Use a ref so loadWebData can be called from handleTidyUp without a dep cycle ──
   const loadWebDataRef = useRef<() => void>(() => {})
@@ -2113,7 +2110,9 @@ function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb
           </button>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Del to remove selected</span>
+          {!isTerritory && (
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Del to remove selected</span>
+          )}
           {cfg.ranked && (
             <button
               onClick={() => setShowRankPanel(v => !v)}
@@ -2142,25 +2141,6 @@ function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb
               <GitMerge size={13} /> Add union
             </button>
           )}
-          {/* Linked articles rail toggle */}
-          <button
-            onClick={() => setShowArticleRail(v => !v)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '5px 10px', fontSize: 12, cursor: 'pointer',
-              background: showArticleRail ? 'var(--bg-elevated)' : 'transparent',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-              transition: 'background var(--transition)',
-            }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = showArticleRail ? 'var(--bg-elevated)' : 'transparent'}
-          >
-            <Link2 size={13} /> Articles
-            {linkedArticles.length > 0 && (
-              <span style={{ fontSize: 10, background: '#7F77DD22', color: '#7F77DD', borderRadius: 99, padding: '1px 6px' }}>{linkedArticles.length}</span>
-            )}
-          </button>
           {/* Filter button */}
           <button
             onClick={() => setShowFilterPanel(v => !v)}
@@ -2182,9 +2162,11 @@ function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb
             )}
           </button>
           <ExportMenu onExport={exportImage} />
-          <button className="btn btn-primary" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => setShowAddNode(true)}>
-            <Plus size={13} /> Add node
-          </button>
+          {!isTerritory && (
+            <button className="btn btn-primary" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => setShowAddNode(true)}>
+              <Plus size={13} /> Add node
+            </button>
+          )}
         </div>
 
         {/* Filter panel */}
@@ -2212,33 +2194,44 @@ function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb
 
       {/* Canvas + Detail panel */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {showArticleRail && (
-          <LinkedArticlesRail
-            webId={web.id}
-            articles={linkedArticles}
-            onReload={reloadLinkedArticles}
-            onClose={() => setShowArticleRail(false)}
-          />
-        )}
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, position: 'relative' }}>
+          {web.template === 'territory' ? (
+            <div style={{
+              position: 'absolute', top: 12, left: 12, zIndex: 10,
+              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px',
+              fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-ui)',
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+            }}>
+              <Network size={11} color="#7F77DD" />
+              Read-only · add places via each location’s “Located within” field
+            </div>
+          ) : (
+            <LinkedArticlePill
+              webId={web.id}
+              article={linkedArticle}
+              onReload={reloadLinkedArticle}
+            />
+          )}
           <ReactFlow
             nodes={nodes} edges={edges}
             onInit={(inst: any) => { rfRef.current = inst; focusOnArticleNode() }}
             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodesDelete={onNodesDelete} onEdgesDelete={onEdgesDelete}
+            onConnect={isTerritory ? undefined : onConnect}
+            onNodesDelete={isTerritory ? undefined : onNodesDelete} onEdgesDelete={isTerritory ? undefined : onEdgesDelete}
             onNodeDragStop={onNodeDragStop}
             onNodeClick={(_e: any, node: RFNode) => setSelectedNodeId(prev => prev === node.id ? null : node.id)}
-            onEdgeDoubleClick={(_e: any, edge: RFEdge) => {
+            onEdgeDoubleClick={isTerritory ? undefined : (_e: any, edge: RFEdge) => {
               const db = dbEdges.find(e => String(e.id) === edge.id)
               if (db) setEditingEdge(db)
             }}
             onPaneClick={() => setSelectedNodeId(null)}
             nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
             connectionMode={ConnectionMode.Loose}
+            nodesConnectable={!isTerritory}
             snapToGrid snapGrid={[20, 20]}
             fitView fitViewOptions={{ padding: 0.3 }}
-            deleteKeyCode={['Delete', 'Backspace']}
+            deleteKeyCode={isTerritory ? null : ['Delete', 'Backspace']}
             style={{ background: 'var(--bg-base)' }}
           >
             <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--border)" />
@@ -2273,10 +2266,12 @@ function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb
                         style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: '#5b9fe8', fontSize: 11, padding: 0 }}>
                         <ExternalLink size={11} /> Open article
                       </button>
-                      <button onClick={() => unlinkArticle(selectedNode.id)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 11, padding: 0 }}>
-                        <Unlink size={11} /> Unlink
-                      </button>
+                      {!isTerritory && (
+                        <button onClick={() => unlinkArticle(selectedNode.id)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 11, padding: 0 }}>
+                          <Unlink size={11} /> Unlink
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -2560,7 +2555,8 @@ function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb
 // ── Page Root ──────────────────────────────────────────────────────────────────
 
 export default function RelationsPage() {
-  const { relationsOpenWebId, setRelationsOpenWebId, relationsFocusArticleId, setRelationsFocusArticleId } = useStore()
+  const { relationsOpenWebId, setRelationsOpenWebId, relationsFocusArticleId, setRelationsFocusArticleId, setHintContext } = useStore()
+  useEffect(() => { setHintContext('relations'); return () => setHintContext(null) }, [setHintContext])
   const [openWeb, setOpenWeb] = useState<RelationWeb | null>(null)
   const [loading, setLoading] = useState(false)
   // Deep-link focus: select + center the node linked to this article on open.

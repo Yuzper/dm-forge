@@ -1,5 +1,16 @@
 // path: src/components/LootTableView.tsx
+import { useState, useRef } from 'react'
 import type { LootItem } from '../types'
+import { parseItemStatBlock } from '../types'
+import { ItemCard, type ItemCardData } from './ItemCard'
+import { useStore } from '../store/store'
+
+function richTextToPlain(json: string): string {
+  try {
+    const walk = (node: any): string => node.type === 'text' ? (node.text ?? '') : (node.content ?? []).map(walk).join(' ')
+    return walk(JSON.parse(json)).replace(/\s+/g, ' ').trim()
+  } catch { return '' }
+}
 
 interface SectionProps {
   label: string
@@ -24,28 +35,91 @@ function LootRow({ item, onItemClick, wikiTitles }: { item: LootItem; onItemClic
   const color = chanceColor(item.chance)
   const isWikiLink = !!wikiTitles && wikiTitles.some(t => t.toLowerCase() === item.name.toLowerCase())
 
+  const [hoveredItem, setHoveredItem] = useState<(ItemCardData & { x: number; y: number }) | null>(null)
+  const hoverTimer = useRef<ReturnType<typeof setTimeout>>()
+  const cancelClose = () => clearTimeout(hoverTimer.current)
+  const scheduleClose = () => { cancelClose(); hoverTimer.current = setTimeout(() => setHoveredItem(null), 150) }
+
+  const onEnter = (e: React.MouseEvent) => {
+    if (!isWikiLink || !item.name.trim()) return
+    const { articles, currentCampaign } = useStore.getState()
+    const summary = articles.find(a => a.title.toLowerCase() === item.name.toLowerCase() && ['item', 'artifact'].includes(a.article_type))
+    if (!summary) return
+    cancelClose()
+    let tracks: Record<string, string> = {}
+    try { tracks = JSON.parse(summary.tracks || '{}') } catch { /* ignore */ }
+    let tags: string[] = []
+    try { const t = JSON.parse(summary.tags || '[]'); if (Array.isArray(t)) tags = t.filter(Boolean) } catch { /* ignore */ }
+    setHoveredItem({
+      x: e.clientX, y: e.clientY,
+      name: summary.title,
+      rarity: tracks.Rarity || undefined,
+      status: tracks.Status || undefined,
+      location: tracks.Location || undefined,
+      tags,
+      coverImage: summary.cover_image ? `file://${summary.cover_image}` : null,
+      desc: undefined,
+    })
+    if (currentCampaign) {
+      window.api.getArticleByTitle(summary.title, currentCampaign.id).then(full => {
+        if (!full) return
+        const ib = parseItemStatBlock(full.item_block || '')
+        const attunement = ib.requiresAttunement
+          ? (ib.attunementNote.trim() ? `requires attunement ${ib.attunementNote.trim()}` : 'requires attunement')
+          : undefined
+        const desc = (ib.description.trim() || richTextToPlain(full.content)).slice(0, 320)
+        const img = full.portrait_image
+          ? `file://${full.portrait_image}`
+          : full.cover_image ? `file://${full.cover_image}` : null
+        setHoveredItem(prev => prev && prev.name === summary.title ? {
+          ...prev,
+          category: ib.category || prev.category,
+          rarity: ib.rarity || prev.rarity,
+          attunement,
+          desc: desc || undefined,
+          coverImage: img ?? prev.coverImage,
+        } : prev)
+      }).catch(() => { /* ignore */ })
+    }
+  }
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', padding: '9px 14px', gap: 10 }}>
-      <span
-        onClick={isWikiLink && onItemClick ? () => onItemClick(item.name) : undefined}
-        style={{
-          flex: 1, fontSize: 13,
-          color: isWikiLink ? 'var(--gold)' : 'var(--text-primary)',
-          cursor: isWikiLink ? 'pointer' : 'default',
-          borderBottom: isWikiLink ? '1px solid var(--gold-dim)' : 'none',
-          width: 'fit-content',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}
+    <>
+      <div
+        onMouseEnter={onEnter}
+        onMouseLeave={scheduleClose}
+        style={{ display: 'flex', alignItems: 'center', padding: '9px 14px', gap: 10 }}
       >
-        {item.name}
-      </span>
-      <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 32, textAlign: 'center', flexShrink: 0 }}>
-        {item.quantity}
-      </span>
-      <span style={{ fontSize: 12, fontWeight: 500, color, width: 40, textAlign: 'right', flexShrink: 0 }}>
-        {item.chance >= 100 ? '100%' : `${item.chance}%`}
-      </span>
-    </div>
+        <span
+          onClick={isWikiLink && onItemClick ? () => onItemClick(item.name) : undefined}
+          style={{
+            flex: 1, fontSize: 13,
+            color: isWikiLink ? 'var(--gold)' : 'var(--text-primary)',
+            cursor: isWikiLink ? 'pointer' : 'default',
+            borderBottom: isWikiLink ? '1px solid var(--gold-dim)' : 'none',
+            width: 'fit-content',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}
+        >
+          {item.name}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 32, textAlign: 'center', flexShrink: 0 }}>
+          {item.quantity}
+        </span>
+        <span style={{ fontSize: 12, fontWeight: 500, color, width: 40, textAlign: 'right', flexShrink: 0 }}>
+          {item.chance >= 100 ? '100%' : `${item.chance}%`}
+        </span>
+      </div>
+      {hoveredItem && (
+        <ItemCard
+          item={hoveredItem}
+          x={hoveredItem.x}
+          y={hoveredItem.y}
+          onMouseEnter={cancelClose}
+          onMouseLeave={() => setHoveredItem(null)}
+        />
+      )}
+    </>
   )
 }
 

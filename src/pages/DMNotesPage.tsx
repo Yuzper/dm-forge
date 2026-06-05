@@ -29,7 +29,6 @@ const DropLine = () => (
   <div style={{ height: 2, background: '#9b7de8', borderRadius: 2, margin: '2px 6px' }} />
 )
 import RichEditor from '../components/RichEditor'
-import HintBox, { Kbd } from '../components/HintBox'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -316,6 +315,12 @@ function PageItem({ page, isActive, groups, isFirst, isLast, dnd, index, contain
         if (btn) btn.style.opacity = '0'
       }}
     >
+      <GripVertical
+        size={12}
+        color="var(--text-muted)"
+        style={{ flexShrink: 0, opacity: 0.45, cursor: 'grab' }}
+        aria-label="Drag to reorder"
+      />
       <FileText size={11} color={isActive ? '#9b7de8' : 'var(--text-muted)'} style={{ flexShrink: 0 }} />
       <span style={{
         flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -608,7 +613,8 @@ function PageEditor({ page, onDeleted, onTitleChange }: {
 // ── DM Notes Page ──────────────────────────────────────────────────────────────
 
 export default function DMNotesPage() {
-  const { currentCampaign, setView, setCampaignSubView } = useStore()
+  const { currentCampaign, setView, setCampaignSubView, setHintContext } = useStore()
+  useEffect(() => { setHintContext('dmnotes'); return () => setHintContext(null) }, [setHintContext])
   const [pages, setPages] = useState<DMNotePageSummary[]>([])
   const [groups, setGroups] = useState<DMNoteGroup[]>([])
   const [activePage, setActivePage] = useState<DMNotePageFull | null>(null)
@@ -910,15 +916,6 @@ export default function DMNotesPage() {
           {/* Page list */}
           <div style={{ flex: 1, overflow: 'auto', padding: '6px 4px' }}>
 
-            <HintBox
-              hintKey="dmnotes-organize"
-              title="Organise your notes"
-              items={[
-                <>Drag pages to reorder them, or drop them into a folder.</>,
-                <>Notes support the same <Kbd>[[</Kbd> <Kbd>@@</Kbd> <Kbd>\\</Kbd> links as articles.</>,
-              ]}
-              style={{ margin: '2px 4px 8px' }}
-            />
 
             {/* Ungrouped pages — always a drop target so pages can be moved out of groups */}
             {(ungroupedPages.length > 0 || dragItem?.kind === 'page') && (

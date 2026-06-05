@@ -4,7 +4,7 @@ import { useStore } from '../store/store'
 import {
   ChevronLeft, Map, Scroll, Download, Upload, Check,
   AlertCircle, BookOpen, Clock, ArrowLeft, Timer,
-  FileText, Layers, Sparkles, ShoppingBag, Network, Paintbrush, Lightbulb,
+  FileText, Layers, Sparkles, ShoppingBag, Network, Paintbrush, Lightbulb, Music2,
 } from 'lucide-react'
 import POIList from './POIList'
 import type { HistoryEntry } from '../store/store'
@@ -32,7 +32,8 @@ export default function Sidebar() {
 
   const inCampaignContext =
     view === 'campaign' || view === 'session' || view === 'wiki' ||
-    view === 'dm-notes' || view === 'loot-tables' || view === 'relations' || view === 'timeline'
+    view === 'dm-notes' || view === 'loot-tables' || view === 'relations' || view === 'timeline' ||
+    view === 'soundboard'
   const canGoBack = navigationHistory.length >= 2
   const [version, setVersion] = useState('')
 
@@ -167,6 +168,17 @@ export default function Sidebar() {
                 onClick={() => setView('timeline')}
               >
                 <Clock size={13} /> Timeline
+              </button>
+
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{
+                  width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
+                  color: view === 'soundboard' ? '#3b82f6' : 'var(--text-secondary)',
+                }}
+                onClick={() => setView('soundboard')}
+              >
+                <Music2 size={13} /> Soundboard
               </button>
               </div>
             </div>

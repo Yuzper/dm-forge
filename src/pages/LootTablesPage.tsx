@@ -8,7 +8,6 @@ import {
 import type { MasterLootTable, LootTableCategory, LootItem } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 import LootTableEditor from '../components/LootTableEditor'
-import HintBox from '../components/HintBox'
 import SectionDivider from '../components/SectionDivider'
 
 // ── Category config ────────────────────────────────────────────────────────────
@@ -157,9 +156,10 @@ function TableEditorPanel({ table, onUpdate, onDelete }: {
       {/* Header */}
       <div style={{
         padding: '0 24px', borderBottom: '1px solid var(--border)',
-        display: 'flex', alignItems: 'stretch', minHeight: 52, flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: 10, minHeight: 52, flexShrink: 0,
         background: 'var(--bg-surface)',
       }}>
+        <div style={{ width: 10, height: 10, borderRadius: '50%', background: accent, flexShrink: 0, boxShadow: `0 0 8px ${accent}55` }} />
         <input
           value={name}
           onChange={e => { setName(e.target.value); setDirty(true) }}
@@ -190,12 +190,12 @@ function TableEditorPanel({ table, onUpdate, onDelete }: {
 
       {/* Body */}
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-        {/* Description */}
-        <div style={{ marginBottom: 16 }}>
+        {/* Description + category on one meta line */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
           <input
-            className="input"
-            style={{ fontSize: 13 }}
-            placeholder="Description (optional)…"
+            className="ghost-input"
+            style={{ flex: 1, fontSize: 13, fontStyle: description ? 'normal' : 'italic', color: 'var(--text-secondary)' }}
+            placeholder="Add a description…"
             value={description}
             onChange={e => { setDescription(e.target.value); setDirty(true) }}
           />
@@ -247,6 +247,7 @@ function TableListItem({ table, isActive, onClick }: {
   onClick: () => void
 }) {
   const accent = categoryColor(table.category)
+  const itemCount = (() => { try { return JSON.parse(table.items).length } catch { return 0 } })()
   return (
     <div
       onClick={onClick}
@@ -272,6 +273,11 @@ function TableListItem({ table, isActive, onClick }: {
       {table.is_default && (
         <span style={{ fontSize: 9, color: 'var(--text-muted)', background: 'var(--bg-elevated)', padding: '1px 5px', borderRadius: 99, border: '1px solid var(--border-light)', flexShrink: 0 }}>
           default
+        </span>
+      )}
+      {itemCount > 0 && (
+        <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0, minWidth: 16, textAlign: 'right' }}>
+          {itemCount}
         </span>
       )}
     </div>
@@ -342,7 +348,9 @@ function CategoryGroup({ category, tables, activeId, onSelect, onCreateInCategor
 // ── Loot Tables Page ───────────────────────────────────────────────────────────
 
 export default function LootTablesPage() {
-  const { currentCampaign, setView, setCampaignSubView } = useStore()
+  const { currentCampaign, setView, setCampaignSubView, setHintContext } = useStore()
+
+  useEffect(() => { setHintContext('loot-tables'); return () => setHintContext(null) }, [setHintContext])
   const [tables, setTables] = useState<MasterLootTable[]>([])
   const [activeTable, setActiveTable] = useState<MasterLootTable | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -506,17 +514,6 @@ export default function LootTablesPage() {
               <button className="btn btn-primary" onClick={() => handleCreate('creature')}>
                 <Plus size={14} /> New Table
               </button>
-              <HintBox
-                hintKey="loot-tables"
-                title="How loot tables work"
-                items={[
-                  <>Tables are grouped by category in the sidebar — hit + on a category to add one there.</>,
-                  <>Give each item a drop chance %; tables save as you edit.</>,
-                  <>Attach a table to a creature's stat block, then roll it from the combat tracker.</>,
-                  <><strong>Reset defaults</strong> restores the built-in tables if you need them back.</>,
-                ]}
-                style={{ maxWidth: 520, textAlign: 'left', marginTop: 6 }}
-              />
             </div>
           )}
         </div>

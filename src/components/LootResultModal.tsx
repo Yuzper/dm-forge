@@ -1,6 +1,17 @@
 // path: src/components/LootResultModal.tsx
+import { useState, useRef } from 'react'
 import { X, Dices } from 'lucide-react'
 import type { LootItem } from '../types'
+import { parseItemStatBlock } from '../types'
+import { ItemCard, type ItemCardData } from './ItemCard'
+import { useStore } from '../store/store'
+
+function richTextToPlain(json: string): string {
+  try {
+    const walk = (node: any): string => node.type === 'text' ? (node.text ?? '') : (node.content ?? []).map(walk).join(' ')
+    return walk(JSON.parse(json)).replace(/\s+/g, ' ').trim()
+  } catch { return '' }
+}
 
 interface Props {
   creatureName: string
@@ -137,8 +148,58 @@ function LootItemRow({ item }: { item: LootItem }) {
   const isAlways = item.chance >= 100
   const color = chanceColor(item.chance)
 
+  const [hoveredItem, setHoveredItem] = useState<(ItemCardData & { x: number; y: number }) | null>(null)
+  const hoverTimer = useRef<ReturnType<typeof setTimeout>>()
+  const cancelClose = () => clearTimeout(hoverTimer.current)
+  const scheduleClose = () => { cancelClose(); hoverTimer.current = setTimeout(() => setHoveredItem(null), 150) }
+
+  const onRowEnter = (e: React.MouseEvent) => {
+    if (!item.name.trim()) return
+    const { articles, currentCampaign } = useStore.getState()
+    const summary = articles.find(a => a.title === item.name && ['item', 'artifact'].includes(a.article_type))
+    if (!summary) return
+    cancelClose()
+    let tracks: Record<string, string> = {}
+    try { tracks = JSON.parse(summary.tracks || '{}') } catch { /* ignore */ }
+    let tags: string[] = []
+    try { const t = JSON.parse(summary.tags || '[]'); if (Array.isArray(t)) tags = t.filter(Boolean) } catch { /* ignore */ }
+    const cardData: ItemCardData & { x: number; y: number } = {
+      x: e.clientX, y: e.clientY,
+      name: summary.title,
+      rarity: tracks.Rarity || undefined,
+      status: tracks.Status || undefined,
+      location: tracks.Location || undefined,
+      tags,
+      coverImage: summary.cover_image ? `file://${summary.cover_image}` : null,
+      desc: undefined,
+    }
+    setHoveredItem(cardData)
+    if (currentCampaign) {
+      window.api.getArticleByTitle(item.name, currentCampaign.id).then(full => {
+        if (!full) return
+        const ib = parseItemStatBlock(full.item_block || '')
+        const attunement = ib.requiresAttunement
+          ? (ib.attunementNote.trim() ? `requires attunement ${ib.attunementNote.trim()}` : 'requires attunement')
+          : undefined
+        const desc = (ib.description.trim() || richTextToPlain(full.content)).slice(0, 320)
+        const img = full.portrait_image
+          ? `file://${full.portrait_image}`
+          : full.cover_image ? `file://${full.cover_image}` : null
+        setHoveredItem(prev => prev && prev.name === item.name ? {
+          ...prev, category: ib.category || prev.category,
+          rarity: ib.rarity || prev.rarity,
+          attunement, desc: desc || undefined, coverImage: img ?? prev.coverImage,
+        } : prev)
+      }).catch(() => { /* ignore */ })
+    }
+  }
+
   return (
-    <div style={{
+    <>
+    <div
+      onMouseEnter={onRowEnter}
+      onMouseLeave={scheduleClose}
+      style={{
       display: 'flex', alignItems: 'stretch', gap: 0,
       background: 'var(--bg-surface)',
       border: '1px solid var(--border-light)',
@@ -201,5 +262,15 @@ function LootItemRow({ item }: { item: LootItem }) {
         </div>
       </div>
     </div>
+    {hoveredItem && (
+      <ItemCard
+        item={hoveredItem}
+        x={hoveredItem.x}
+        y={hoveredItem.y}
+        onMouseEnter={cancelClose}
+        onMouseLeave={() => setHoveredItem(null)}
+      />
+    )}
+    </>
   )
 }

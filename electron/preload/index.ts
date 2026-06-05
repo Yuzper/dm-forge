@@ -148,6 +148,22 @@ contextBridge.exposeInMainWorld('api', {
   linkRelationWebArticle:   (webId: number, articleId: number) => ipcRenderer.invoke('relation-webs:link-article', webId, articleId),
   unlinkRelationWebArticle: (webId: number, articleId: number) => ipcRenderer.invoke('relation-webs:unlink-article', webId, articleId),
   getArticleMemberCount:    (articleId: number) => ipcRenderer.invoke('articles:member-count', articleId),
+  getArticleAffiliations:   (articleId: number) => ipcRenderer.invoke('articles:get-affiliations', articleId),
+  getArticleGeography:      (articleId: number) => ipcRenderer.invoke('articles:get-geography', articleId),
 
   syncDerivedRelations:   (webId: number)  => ipcRenderer.invoke('relation-webs:sync-derived-relations',   webId),
+
+  // Sound Boards
+  getSoundBoards:    (campaignId: number)        => ipcRenderer.invoke('soundboards:get-all', campaignId),
+  createSoundBoard:  (data: any)                 => ipcRenderer.invoke('soundboards:create', data),
+  updateSoundBoard:  (id: number, data: any)     => ipcRenderer.invoke('soundboards:update', id, data),
+  deleteSoundBoard:  (id: number)                => ipcRenderer.invoke('soundboards:delete', id),
+  getDefaultSounds:  ()                          => ipcRenderer.invoke('soundboards:get-defaults'),
+
+  // Sounds
+  getSounds:         (boardId: number)           => ipcRenderer.invoke('sounds:get-all', boardId),
+  createSound:       (data: any)                 => ipcRenderer.invoke('sounds:create', data),
+  updateSound:       (id: number, data: any)     => ipcRenderer.invoke('sounds:update', id, data),
+  deleteSound:       (id: number)                => ipcRenderer.invoke('sounds:delete', id),
+  selectAudioFile:   ()                          => ipcRenderer.invoke('sounds:select-file'),
 })

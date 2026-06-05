@@ -58,7 +58,7 @@ export function ItemCard({ item, x, y, onMouseEnter, onMouseLeave }: {
       }}
     >
       {item.coverImage && (
-        <div style={{ height: 96, background: `center/cover no-repeat url("${item.coverImage}")`, borderBottom: `1px solid ${accent}` }} />
+        <img src={item.coverImage} style={{ width: '100%', height: 96, objectFit: 'cover', display: 'block', borderBottom: `1px solid ${accent}` }} />
       )}
       <div style={{ padding: '10px 14px', background: 'var(--bg-surface)', borderBottom: `1px solid ${accent}` }}>
         <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, color: accent, letterSpacing: '0.04em', marginBottom: 2 }}>

@@ -61,6 +61,12 @@
     "files": [
       "out/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "src/data/soundboard",
+        "to": "soundboard"
+      }
+    ],
     "publish": {
       "provider": "github",
       "owner": "Yuzper",

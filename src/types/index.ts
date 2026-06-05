@@ -29,6 +29,7 @@ export interface Session {
   in_world_day_end?: number | null
   is_draft?: number
   sort_order?: number
+  soundboard_id?: number | null
 }
 
 export interface GameMap {
@@ -104,7 +105,7 @@ export interface Article extends ArticleSummary {
 export type ArticleType =
   | 'character' | 'playerCharacter' | 'location' | 'faction'
   | 'organization' | 'culture' | 'religion' | 'item' | 'artifact'
-  | 'quest' | 'event' | 'lore' | 'creature' | 'note' | 'vendor' | 'other'
+  | 'quest' | 'event' | 'lore' | 'creature' | 'note' | 'other'
 
 export type LootTableCategory = 'creature' | 'vendor' | 'location' | 'custom'
 
@@ -245,6 +246,40 @@ export interface LootItem {
 export interface LootTable {
   name: string
   items: LootItem[]
+}
+
+export type SoundCategory = 'ambience' | 'music' | 'effect'
+
+export interface SoundBoard {
+  id: number
+  campaign_id: number
+  name: string
+  sort_order: number
+  sound_count?: number
+  created_at: string
+}
+
+export interface Sound {
+  id: number
+  board_id: number
+  name: string
+  category: SoundCategory
+  file_path: string
+  hotkey: string
+  volume: number
+  loop: number        // 1 = loop, 0 = one-shot
+  sort_order: number
+  created_at: string
+}
+
+// Bundled default sound — scanned live from the app's soundboard folder.
+// Not stored in the DB; `url` is a ready-to-play file:// path,
+// `ref` is the stable `default:<folder>/<file>` reference for "Add to board".
+export interface DefaultSound {
+  category: SoundCategory
+  name: string
+  url: string
+  ref: string
 }
 
 export const DEFAULT_LOOT_TABLE: LootTable = { name: 'Loot', items: [] }
@@ -493,6 +528,20 @@ export interface ElectronAPI {
 
   // Maps
   replaceMapImage: (mapId: number) => Promise<{ path: string } | null>
+
+  // Sound Boards
+  getSoundBoards:   (campaignId: number)        => Promise<SoundBoard[]>
+  createSoundBoard: (data: { campaign_id: number; name: string }) => Promise<SoundBoard>
+  updateSoundBoard: (id: number, data: Partial<SoundBoard>) => Promise<SoundBoard>
+  deleteSoundBoard: (id: number)                => Promise<void>
+  getDefaultSounds: ()                          => Promise<DefaultSound[]>
+
+  // Sounds
+  getSounds:        (boardId: number)           => Promise<Sound[]>
+  createSound:      (data: Omit<Sound, 'id' | 'sort_order' | 'created_at' | 'loop'> & { loop?: number }) => Promise<Sound>
+  updateSound:      (id: number, data: Partial<Sound>) => Promise<Sound>
+  deleteSound:      (id: number)                => Promise<void>
+  selectAudioFile:  ()                          => Promise<string | null>
 }
 
 

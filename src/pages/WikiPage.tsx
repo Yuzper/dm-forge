@@ -7,10 +7,9 @@ import {
   ScrollText, Users, Landmark, FileText, X, ChevronLeft, Calendar,
   MoreHorizontal, Tag, Image as ImageIcon, Link, PawPrint, StickyNote,
   ArrowLeft, ShoppingBag,
-  Network, ChevronDown, ChevronRight, Skull,
+  Network, ChevronDown, ChevronRight, Skull, ExternalLink,
 } from 'lucide-react'
 import RichEditor from '../components/RichEditor'
-import HintBox, { Kbd } from '../components/HintBox'
 import type { Article, ArticleSummary, ArticleType, MasterLootTable, LootItem } from '../types'
 import StatBlockEditor from '../components/StatBlockEditor'
 import { parseStatBlock, parseItemStatBlock, itemBlockHasData } from '../types'
@@ -29,6 +28,7 @@ import type { Substep } from '../components/QuestSubstepsSection'
 import QuestRewardSection, { parseRewards } from '../components/QuestRewardSection'
 import type { Reward } from '../components/QuestRewardSection'
 import { NewWebModal } from './RelationsPage'
+import { RelationWebPreview } from '../components/RelationWebPreview'
 import { ARTICLE_TYPE_COLORS } from '../constants/articleTypes'
 
 // ── Article type definitions ───────────────────────────────────────────────────
@@ -45,7 +45,6 @@ const ARTICLE_TYPES: { value: ArticleType; label: string; icon: any; color: stri
   { value: 'culture',         label: 'Culture',      icon: Landmark,    color: ARTICLE_TYPE_COLORS.culture },
   { value: 'religion',        label: 'Religion',     icon: Landmark,    color: ARTICLE_TYPE_COLORS.religion },
   { value: 'item',            label: 'Item',         icon: Package,     color: ARTICLE_TYPE_COLORS.item },
-  { value: 'vendor',          label: 'Vendor',       icon: ShoppingBag, color: ARTICLE_TYPE_COLORS.vendor },
   { value: 'note',            label: 'Note',         icon: StickyNote,  color: ARTICLE_TYPE_COLORS.note },
   { value: 'quest',           label: 'Quest',        icon: ScrollText,  color: ARTICLE_TYPE_COLORS.quest },
   { value: 'event',           label: 'Event',        icon: ScrollText,  color: ARTICLE_TYPE_COLORS.event },
@@ -68,8 +67,6 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
     Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Location:    [],
-    Faction:     [],
-    Religion:    [],
     Culture:     [],
   },
   playerCharacter: {
@@ -83,8 +80,6 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
     Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Location:    [],
-    Faction:     [],
-    Religion:    [],
     Culture:     [],
   },
   creature: {
@@ -98,13 +93,7 @@ const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
     State:  ['Discovered', 'Undiscovered', 'Destroyed', 'Abandoned'],
     Size:   ['Room', 'Building', 'Village', 'Town', 'City', 'Metropolis', 'Duchy', 'Kingdom', 'Empire', 'Continent', 'World', 'Ruins', 'Dungeon', 'Wilderness', 'Landmark', 'Natural Wonder'],
     Plane:  ['Material Plane', 'The Nine Hells', 'The Abyss', 'Ethereal Plane', 'Shadowfell', 'Feywild', 'Elemental Plane', 'Astral Plane'],
-    Region: [],
-  },
-  vendor: {
-    Shop_Type: ['General Store', 'Blacksmith', 'Alchemist', 'Magic Items', 'Black Market', 'Fence', 'Tavern', 'Herbalist'],
-    Status:    ['Open', 'Closed', 'Burned Down', 'Under New Management', 'Abandoned'],
-    Location:  [],
-    Owner:     [],
+    Within: [],
   },
   faction: {
     Status: ['Active', 'Disbanded', 'Unknown'],
@@ -179,13 +168,38 @@ const TRACK_VALUE_COLORS: Record<string, string> = {
   Tiny: '#8a8a8a', Small: '#5bbfb0', Large: '#e88c3a', Huge: '#e05555', Gargantuan: '#8b2533',
 }
 
+// Date tracks hold JSON (e.g. {"day":3,"year":1507}) and shouldn't become tags.
+const NON_TAG_TRACKS = new Set(['In_World_Date', 'Death_Date', 'Timeline_Milestones'])
+
+// A plain enum/text track value becomes a tag; JSON values (date pickers,
+// milestone lists) and any *_Date field are skipped so they never leak in.
+function isTaggableTrack(key: string, value: string): boolean {
+  if (NON_TAG_TRACKS.has(key)) return false
+  if (key.endsWith('_Date')) return false
+  const v = value.trim()
+  if (!v) return false
+  if (v.startsWith('{') || v.startsWith('[')) return false
+  return true
+}
+
 function getTrackTags(tracks: Record<string, string>): string[] {
-  return Object.values(tracks)
-    .filter(v => v && v.trim() !== '')
-    .map(v => v.toLowerCase().replace(/\s+/g, '-'))
+  return Object.entries(tracks)
+    .filter(([k, v]) => isTaggableTrack(k, v))
+    .map(([, v]) => v.toLowerCase().replace(/\s+/g, '-'))
+}
+
+// Parse a stored tags array, dropping any JSON-fragment garbage that earlier
+// leaked in from date/milestone tracks (never present in legitimate tags).
+function parseTags(raw: string | null | undefined): string[] {
+  try {
+    const arr = JSON.parse(raw || '[]')
+    if (!Array.isArray(arr)) return []
+    return arr.filter((t): t is string => typeof t === 'string' && t.trim() !== '' && !/[{}[\]"]/.test(t))
+  } catch { return [] }
 }
 
 function formatTrackName(key: string): string {
+  if (key === 'Within') return 'Located within'
   return key.replace(/_/g, ' ')
 }
 
@@ -330,7 +344,7 @@ function CreateArticleModal({ onClose }: { onClose: () => void }) {
 function ArticleCard({ article, onOpen }: { article: ArticleSummary; onOpen: () => void }) {
   const typeInfo = ARTICLE_TYPES.find(t => t.value === article.article_type) || ARTICLE_TYPES[ARTICLE_TYPES.length - 1]
   const Icon = typeInfo.icon
-  const tags = (() => { try { return JSON.parse(article.tags) as string[] } catch { return [] } })()
+  const tags = parseTags(article.tags)
   const { wikiSearchFields } = useStore()
 
   return (
@@ -420,9 +434,34 @@ interface ArticleRelationRow {
 
 // List the relation webs linked to this article, and create a new one (any
 // template) pre-linked to it via the shared New-web modal.
-function RelationWebsSection({ articleId, articleTitle, canCreate, webs, loaded, onReload, onOpenWeb }: {
+// Article-type-specific suggestion for what a web living inside this article could map.
+function webSectionHint(articleType: ArticleType): string {
+  switch (articleType) {
+    case 'faction':
+    case 'organization':
+      return 'Map a structure within this organisation — its chain of command, ranks, cells, or alliances and rivalries between members.'
+    case 'religion':
+      return 'Map a structure within this faith — its clergy hierarchy, sects, holy orders, or pantheon of deities.'
+    case 'location':
+      return 'Map a structure rooted in this place — the ruling council or court, the noble houses, or the guilds and factions that operate here.'
+    case 'character':
+    case 'playerCharacter':
+      return 'Map this character’s personal web — their household and retinue, family tree, or circle of allies and rivals.'
+    case 'culture':
+      return 'Map the social fabric of this culture — its clans, castes, or kinship and lineage ties.'
+    case 'creature':
+      return 'Map a structure for this creature — a pack, swarm, hive, or brood and its hierarchy.'
+    case 'quest':
+      return 'Map this quest’s shape — its branching steps, dependencies, or the factions pulling its strings.'
+    default:
+      return 'Add an optional hierarchy, family tree, or other relation web tied to this article.'
+  }
+}
+
+function RelationWebsSection({ articleId, articleTitle, articleType, canCreate, webs, loaded, onReload, onOpenWeb }: {
   articleId: number
   articleTitle: string
+  articleType: ArticleType
   canCreate: boolean
   webs: any[]
   loaded: boolean
@@ -443,21 +482,24 @@ function RelationWebsSection({ articleId, articleTitle, canCreate, webs, loaded,
 
   return (
     <div style={{ borderBottom: '1px solid var(--border)', padding: '12px 16px' }}>
-      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Webs</div>
+      <div style={sidebarSectionLabel}>Webs</div>
       {canCreate && (
         <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.45, marginBottom: 8 }}>
-          Add an optional hierarchy, family tree, or other relation web that's part of this article. For example, on a crime org's article, a web could map its hierarchy of members.
+          {webSectionHint(articleType)}
         </div>
       )}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {webs.map(w => (
-          <button key={w.id} style={btnStyle} onClick={() => onOpenWeb(w.id)}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
-            <Network size={13} color="#7F77DD" />
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{w.node_count} node{w.node_count !== 1 ? 's' : ''}</span>
-          </button>
+          <div key={w.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <button style={btnStyle} onClick={() => onOpenWeb(w.id)}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+              <Network size={13} color="#7F77DD" />
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{w.node_count} node{w.node_count !== 1 ? 's' : ''}</span>
+            </button>
+            <RelationWebPreview webId={w.id} webName={w.name} onOpen={() => onOpenWeb(w.id)} />
+          </div>
         ))}
         {canCreate && (
           <button style={{ ...btnStyle, borderStyle: 'dashed', justifyContent: 'center', color: '#7F77DD' }}
@@ -499,6 +541,136 @@ function MemberCountSection({ articleId, followerEstimate }: { articleId: number
   )
 }
 
+// Derived, read-only affiliations for characters/PCs. The faction/org/religion
+// articles that own a web this character is a node in. Webs are the source of
+// truth — these fields are computed, never stored, so they can't drift.
+function AffiliationsSection({ articleId }: { articleId: number }) {
+  const { navigateToArticleByTitle } = useStore()
+  const [items, setItems] = useState<{ id: number; title: string; article_type: string }[]>([])
+
+  useEffect(() => {
+    if (!articleId) return
+    ;(window as any).api.getArticleAffiliations(articleId).then((a: any[]) => setItems(a || []))
+  }, [articleId])
+
+  const religion = items.find(a => a.article_type === 'religion')
+  const factions = items.filter(a => a.article_type === 'faction' || a.article_type === 'organization')
+  if (!religion && factions.length === 0) return null
+
+  const chip = (a: { id: number; title: string; article_type: string }) => {
+    const color = ARTICLE_TYPE_COLORS[a.article_type] || '#8a8a8a'
+    return (
+      <button
+        key={a.id}
+        onClick={() => navigateToArticleByTitle(a.title)}
+        title={`Go to ${a.title}`}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px',
+          borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+          border: `1px solid ${color}44`, background: `${color}12`, color,
+        }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = `${color}22`}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = `${color}12`}
+      >
+        <ExternalLink size={10} /> {a.title}
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ borderBottom: '1px solid var(--border)', padding: '12px 16px' }}>
+      <div style={sidebarSectionLabel}>Affiliations</div>
+      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic', marginBottom: 8 }}>
+        From relation webs
+      </div>
+      {religion && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: factions.length ? 8 : 0 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 56, flexShrink: 0 }}>Religion</span>
+          {chip(religion)}
+        </div>
+      )}
+      {factions.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 56, flexShrink: 0, paddingTop: 3 }}>
+            Faction{factions.length !== 1 ? 's' : ''}
+          </span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {factions.map(chip)}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Derived, read-only geography for a location: the containment path up the
+// "Within" chain (root-first) plus the locations nested directly inside it.
+function GeographySection({ articleId, reloadKey }: { articleId: number; reloadKey?: unknown }) {
+  const { navigateToArticleByTitle } = useStore()
+  const [data, setData] = useState<{ ancestors: { id: number; title: string }[]; children: { id: number; title: string }[] }>({ ancestors: [], children: [] })
+
+  useEffect(() => {
+    if (!articleId) return
+    ;(window as any).api.getArticleGeography(articleId).then((d: any) => setData(d || { ancestors: [], children: [] }))
+  }, [articleId, reloadKey])
+
+  const { ancestors, children } = data
+  if (ancestors.length === 0 && children.length === 0) return null
+
+  const color = ARTICLE_TYPE_COLORS.location || '#c8a84b'
+  const linkStyle: React.CSSProperties = {
+    background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+    fontSize: 12, color, fontWeight: 500, overflow: 'hidden',
+    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  }
+  const chip = (c: { id: number; title: string }) => (
+    <button key={c.id} onClick={() => navigateToArticleByTitle(c.title)} title={`Go to ${c.title}`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px',
+        borderRadius: 99, fontSize: 11, cursor: 'pointer',
+        border: `1px solid ${color}44`, background: `${color}12`, color,
+      }}
+      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = `${color}22`}
+      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = `${color}12`}>
+      {c.title}
+    </button>
+  )
+
+  return (
+    <div style={{ borderBottom: '1px solid var(--border)', padding: '12px 16px' }}>
+      <div style={sidebarSectionLabel}>Geography</div>
+
+      {ancestors.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginBottom: children.length ? 10 : 0 }}>
+          {ancestors.map((a, i) => (
+            <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              {i > 0 && <ChevronRight size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+              <button onClick={() => navigateToArticleByTitle(a.title)} title={`Go to ${a.title}`} style={linkStyle}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.textDecoration = 'underline'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.textDecoration = 'none'}>
+                {a.title}
+              </button>
+            </span>
+          ))}
+          <ChevronRight size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>here</span>
+        </div>
+      )}
+
+      {children.length > 0 && (
+        <div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+            Contains <span style={{ fontWeight: 400 }}>· {children.length}</span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {children.map(chip)}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ArticleRelationsPanel({
   articleId,
   onOpenWeb,
@@ -529,9 +701,7 @@ function ArticleRelationsPanel({
   return (
     <div style={{ borderBottom: '1px solid var(--border)' }}>
       <div style={{ padding: '12px 16px 4px' }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
-          Relations
-        </div>
+        <div style={sidebarSectionLabel}>Relations</div>
       </div>
       {Object.entries(byWeb).map(([webIdStr, { webName, rows: webRows }]) => (
         <div key={webIdStr}>
@@ -620,7 +790,7 @@ function parseCreatureVariants(raw: string): CreatureVariant[] {
 }
 
 const STATBLOCK_TYPES: ArticleType[] = ['character', 'playerCharacter']
-const LOOT_TYPES: ArticleType[] = ['character', 'playerCharacter', 'vendor']
+const LOOT_TYPES: ArticleType[] = ['character', 'playerCharacter']
 
 // ── Creature Variants Section ──────────────────────────────────────────────────
 
@@ -887,7 +1057,7 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
 }
 
 export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: { article: Article; onBack: () => void; backLabel?: string }) {
-  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, setView, setRelationsOpenWebId, setRelationsFocusArticleId } = useStore()
+  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, setView, setRelationsOpenWebId, setRelationsFocusArticleId, setHintContext } = useStore()
 
   const [factionNames, setFactionNames]       = useState<string[]>([])
   const [organizationNames, setOrgNames]      = useState<string[]>([])
@@ -906,7 +1076,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const [statblock, setStatblock]     = useState(() => parseStatBlock(article.statblock))
   const [variants, setVariants]       = useState<CreatureVariant[]>(() => parseCreatureVariants(article.statblock))
   const [itemBlock, setItemBlock]     = useState(() => parseItemStatBlock(article.item_block))
-  const [tags, setTags]               = useState<string[]>(() => { try { return JSON.parse(article.tags) } catch { return [] } })
+  const [tags, setTags]               = useState<string[]>(() => parseTags(article.tags))
   const [tagInput, setTagInput]       = useState('')
   const [coverImage, setCoverImage]   = useState<string | null>(article.cover_image || null)
   const [portraitImage, setPortraitImage] = useState<string | null>(article.portrait_image || null)
@@ -917,8 +1087,15 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const [dirty, setDirty]             = useState(false)
   const [saving, setSaving]           = useState(false)
   const [readMode, setReadMode]       = useState(true)
+  const [savedTick, setSavedTick]     = useState(0)   // bumped after each save — refreshes derived sections
 
-  // Loot — inline extras JSON (used for all loot types; for vendors this is extra items on top of master)
+  // Floating hint follows the article mode: reading vs. editing
+  useEffect(() => {
+    setHintContext(readMode ? 'wiki-article-read' : 'wiki-linking')
+    return () => setHintContext(null)
+  }, [readMode, setHintContext])
+
+  // Loot — inline extras JSON (extra items layered on top of any linked master table)
   const [lootTableJson, setLootTableJson] = useState(article.loot_table || '{"name":"Loot","items":[]}')
   // Master table FK
   const [lootTableId, setLootTableId] = useState<number | null>(article.loot_table_id ?? null)
@@ -930,7 +1107,6 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const hasStatblock = STATBLOCK_TYPES.includes(articleType)
   const hasItemBlock = articleType === 'item'
   const hasLoot      = LOOT_TYPES.includes(articleType)
-  const isVendor     = articleType === 'vendor'
   const hasMap       = articleType === 'location'
   const hasQuest     = articleType === 'quest'
 
@@ -959,7 +1135,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
     setStatblock(parseStatBlock(article.statblock))
     setVariants(parseCreatureVariants(article.statblock))
     setItemBlock(parseItemStatBlock(article.item_block))
-    setTags(() => { try { return JSON.parse(article.tags) } catch { return [] } })
+    setTags(parseTags(article.tags))
     setCoverImage(article.cover_image || null); setPortraitImage(article.portrait_image || null)
     setLootTableJson(article.loot_table || '{"name":"Loot","items":[]}')
     setLootTableId(article.loot_table_id ?? null)
@@ -1010,7 +1186,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
       substeps: JSON.stringify(substeps),
       rewards:  JSON.stringify(rewards),
     })
-    setDirty(false); setSaving(false)
+    setDirty(false); setSaving(false); setSavedTick(t => t + 1)
   }, [article.id, dirty, title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, substeps, rewards, updateArticle])
 
   useEffect(() => {
@@ -1084,20 +1260,6 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {readMode && (
-          <div style={{ padding: '12px 24px 0' }}>
-            <HintBox
-              hintKey="article-read-edit"
-              title="Reading vs. editing"
-              items={[
-                <>Articles open read-only — click <strong>Edit</strong> (top right) to make changes.</>,
-                <>Changes save on their own when you hit Save or leave the article.</>,
-                <>Fill in <strong>tracks</strong> (Vitality, Attitude…) to set the status shown on relation nodes and the timeline.</>,
-              ]}
-              style={{ maxWidth: 720 }}
-            />
-          </div>
-        )}
         {/* Banner */}
         {coverImage ? (
           <div style={{ height: 200, position: 'relative', overflow: 'hidden' }}>
@@ -1143,19 +1305,6 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
 
             {/* Editor */}
             <div style={{ padding: '0 8px' }}>
-              {!readMode && (
-                <HintBox
-                  hintKey="wiki-linking"
-                  title="Link as you write"
-                  items={[
-                    <>Type <Kbd>[[</Kbd> to link a wiki article</>,
-                    <>Type <Kbd>@@</Kbd> to link a spell</>,
-                    <>Type <Kbd>\\</Kbd> to link a session</>,
-                    <>Relationships drawn in <strong>Relations</strong> show up here on their own.</>,
-                  ]}
-                  style={{ marginBottom: 12 }}
-                />
-              )}
               <RichEditor key={article.id} content={content} onChange={v => { setContent(v); setDirty(true) }}
                 placeholder="Start writing… Use [[ to link wiki articles, @@ for spells, \\\\ for sessions."
                 onWikiLinkClick={navigateToArticleByTitle} expandable readOnly={readMode} />
@@ -1190,12 +1339,33 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                 </div>
                 {readMode ? (
                   itemBlockHasData(itemBlock)
-                    ? <ItemStatBlockView itemBlock={itemBlock} name={title} />
+                    ? <ItemStatBlockView
+                        itemBlock={itemBlock}
+                        name={title}
+                        image={portraitImage ? `file://${portraitImage}` : coverImage ? `file://${coverImage}` : null}
+                      />
                     : <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '24px 16px', textAlign: 'center', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-md)', color: 'var(--text-muted)' }}>
                         <span style={{ fontSize: 13 }}>No item stats yet</span>
                         <span style={{ fontSize: 11 }}>Switch to Edit mode to add type, rarity, and properties</span>
                       </div>
-                ) : <ItemStatBlockEditor value={itemBlock} onChange={ib => { setItemBlock(ib); setDirty(true) }} />}
+                ) : <ItemStatBlockEditor value={itemBlock} onChange={ib => {
+                      setItemBlock(ib)
+                      // Mirror the item-block rarity into the article's Rarity track —
+                      // it drives the hover card, timeline and relation styling, and
+                      // there's no separate input for it. Keep the auto-tags in sync too.
+                      setTracks(prev => {
+                        if ((prev.Rarity ?? '') === ib.rarity) return prev
+                        const updated = { ...prev, Rarity: ib.rarity }
+                        const oldTrackTags = getTrackTags(prev)
+                        const newTrackTags = getTrackTags(updated)
+                        setTags(prevTags => {
+                          const manualTags = prevTags.filter(t => !oldTrackTags.includes(t))
+                          return Array.from(new Set([...manualTags, ...newTrackTags]))
+                        })
+                        return updated
+                      })
+                      setDirty(true)
+                    }} />}
               </div>
             )}
 
@@ -1251,73 +1421,37 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
 
               return (
                 <div style={{ padding: '0 24px 32px' }}>
-                  <SectionDivider label={isVendor ? 'Inventory' : (extrasTable.name || 'Loot')} />
+                  <SectionDivider label={extrasTable.name || 'Loot'} />
 
-                  {/* Vendor: master table picker */}
-                  {isVendor && (
-                    <div style={{ marginBottom: 16 }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
-                        Master table (base stock)
-                      </div>
-                      {readMode ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {masterTable ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99, background: '#49c18518', border: '1px solid #49c18540', fontSize: 12, color: '#49c185' }}>
-                              <ShoppingBag size={11} /> {masterTable.name}
-                            </div>
-                          ) : (
-                            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No master table — using custom items only</span>
-                          )}
+                  {/* Master loot table picker */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+                      Master loot table
+                    </div>
+                    {readMode ? (
+                      masterTable ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99, background: '#49c18518', border: '1px solid #49c18540', fontSize: 12, color: '#49c185', width: 'fit-content' }}>
+                          <ShoppingBag size={11} /> {masterTable.name}
                         </div>
                       ) : (
-                        <select className="input" style={{ fontSize: 12 }} value={lootTableId ?? ''} onChange={e => { setLootTableId(e.target.value ? parseInt(e.target.value) : null); setDirty(true) }}>
-                          <option value="">— None (custom items only) —</option>
-                          {(['vendor', 'creature', 'location', 'custom'] as const).map(cat => {
-                            const group = masterTables.filter(t => t.category === cat)
-                            if (group.length === 0) return null
-                            const labels: Record<string, string> = { creature: 'Creature', vendor: 'Vendor', location: 'Location', custom: 'Custom' }
-                            return (
-                              <optgroup key={cat} label={labels[cat]}>
-                                {group.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                              </optgroup>
-                            )
-                          })}
-                        </select>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Non-vendor: master table picker */}
-                  {!isVendor && (
-                    <div style={{ marginBottom: 16 }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
-                        Master loot table
-                      </div>
-                      {readMode ? (
-                        masterTable ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99, background: '#49c18518', border: '1px solid #49c18540', fontSize: 12, color: '#49c185', width: 'fit-content' }}>
-                            <ShoppingBag size={11} /> {masterTable.name}
-                          </div>
-                        ) : (
-                          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No master table — using inline items only</span>
-                        )
-                      ) : (
-                        <select className="input" style={{ fontSize: 12 }} value={lootTableId ?? ''} onChange={e => { setLootTableId(e.target.value ? parseInt(e.target.value) : null); setDirty(true) }}>
-                          <option value="">— None (inline items only) —</option>
-                          {(['creature', 'vendor', 'location', 'custom'] as const).map(cat => {
-                            const group = masterTables.filter(t => t.category === cat)
-                            if (group.length === 0) return null
-                            const labels: Record<string, string> = { creature: 'Creature', vendor: 'Vendor', location: 'Location', custom: 'Custom' }
-                            return (
-                              <optgroup key={cat} label={labels[cat]}>
-                                {group.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                              </optgroup>
-                            )
-                          })}
-                        </select>
-                      )}
-                    </div>
-                  )}
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No master table — using inline items only</span>
+                      )
+                    ) : (
+                      <select className="input" style={{ fontSize: 12 }} value={lootTableId ?? ''} onChange={e => { setLootTableId(e.target.value ? parseInt(e.target.value) : null); setDirty(true) }}>
+                        <option value="">— None (inline items only) —</option>
+                        {(['creature', 'vendor', 'location', 'custom'] as const).map(cat => {
+                          const group = masterTables.filter(t => t.category === cat)
+                          if (group.length === 0) return null
+                          const labels: Record<string, string> = { creature: 'Creature', vendor: 'Vendor', location: 'Location', custom: 'Custom' }
+                          return (
+                            <optgroup key={cat} label={labels[cat]}>
+                              {group.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </optgroup>
+                          )
+                        })}
+                      </select>
+                    )}
+                  </div>
 
                   {/* Show master table items preview in read mode */}
                   {readMode && masterTable && (() => {
@@ -1336,16 +1470,14 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                     {readMode ? (
                       renderLootReadMode(
                         extrasTable.items,
-                        (masterTable || isVendor)
-                          ? (isVendor ? 'Unique inventory' : 'Extra drops')
-                          : (isVendor ? 'Inventory' : 'Loot'),
+                        masterTable ? 'Extra drops' : 'Loot',
                       )
                     ) : (
                       <LootTableEditor
                         value={extrasTable}
                         onChange={t => { setLootTableJson(JSON.stringify(t)); setDirty(true) }}
                         suggestions={lootSuggestions}
-                        showPriceWeight={isVendor || ['creature', 'character', 'playerCharacter'].includes(articleType)}
+                        showPriceWeight={['creature', 'character', 'playerCharacter'].includes(articleType)}
                       />
                     )}
                   </div>
@@ -1410,6 +1542,19 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                   </div>
                 ) : (
                   currentTypeTracks.map(([trackName, options]) => {
+                    // Item rarity is owned by the Item Stats block — show it read-only here
+                    if (articleType === 'item' && trackName === 'Rarity') {
+                      const val = tracks['Rarity']
+                      return (
+                        <div key={articleType + trackName} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>Rarity</span>
+                          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <span style={{ fontSize: 12, color: val ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{val || '—'}</span>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>set in Item Stats</span>
+                          </div>
+                        </div>
+                      )
+                    }
                     if (trackName === 'In_World_Date' || trackName === 'Death_Date') {
                       return (
                         <div key={articleType + trackName} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -1455,12 +1600,12 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                           setDirty(true)
                         }}
                         dynamicOptions={
-                          trackName === 'Faction'            ? factionNames :
                           trackName === 'Organization'       ? organizationNames :
                           trackName === 'Religion'           ? religionNames :
                           trackName === 'Culture'            ? cultureNames :
                           trackName === 'Species'            ? [...(ARTICLE_TRACKS[articleType]?.Species ?? []), ...creatureNames] :
                           trackName === 'Location'           ? locationNames :
+                          trackName === 'Within'             ? locationNames.filter(n => n !== title) :
                           trackName === 'HQ'                 ? locationNames :
                           trackName === 'Owner'              ? characterNames :
                           trackName === 'Sender'             ? characterNames :
@@ -1492,9 +1637,18 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
               <MemberCountSection articleId={article.id} followerEstimate={tracks.Follower_Count} />
             )}
 
+            {['character', 'playerCharacter'].includes(articleType) && (
+              <AffiliationsSection articleId={article.id} />
+            )}
+
+            {articleType === 'location' && (
+              <GeographySection articleId={article.id} reloadKey={savedTick} />
+            )}
+
             <RelationWebsSection
               articleId={article.id}
               articleTitle={article.title}
+              articleType={articleType}
               canCreate={!readMode}
               webs={relationWebs}
               loaded={relationWebsLoaded}
@@ -1568,15 +1722,9 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                 <div style={sidebarSectionLabel}>Tags</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {memberWebs.map(w => (
-                    <button key={`web-${w.id}`}
-                      onClick={() => { setRelationsOpenWebId(w.id); setView('relations') }}
-                      title={`Open web: ${w.name}`}
-                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 11, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', cursor: 'pointer' }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#7F77DD'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}>
-                      <Network size={10} style={{ opacity: 0.7 }} />
-                      {w.name}
-                    </button>
+                    <span key={`web-${w.id}`} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 11, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                      #{w.name}
+                    </span>
                   ))}
                   {tags.map(tag => (
                     <span key={tag} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 11, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
@@ -1619,7 +1767,7 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
 
   const allTags = useMemo(() => {
     const tagSet = new Set<string>()
-    articles.forEach(a => { try { (JSON.parse(a.tags) as string[]).forEach(t => tagSet.add(t)) } catch {} })
+    articles.forEach(a => { parseTags(a.tags).forEach(t => tagSet.add(t)) })
     if (wikiTagFilter) tagSet.add(wikiTagFilter)
     return [...tagSet].sort()
   }, [articles, wikiTagFilter])

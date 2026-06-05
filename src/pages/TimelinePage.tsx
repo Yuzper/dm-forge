@@ -7,7 +7,6 @@ import type { ArticleType, Session, Article } from '../types'
 import { ARTICLE_TYPE_COLORS } from '../constants/articleTypes'
 import { buildArticleTimeline, type Lifespan } from '../constants/timelineDates'
 import TimelineCanvas from '../components/TimelineCanvas'
-import HintBox from '../components/HintBox'
 import { ArticleEditor } from './WikiPage'
 import {
   ZoomLevel, ZOOM_LABEL, ZOOM_ORDER,
@@ -285,7 +284,8 @@ function UnplacedBanner({ undatedSessions, undatedEvents, baseYear, onSessionDat
 // ── Main Timeline Page ─────────────────────────────────────────────────────────
 
 export default function TimelinePage() {
-  const { currentCampaign, sessions, arcs, setView, selectSession, setCampaignSubView, updateSession, updateCampaign } = useStore()
+  const { currentCampaign, sessions, arcs, setView, selectSession, setCampaignSubView, updateSession, updateCampaign, setHintContext } = useStore()
+  useEffect(() => { setHintContext('timeline'); return () => setHintContext(null) }, [setHintContext])
   const scrollRef = useRef<HTMLDivElement>(null)
   const filterRef = useRef<HTMLDivElement>(null)
   const clusterPickerRef = useRef<HTMLDivElement>(null)
@@ -610,19 +610,6 @@ export default function TimelinePage() {
         </div>
       </div>
 
-      <div style={{ padding: '12px 32px 0' }}>
-        <HintBox
-          hintKey="timeline-overview"
-          title="Getting around the timeline"
-          items={[
-            <>In day view, click an empty spot on the timeline to add an event on that day.</>,
-            <>Click a year or era bin to zoom into it; click a stacked badge to pick from clustered items.</>,
-            <>Give an article an in-world date and it shows up here automatically.</>,
-            <>Use the zoom tabs, <strong>Filter</strong>, and <strong>Settings</strong> (era bands &amp; lifespans) to shape the view.</>,
-          ]}
-          style={{ maxWidth: 760 }}
-        />
-      </div>
 
       {/* Timeline scroll area */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
