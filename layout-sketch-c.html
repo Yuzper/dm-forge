@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DM Forge — Layout C Sketch</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-base:      #141414;
+    --bg-surface:   #1a1a1a;
+    --bg-elevated:  #222222;
+    --bg-hover:     #2a2a2a;
+    --border:       #2e2e2e;
+    --border-light: #262626;
+    --text-primary: #e8e3d8;
+    --text-secondary: #a89f8e;
+    --text-muted:   #5e5a52;
+    --gold:         #c8a84b;
+    --gold-dim:     rgba(200,168,75,0.12);
+    --radius-sm:    4px;
+    --radius:       6px;
+    --radius-md:    8px;
+    --radius-lg:    12px;
+    --font-display: 'Palatino Linotype', 'Book Antiqua', Palatino, serif;
+    --font-ui:      'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  .header {
+    padding: 22px 36px 18px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .campaign-system {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--gold);
+    background: rgba(200,168,75,0.1);
+    border: 1px solid rgba(200,168,75,0.25);
+    border-radius: 99px;
+    padding: 2px 9px;
+    display: inline-block;
+    margin-bottom: 7px;
+  }
+  .campaign-title {
+    font-family: var(--font-display);
+    font-size: 26px;
+    letter-spacing: 0.03em;
+    color: var(--text-primary);
+    line-height: 1.1;
+  }
+  .btn-customise {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 99px;
+    font-size: 11px;
+    background: transparent;
+    border: 1px solid var(--border-light);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: var(--font-ui);
+  }
+  .btn-customise:hover { color: var(--text-secondary); border-color: var(--border); }
+
+  /* ── Main scrollable area ── */
+  .body {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding: 24px 36px 0;
+    gap: 20px;
+    min-height: 0;
+  }
+
+  /* ── Top row: map + panels ── */
+  .top-row {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+
+  /* World map */
+  .map-panel {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    height: 420px;
+    position: relative;
+  }
+  .map-tabstrip {
+    height: 32px;
+    background: rgba(0,0,0,0.55);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    align-items: stretch;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .map-tab {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 14px;
+    font-size: 11px;
+    color: #c8733a;
+    font-weight: 600;
+    border-right: 1px solid rgba(255,255,255,0.07);
+    border-bottom: 2px solid #c8733a;
+    background: rgba(200,115,58,0.1);
+  }
+  .map-tab-dot { width: 7px; height: 7px; background: #c8733a; border-radius: 50%; }
+  .map-tab-inactive {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 14px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.38);
+    border-right: 1px solid rgba(255,255,255,0.07);
+    border-bottom: 2px solid transparent;
+  }
+  .map-edit-btn {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    border-left: 1px solid rgba(255,255,255,0.07);
+  }
+  .map-edit-btn button {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.5);
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: var(--font-ui);
+  }
+  .map-canvas {
+    position: absolute;
+    top: 32px; left: 0; right: 0; bottom: 0;
+    background:
+      radial-gradient(ellipse at 30% 40%, rgba(46,130,100,0.12) 0%, transparent 55%),
+      radial-gradient(ellipse at 75% 65%, rgba(91,159,232,0.07) 0%, transparent 50%),
+      radial-gradient(ellipse at 55% 20%, rgba(200,115,58,0.06) 0%, transparent 45%),
+      #141c1a;
+    cursor: grab;
+  }
+  /* Fake landmasses */
+  .landmass {
+    position: absolute;
+    background: rgba(60,80,55,0.55);
+    border-radius: 40% 60% 55% 45% / 50% 40% 60% 50%;
+    border: 1px solid rgba(80,110,70,0.3);
+  }
+  .poi {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(0,0,0,0.5);
+    cursor: pointer;
+    transform: translate(-50%, -50%);
+  }
+  .poi-label {
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-size: 9px;
+    color: rgba(255,255,255,0.7);
+    pointer-events: none;
+    background: rgba(0,0,0,0.6);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .map-zoom-ctrl {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: rgba(255,255,255,0.35);
+  }
+  .zoom-btn {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.55);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 2px;
+    font-weight: 300;
+  }
+  .zoom-pct { font-size: 11px; color: rgba(255,255,255,0.4); min-width: 34px; text-align: center; }
+
+  /* ── Right panels ── */
+  .panels-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    max-height: 420px;
+    padding-right: 2px;
+  }
+  .panels-col::-webkit-scrollbar { width: 4px; }
+  .panels-col::-webkit-scrollbar-track { background: transparent; }
+  .panels-col::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+  .panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+    flex-shrink: 0;
+  }
+  .panel-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .panel-count { color: var(--text-muted); font-weight: 400; }
+
+  /* Recently updated items */
+  .recent-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .recent-item:last-child { border-bottom: none; }
+  .recent-item:hover .recent-title { color: var(--text-primary); }
+  .recent-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .recent-title { flex: 1; font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .recent-time { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+
+  /* Quest items */
+  .quest-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .quest-item:last-child { border-bottom: none; }
+  .quest-row { display: flex; align-items: center; gap: 7px; }
+  .quest-title { flex: 1; font-size: 12px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quest-badge {
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 99px;
+    flex-shrink: 0;
+  }
+  .quest-progress { margin-left: 14px; height: 2px; background: var(--border-light); border-radius: 99px; overflow: hidden; }
+  .quest-bar { height: 100%; border-radius: 99px; }
+
+  /* Articles by type */
+  .type-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .type-row:last-child { margin-bottom: 0; }
+  .type-label { font-size: 11px; color: var(--text-muted); width: 68px; flex-shrink: 0; text-transform: capitalize; }
+  .type-bar-bg { flex: 1; background: var(--bg-elevated); border-radius: 99px; height: 5px; }
+  .type-bar { height: 5px; border-radius: 99px; }
+  .type-count { font-size: 11px; color: var(--text-muted); width: 18px; text-align: right; flex-shrink: 0; }
+
+  /* ── Timeline ── */
+  .timeline-section {
+    flex-shrink: 0;
+  }
+  .timeline-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .timeline-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .timeline-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .timeline-zoom-pills {
+    display: flex;
+    gap: 4px;
+  }
+  .timeline-pill {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    border: 1px solid var(--border-light);
+    color: var(--text-muted);
+    background: transparent;
+    cursor: pointer;
+    font-family: var(--font-ui);
+  }
+  .timeline-pill.active {
+    background: var(--gold-dim);
+    border-color: rgba(200,168,75,0.35);
+    color: var(--gold);
+  }
+  .timeline-canvas {
+    height: 90px;
+    position: relative;
+    overflow: hidden;
+    padding: 12px 0;
+  }
+  /* Fake arc bands */
+  .arc-band {
+    position: absolute;
+    height: 18px;
+    border-radius: 3px;
+    top: 12px;
+    opacity: 0.55;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .session-chip {
+    position: absolute;
+    height: 10px;
+    border-radius: 2px;
+    top: 40px;
+    cursor: pointer;
+  }
+  .session-chip:hover { opacity: 0.9; }
+  .today-line {
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    width: 1px;
+    background: rgba(200,168,75,0.6);
+  }
+  .today-line::before {
+    content: 'today';
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 8px;
+    color: var(--gold);
+    white-space: nowrap;
+  }
+
+  /* ── Nav dock ── */
+  .nav-dock {
+    flex-shrink: 0;
+    padding: 16px 36px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    background: var(--bg-base);
+  }
+  .nav-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 8px 10px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 140ms ease;
+    min-width: 0;
+  }
+  .nav-card:hover {
+    background: var(--bg-elevated);
+  }
+  .nav-card:hover .nav-icon { opacity: 1; }
+  .nav-card:hover .nav-card-title { color: var(--text-primary); }
+  .nav-card.sessions:hover { border-color: rgba(200,168,75,0.5); box-shadow: 0 0 16px rgba(200,168,75,0.08); }
+  .nav-card.wiki:hover    { border-color: rgba(91,159,232,0.5);  box-shadow: 0 0 16px rgba(91,159,232,0.08); }
+  .nav-card.notes:hover   { border-color: rgba(155,125,232,0.5); box-shadow: 0 0 16px rgba(155,125,232,0.08); }
+  .nav-card.loot:hover    { border-color: rgba(73,193,133,0.5);  box-shadow: 0 0 16px rgba(73,193,133,0.08); }
+  .nav-card.relations:hover { border-color: rgba(176,125,232,0.5); box-shadow: 0 0 16px rgba(176,125,232,0.08); }
+  .nav-card.timeline:hover { border-color: rgba(91,191,176,0.5); box-shadow: 0 0 16px rgba(91,191,176,0.08); }
+  .nav-card.soundboard:hover { border-color: rgba(59,130,246,0.5); box-shadow: 0 0 16px rgba(59,130,246,0.08); }
+
+  .nav-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .nav-icon.sessions   { background: rgba(200,168,75,0.12);  color: var(--gold); }
+  .nav-icon.wiki       { background: rgba(91,159,232,0.12);  color: #5b9fe8; }
+  .nav-icon.notes      { background: rgba(155,125,232,0.12); color: #9b7de8; }
+  .nav-icon.loot       { background: rgba(73,193,133,0.12);  color: #49c185; }
+  .nav-icon.relations  { background: rgba(176,125,232,0.12); color: #b07de8; }
+  .nav-icon.timeline   { background: rgba(91,191,176,0.12);  color: #5bbfb0; }
+  .nav-icon.soundboard { background: rgba(59,130,246,0.12);  color: #3b82f6; }
+
+  .nav-card-title {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+  }
+  .nav-card-stat {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  /* ── Scrollbar ── */
+  .body::-webkit-scrollbar { width: 5px; }
+  .body::-webkit-scrollbar-track { background: transparent; }
+  .body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+  /* ── SVG icons (inline) ── */
+  svg { display: block; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div>
+    <div class="campaign-system">D&D 5e</div>
+    <div class="campaign-title">The Shattered Realm</div>
+  </div>
+  <button class="btn-customise">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    Customise
+  </button>
+</div>
+
+<!-- BODY -->
+<div class="body">
+
+  <!-- TOP ROW: map + panels -->
+  <div class="top-row">
+
+    <!-- WORLD MAP -->
+    <div class="map-panel">
+      <div class="map-tabstrip">
+        <div class="map-tab"><div class="map-tab-dot"></div>World Map</div>
+        <div class="map-tab-inactive">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
+          The Underdark
+        </div>
+        <div class="map-tab-inactive">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
+          City of Veth
+        </div>
+        <div class="map-edit-btn">
+          <button>Edit</button>
+        </div>
+      </div>
+      <div class="map-canvas">
+        <!-- fake landmasses -->
+        <div class="landmass" style="left:8%;top:12%;width:38%;height:55%;"></div>
+        <div class="landmass" style="left:52%;top:8%;width:28%;height:42%;border-radius:55% 45% 60% 40% / 45% 55% 45% 55%;background:rgba(55,75,50,0.5)"></div>
+        <div class="landmass" style="left:58%;top:55%;width:32%;height:36%;border-radius:60% 40% 50% 50% / 40% 60% 40% 60%;background:rgba(50,70,60,0.45)"></div>
+        <div class="landmass" style="left:18%;top:72%;width:20%;height:20%;border-radius:50%;background:rgba(58,78,52,0.4)"></div>
+
+        <!-- POIs -->
+        <div class="poi" style="background:#c8a84b;left:22%;top:28%;">
+          <div class="poi-label">Ironhold</div>
+        </div>
+        <div class="poi" style="background:#5b9fe8;left:36%;top:50%;">
+          <div class="poi-label">Saltmere</div>
+        </div>
+        <div class="poi" style="background:#f41111;left:14%;top:45%;">
+          <div class="poi-label">Ashfen</div>
+        </div>
+        <div class="poi" style="background:#49c185;left:62%;top:22%;">
+          <div class="poi-label">Greenvale</div>
+        </div>
+        <div class="poi" style="background:#9b7de8;left:74%;top:63%;">
+          <div class="poi-label">The Maw</div>
+        </div>
+        <div class="poi" style="background:#e88c3a;left:48%;top:38%;">
+          <div class="poi-label">Crossroads</div>
+        </div>
+      </div>
+      <div class="map-zoom-ctrl">
+        <span>Ctrl + scroll</span>
+        <div style="width:1px;height:14px;background:rgba(255,255,255,0.12);margin:0 2px"></div>
+        <button class="zoom-btn">−</button>
+        <span class="zoom-pct">100%</span>
+        <button class="zoom-btn">+</button>
+        <div style="width:1px;height:14px;background:rgba(255,255,255,0.12);margin:0 2px"></div>
+        <button style="background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;display:flex;align-items:center">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- RIGHT PANELS COLUMN -->
+    <div class="panels-col">
+
+      <!-- Active Quests -->
+      <div class="panel">
+        <div class="panel-title">Active quests <span class="panel-count">4</span></div>
+
+        <div class="quest-item">
+          <div class="quest-row">
+            <div style="width:7px;height:7px;border-radius:50%;background:#e88c3a;flex-shrink:0"></div>
+            <span class="quest-title">Retrieve the Sunstone</span>
+            <span class="quest-badge" style="background:rgba(232,140,58,0.12);border:1px solid rgba(232,140,58,0.3);color:#e88c3a">Main</span>
+            <span style="font-size:10px;color:var(--text-muted)">2/5</span>
+          </div>
+          <div style="font-size:11px;color:#9b7de8;padding-left:14px">for Aldric</div>
+          <div class="quest-progress"><div class="quest-bar" style="width:40%;background:#e88c3a"></div></div>
+        </div>
+
+        <div class="quest-item">
+          <div class="quest-row">
+            <div style="width:7px;height:7px;border-radius:50%;background:#5b9fe8;flex-shrink:0"></div>
+            <span class="quest-title">The Missing Cartographer</span>
+            <span class="quest-badge" style="background:rgba(91,159,232,0.12);border:1px solid rgba(91,159,232,0.3);color:#5b9fe8">Side</span>
+            <span style="font-size:10px;color:var(--text-muted)">1/3</span>
+          </div>
+          <div class="quest-progress"><div class="quest-bar" style="width:33%;background:#5b9fe8"></div></div>
+        </div>
+
+        <div class="quest-item">
+          <div class="quest-row">
+            <div style="width:7px;height:7px;border-radius:50%;background:#9b7de8;flex-shrink:0"></div>
+            <span class="quest-title">Lyra's Debt</span>
+            <span class="quest-badge" style="background:rgba(155,125,232,0.12);border:1px solid rgba(155,125,232,0.3);color:#9b7de8">Personal</span>
+          </div>
+          <div style="font-size:11px;color:#9b7de8;padding-left:14px">for Lyra</div>
+        </div>
+
+        <div class="quest-item" style="border-bottom:none">
+          <div class="quest-row">
+            <div style="width:7px;height:7px;border-radius:50%;background:#49c185;flex-shrink:0"></div>
+            <span class="quest-title">Harbormaster's Favour</span>
+            <span class="quest-badge" style="background:rgba(73,193,133,0.12);border:1px solid rgba(73,193,133,0.3);color:#49c185">Faction</span>
+            <span style="font-size:10px;color:var(--text-muted)">3/3</span>
+          </div>
+          <div class="quest-progress"><div class="quest-bar" style="width:100%;background:#49c185"></div></div>
+        </div>
+      </div>
+
+      <!-- Recently Updated -->
+      <div class="panel">
+        <div class="panel-title">Recently updated</div>
+
+        <div class="recent-item">
+          <div class="recent-dot" style="background:#5b9fe8"></div>
+          <span class="recent-title">Captain Morvaine</span>
+          <span class="recent-time">12m ago</span>
+        </div>
+        <div class="recent-item">
+          <div class="recent-dot" style="background:#49c185"></div>
+          <span class="recent-title">Saltmere Docks</span>
+          <span class="recent-time">1h ago</span>
+        </div>
+        <div class="recent-item">
+          <div class="recent-dot" style="background:#e88c3a"></div>
+          <span class="recent-title">The Sunstone (artifact)</span>
+          <span class="recent-time">Yesterday</span>
+        </div>
+        <div class="recent-item">
+          <div class="recent-dot" style="background:#9b7de8"></div>
+          <span class="recent-title">The Merchant Guild</span>
+          <span class="recent-time">2d ago</span>
+        </div>
+        <div class="recent-item">
+          <div class="recent-dot" style="background:#5b9fe8"></div>
+          <span class="recent-title">Brother Eadric</span>
+          <span class="recent-time">3d ago</span>
+        </div>
+        <div class="recent-item" style="border-bottom:none">
+          <div class="recent-dot" style="background:#c8a84b"></div>
+          <span class="recent-title">Ironhold Keep</span>
+          <span class="recent-time">4d ago</span>
+        </div>
+      </div>
+
+      <!-- Articles by type -->
+      <div class="panel">
+        <div class="panel-title">Articles by type</div>
+        <div class="type-row"><span class="type-label">character</span><div class="type-bar-bg"><div class="type-bar" style="width:100%;background:#5b9fe8"></div></div><span class="type-count">24</span></div>
+        <div class="type-row"><span class="type-label">location</span><div class="type-bar-bg"><div class="type-bar" style="width:75%;background:#49c185"></div></div><span class="type-count">18</span></div>
+        <div class="type-row"><span class="type-label">faction</span><div class="type-bar-bg"><div class="type-bar" style="width:46%;background:#9b7de8"></div></div><span class="type-count">11</span></div>
+        <div class="type-row"><span class="type-label">quest</span><div class="type-bar-bg"><div class="type-bar" style="width:33%;background:#e88c3a"></div></div><span class="type-count">8</span></div>
+        <div class="type-row"><span class="type-label">item</span><div class="type-bar-bg"><div class="type-bar" style="width:21%;background:#c8a84b"></div></div><span class="type-count">5</span></div>
+        <div class="type-row" style="margin-bottom:0"><span class="type-label">lore</span><div class="type-bar-bg"><div class="type-bar" style="width:17%;background:#7aeada"></div></div><span class="type-count">4</span></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div class="timeline-section">
+    <div class="timeline-panel">
+      <div class="timeline-header">
+        <div class="timeline-label">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Session Timeline
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="timeline-zoom-pills">
+            <button class="timeline-pill">Decades</button>
+            <button class="timeline-pill">Years</button>
+            <button class="timeline-pill active">Months</button>
+            <button class="timeline-pill">Weeks</button>
+            <button class="timeline-pill">Days</button>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-canvas">
+        <!-- arc band 1 -->
+        <div class="arc-band" style="left:4%;width:38%;background:rgba(200,168,75,0.22);color:#c8a84b">Arc I – The Shattered Coast</div>
+        <!-- arc band 2 -->
+        <div class="arc-band" style="left:43%;width:48%;background:rgba(91,159,232,0.2);color:#5b9fe8">Arc II – Beneath the Ash</div>
+        <!-- session chips -->
+        <div class="session-chip" style="left:5%;width:24px;background:#c8a84b;opacity:0.7" title="Session 1"></div>
+        <div class="session-chip" style="left:10%;width:24px;background:#c8a84b;opacity:0.7" title="Session 2"></div>
+        <div class="session-chip" style="left:15%;width:30px;background:#c8a84b;opacity:0.7" title="Session 3"></div>
+        <div class="session-chip" style="left:21%;width:24px;background:#c8a84b;opacity:0.7"></div>
+        <div class="session-chip" style="left:27%;width:36px;background:#c8a84b;opacity:0.7"></div>
+        <div class="session-chip" style="left:34%;width:24px;background:#c8a84b;opacity:0.7"></div>
+        <div class="session-chip" style="left:44%;width:28px;background:#5b9fe8;opacity:0.7"></div>
+        <div class="session-chip" style="left:49%;width:24px;background:#5b9fe8;opacity:0.7"></div>
+        <div class="session-chip" style="left:55%;width:32px;background:#5b9fe8;opacity:0.7"></div>
+        <div class="session-chip" style="left:62%;width:24px;background:#5b9fe8;opacity:0.7"></div>
+        <div class="session-chip" style="left:68%;width:28px;background:#5b9fe8;opacity:0.7"></div>
+        <!-- today line -->
+        <div class="today-line" style="left:72%"></div>
+        <!-- tick labels -->
+        <div style="position:absolute;bottom:8px;left:4%;font-size:9px;color:var(--text-muted)">Year 1505</div>
+        <div style="position:absolute;bottom:8px;left:36%;font-size:9px;color:var(--text-muted)">Year 1506</div>
+        <div style="position:absolute;bottom:8px;left:69%;font-size:9px;color:var(--text-muted)">Year 1507</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- NAV DOCK -->
+<div class="nav-dock">
+
+  <a class="nav-card sessions" href="#">
+    <div class="nav-icon sessions">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+    </div>
+    <div class="nav-card-title">Sessions</div>
+    <div class="nav-card-stat">11 sessions</div>
+  </a>
+
+  <a class="nav-card wiki" href="#">
+    <div class="nav-icon wiki">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+    </div>
+    <div class="nav-card-title">Wiki</div>
+    <div class="nav-card-stat">70 articles</div>
+  </a>
+
+  <a class="nav-card notes" href="#">
+    <div class="nav-icon notes">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    </div>
+    <div class="nav-card-title">DM Notes</div>
+    <div class="nav-card-stat">5 pages</div>
+  </a>
+
+  <a class="nav-card loot" href="#">
+    <div class="nav-icon loot">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+    </div>
+    <div class="nav-card-title">Loot Tables</div>
+    <div class="nav-card-stat">3 tables</div>
+  </a>
+
+  <a class="nav-card relations" href="#">
+    <div class="nav-icon relations">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+    </div>
+    <div class="nav-card-title">Relations</div>
+    <div class="nav-card-stat">2 webs</div>
+  </a>
+
+  <a class="nav-card timeline" href="#">
+    <div class="nav-icon timeline">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </div>
+    <div class="nav-card-title">Timeline</div>
+    <div class="nav-card-stat">&nbsp;</div>
+  </a>
+
+  <a class="nav-card soundboard" href="#">
+    <div class="nav-icon soundboard">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+    </div>
+    <div class="nav-card-title">Soundboard</div>
+    <div class="nav-card-stat">1 board</div>
+  </a>
+
+</div>
+
+</body>
+</html>

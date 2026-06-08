@@ -5,11 +5,13 @@ import { useMapContext } from '../context/MapContext'
 import { X, Trash2, Plus, Search, Save, Dices } from 'lucide-react'
 import RichEditor from './RichEditor'
 import CombatantRow from './CombatantRow'
+import EncounterBalance from './EncounterBalance'
 import type { CombatEncounter, CombatCreature, ArticleSummary, LootItem } from '../types'
 import { parseStatBlock, calcHpAverage, rollHp } from '../types'
+import { parseCreatureVariants } from '../utils/creatureVariants'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
-type Tab = 'general' | 'combatants'
+type Tab = 'general' | 'combatants' | 'balance'
 
 export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   // Map state + actions come from context
@@ -32,6 +34,9 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   const [encounter, setEncounter] = useState<CombatEncounter | null>(null)
   const [creatures, setCreatures] = useState<CombatCreature[]>([])
   const [creaturesDirty, setCreaturesDirty] = useState(false)
+  // Ally selection — combat-creature ids that fight for the party. Shared between
+  // the Balance tab and the combatant rows (persisted per-encounter).
+  const [allyIds, setAllyIds] = useState<Set<number>>(new Set())
 
   // Swap the floating hint to combat guidance while running an encounter
   useEffect(() => {
@@ -67,7 +72,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
 
   // ── Load encounter + creatures when tab opens ──────────────────────────────
   useEffect(() => {
-    if (!selectedPOI || activeTab !== 'combatants') return
+    if (!selectedPOI || (activeTab !== 'combatants' && activeTab !== 'balance')) return
     ;(async () => {
       const enc = await window.api.getCombatEncounter(selectedPOI.id)
       setEncounter(enc)
@@ -75,6 +80,41 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
       setCreatures(raw)
     })()
   }, [selectedPOI?.id, activeTab])
+
+  // ── Ally selection: load on encounter change; writes persist immediately ────
+  const allyStorageKey = (id: number) => `dmforge:allies:${id}`
+  useEffect(() => {
+    if (!encounter) { setAllyIds(new Set()); return }
+    try {
+      const raw = localStorage.getItem(allyStorageKey(encounter.id))
+      const arr = raw ? JSON.parse(raw) : []
+      setAllyIds(new Set(Array.isArray(arr) ? arr.filter((n: any) => typeof n === 'number') : []))
+    } catch { setAllyIds(new Set()) }
+  }, [encounter?.id])
+
+  const persistAllies = (set: Set<number>) => {
+    if (encounter) localStorage.setItem(allyStorageKey(encounter.id), JSON.stringify([...set]))
+  }
+  const toggleAlly = useCallback((id: number) => {
+    setAllyIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      persistAllies(next)
+      return next
+    })
+  }, [encounter])
+
+  // ── Remove a combatant entirely ─────────────────────────────────────────────
+  const removeCombatant = useCallback(async (id: number) => {
+    await window.api.deleteCombatCreature(id)
+    setCreatures(prev => prev.filter(c => c.id !== id))
+    setAllyIds(prev => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev); next.delete(id)
+      persistAllies(next)
+      return next
+    })
+  }, [encounter])
 
   // ── Auto-save on unmount ───────────────────────────────────────────────────
   useEffect(() => {
@@ -144,31 +184,24 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
     ]).then(async ([creatures, characters, pcs]) => {
       const entries: PickerEntry[] = []
 
-      // Expand creature articles into their variants
+      // Expand creature articles into their variants (shared parsing)
       for (const c of creatures) {
         const full = await window.api.getArticle(c.id)
         if (!full) continue
-        let variants: any[] = []
-        try {
-          const parsed = JSON.parse(full.statblock)
-          if (Array.isArray(parsed) && parsed.length > 0 && 'name' in parsed[0]) {
-            variants = parsed
-          }
-        } catch {}
+        const variants = parseCreatureVariants(full)
 
-        if (variants.length === 0) {
+        if (variants.length === 1 && variants[0].index === null) {
           // Legacy single statblock
           entries.push({ key: `c_${c.id}`, displayName: c.title, subtitle: 'creature', articleId: c.id, variantId: null, variantIndex: null })
         } else {
-          for (let i = 0; i < variants.length; i++) {
-            const v = variants[i]
+          for (const v of variants) {
             entries.push({
-              key: `c_${c.id}_v${i}`,
-              displayName: v.name || c.title,
+              key: `c_${c.id}_v${v.index}`,
+              displayName: v.name,
               subtitle: `${c.title} · CR ${v.cr || '—'}`,
               articleId: c.id,
               variantId: v.id,
-              variantIndex: i,
+              variantIndex: v.index,
             })
           }
         }
@@ -224,6 +257,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
     let sb: ReturnType<typeof parseStatBlock>
     let variantLootTableId: number | null = null
     let variantLootTable: string | null = null
+    let cr: string | null = null   // captured at add-time so the balancer needn't re-derive
 
     if (entry.variantIndex !== null) {
       // Creature variant — parse from variants array
@@ -233,11 +267,14 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
         sb = parseStatBlock(typeof v.statblock === 'string' ? v.statblock : JSON.stringify(v.statblock))
         variantLootTableId = v.loot_table_id ?? null
         variantLootTable = v.loot_table ?? null
+        cr = v.cr ?? null
       } catch {
         sb = parseStatBlock(full.statblock)
       }
     } else {
+      // Character / legacy single stat block — CR lives on the stat block (named NPCs)
       sb = parseStatBlock(full.statblock)
+      cr = sb.cr ?? null
     }
 
     const maxHp = useRoll ? rollHp(sb.hpDice) : calcHpAverage(sb.hpDice)
@@ -246,6 +283,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
       variant_statblock: entry.variantIndex !== null ? JSON.stringify(sb) : null,
       variant_loot_table_id: variantLootTableId,
       variant_loot_table: variantLootTable,
+      cr,
     })
     setCreatures(prev => [...prev, newCreature])
     setShowPicker(false)
@@ -358,7 +396,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
 
       {/* ── Tab bar ── */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        {(['general', 'combatants'] as Tab[]).map(tab => (
+        {(['general', 'combatants', 'balance'] as Tab[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -432,6 +470,10 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
                   onUpdate={updateCreature}
                   onOpenStatBlock={openStatBlock}
                   onLootGenerated={handleLootGenerated}
+                  onDelete={readMode ? undefined : removeCombatant}
+                  isAlly={allyIds.has(creature.id)}
+                  onToggleAlly={readMode ? undefined : toggleAlly}
+                  allyEligible={creature.article_type !== 'playerCharacter'}
                 />
               ))
             )}
@@ -445,6 +487,17 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Balance tab ── */}
+      {activeTab === 'balance' && (
+        encounter && currentCampaign ? (
+          <EncounterBalance encounterId={encounter.id} creatures={creatures} campaign={currentCampaign} allyIds={allyIds} onToggleAlly={toggleAlly} />
+        ) : (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+            Loading…
+          </div>
+        )
       )}
 
       {/* ── Combatant picker modal ── */}

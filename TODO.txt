@@ -1,8 +1,6 @@
 
 Data:
  - Rest of spells 2014 (7-9) and 2024
- - More Starter monsters
- - Starter monsters image?
 
 
 Good — that simplifies things. Dropping the player-facing/second-window ideas entirely (DM-only), and your Sessions tab is the live-run surface, so I won't build a competing "run mode." That leaves your three: global search, calendar, encounter builder. Here's how I'd scope each so we can sequence them.
@@ -22,3 +20,4 @@ Calendar system
 Per-campaign calendar definition (months, days-per-month, weekdays, optional moons/festivals), a "current date" you advance during play, and recurring events that surface on the timeline.
 Biggest because it touches the in-world date model, the timeline, and events — real data-model decisions (and a migration path for existing in-world dates).
 Largest, most foundational. Worth doing carefully.
+

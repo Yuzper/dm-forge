@@ -5,7 +5,7 @@ import Modal from '../components/Modal'
 import { useStore } from '../store/store'
 import {
   Sparkles, Plus, Trash2, MoreHorizontal, FileText, Check,
-  ArrowLeft, FolderPlus, ChevronDown, ChevronUp, Pencil, ArrowUpCircle, ArrowDownCircle, GripVertical,
+  ArrowLeft, FolderPlus, ChevronDown, ChevronUp, Pencil, ArrowUpCircle, ArrowDownCircle, GripVertical, Lock, ArrowUp, ArrowDown,
 } from 'lucide-react'
 
 // ── Drag-and-drop plumbing (pages + groups in the notes sidebar) ────────────────
@@ -39,6 +39,7 @@ interface DMNoteGroup {
   name: string
   color: string
   sort_order: number
+  is_system: number
   created_at: string
 }
 
@@ -48,6 +49,7 @@ interface DMNotePageSummary {
   title: string
   group_id: number | null
   sort_order: number
+  session_id: number | null
   created_at: string
   updated_at: string
 }
@@ -140,11 +142,11 @@ function PageMenu({ page, groups, isFirst, isLast, onDelete, onMoveUp, onMoveDow
   const menuRef = useRef<HTMLDivElement>(null)
   useMenuClose(open, menuRef, setOpen)
 
-  // Build move-to targets: all groups + ungrouped, excluding current
-  const moveTargets: { label: string; groupId: number | null }[] = [
+  // Session pages are locked to their folder; non-session pages can't enter system groups
+  const moveTargets: { label: string; groupId: number | null }[] = page.session_id ? [] : [
     ...(page.group_id !== null ? [{ label: 'Ungrouped', groupId: null }] : []),
     ...groups
-      .filter(g => g.id !== page.group_id)
+      .filter(g => g.id !== page.group_id && !g.is_system)
       .map(g => ({ label: g.name, groupId: g.id })),
   ]
 
@@ -165,12 +167,12 @@ function PageMenu({ page, groups, isFirst, isLast, onDelete, onMoveUp, onMoveDow
           borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)',
           minWidth: 160, zIndex: 50, overflow: 'hidden',
         }}>
-          {!isFirst && (
+          {!page.session_id && !isFirst && (
             <button onClick={() => { onMoveUp(); setOpen(false) }} className="menu-item menu-item-sm">
               <ArrowUpCircle size={12} /> Move up
             </button>
           )}
-          {!isLast && (
+          {!page.session_id && !isLast && (
             <button onClick={() => { onMoveDown(); setOpen(false) }} className="menu-item menu-item-sm">
               <ArrowDownCircle size={12} /> Move down
             </button>
@@ -204,7 +206,7 @@ function PageMenu({ page, groups, isFirst, isLast, onDelete, onMoveUp, onMoveDow
 
 // ── Group Menu ─────────────────────────────────────────────────────────────────
 
-function GroupMenu({ group, isFirst, isLast, onMoveUp, onMoveDown, onRename, onDelete }: {
+function GroupMenu({ group, isFirst, isLast, onMoveUp, onMoveDown, onRename, onDelete, onChangeColor }: {
   group: DMNoteGroup
   isFirst: boolean
   isLast: boolean
@@ -212,11 +214,14 @@ function GroupMenu({ group, isFirst, isLast, onMoveUp, onMoveDown, onRename, onD
   onMoveDown: () => void
   onRename: () => void
   onDelete: () => void
+  onChangeColor: (color: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const { confirming, trigger } = useConfirmDelete()
   const menuRef = useRef<HTMLDivElement>(null)
   useMenuClose(open, menuRef, setOpen)
+
+  const isSystem = !!group.is_system
 
   return (
     <div ref={menuRef} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
@@ -232,11 +237,13 @@ function GroupMenu({ group, isFirst, isLast, onMoveUp, onMoveDown, onRename, onD
           position: 'absolute', right: 0, top: '100%', marginTop: 4,
           background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
           borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)',
-          minWidth: 140, zIndex: 50, overflow: 'hidden',
+          minWidth: 148, zIndex: 50, overflow: 'hidden',
         }}>
-          <button onClick={() => { onRename(); setOpen(false) }} className="menu-item menu-item-sm">
-            <Pencil size={12} /> Rename
-          </button>
+          {!isSystem && (
+            <button onClick={() => { onRename(); setOpen(false) }} className="menu-item menu-item-sm">
+              <Pencil size={12} /> Rename
+            </button>
+          )}
           {!isFirst && (
             <button onClick={() => { onMoveUp(); setOpen(false) }} className="menu-item menu-item-sm">
               <ArrowUpCircle size={12} /> Move up
@@ -248,12 +255,33 @@ function GroupMenu({ group, isFirst, isLast, onMoveUp, onMoveDown, onRename, onD
             </button>
           )}
           <div style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />
-          <button
-            onClick={() => trigger(() => { onDelete(); setOpen(false) })}
-            className="menu-item menu-item-sm menu-item-danger" style={confirming ? { color: 'var(--danger-hover)' } : undefined}
-          >
-            <Trash2 size={12} /> {confirming ? 'Confirm delete' : 'Delete'}
-          </button>
+          <div style={{ padding: '4px 10px 6px' }}>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Colour</div>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {GROUP_COLORS.map(c => (
+                <button
+                  key={c}
+                  onClick={() => { onChangeColor(c); setOpen(false) }}
+                  style={{
+                    width: 16, height: 16, borderRadius: '50%', background: c, padding: 0, border: 'none',
+                    outline: group.color === c ? `2px solid ${c}` : '2px solid transparent',
+                    outlineOffset: 1, cursor: 'pointer', transition: 'outline 120ms ease',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+          {!isSystem && (
+            <>
+              <div style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />
+              <button
+                onClick={() => trigger(() => { onDelete(); setOpen(false) })}
+                className="menu-item menu-item-sm menu-item-danger" style={confirming ? { color: 'var(--danger-hover)' } : undefined}
+              >
+                <Trash2 size={12} /> {confirming ? 'Confirm delete' : 'Delete'}
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -278,11 +306,12 @@ function PageItem({ page, isActive, groups, isFirst, isLast, dnd, index, contain
   onMoveToGroup: (groupId: number | null) => void
 }) {
   const isDragging = dnd.dragItem?.kind === 'page' && dnd.dragItem.id === page.id
+  const locked = !!page.session_id
   return (
     <div
       onClick={onClick}
-      draggable
-      onDragStart={e => {
+      draggable={!locked}
+      onDragStart={locked ? undefined : e => {
         e.dataTransfer.effectAllowed = 'move'
         e.dataTransfer.setData('text/plain', String(page.id))
         // Defer the state update one frame: mounting the "drop to ungroup" zone
@@ -291,9 +320,9 @@ function PageItem({ page, isActive, groups, isFirst, isLast, dnd, index, contain
         const id = page.id
         requestAnimationFrame(() => dnd.startPageDrag(id))
       }}
-      onDragEnd={() => dnd.endDrag()}
-      onDragOver={e => dnd.onPageRowDragOver(container, index, e)}
-      onDrop={e => { e.preventDefault(); dnd.commitDrop() }}
+      onDragEnd={locked ? undefined : () => dnd.endDrag()}
+      onDragOver={locked ? undefined : e => dnd.onPageRowDragOver(container, index, e)}
+      onDrop={locked ? undefined : e => { e.preventDefault(); dnd.commitDrop() }}
       style={{
         display: 'flex', alignItems: 'center', gap: 6,
         padding: '6px 8px',
@@ -315,12 +344,12 @@ function PageItem({ page, isActive, groups, isFirst, isLast, dnd, index, contain
         if (btn) btn.style.opacity = '0'
       }}
     >
-      <GripVertical
+      {!locked && <GripVertical
         size={12}
         color="var(--text-muted)"
         style={{ flexShrink: 0, opacity: 0.45, cursor: 'grab' }}
         aria-label="Drag to reorder"
-      />
+      />}
       <FileText size={11} color={isActive ? '#9b7de8' : 'var(--text-muted)'} style={{ flexShrink: 0 }} />
       <span style={{
         flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -345,7 +374,7 @@ function PageItem({ page, isActive, groups, isFirst, isLast, dnd, index, contain
 
 // ── Group Section ──────────────────────────────────────────────────────────────
 
-function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, dropHint, activePage, editingGroupId, onOpenPage, onCreatePage, onDeletePage, onMovePageUp, onMovePageDown, onMovePageToGroup, onMoveGroupUp, onMoveGroupDown, onDeleteGroup, onStartRename, onFinishRename }: {
+function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, dropHint, activePage, editingGroupId, onOpenPage, onCreatePage, onDeletePage, onMovePageUp, onMovePageDown, onMovePageToGroup, onMoveGroupUp, onMoveGroupDown, onDeleteGroup, onStartRename, onFinishRename, onChangeGroupColor }: {
   group: DMNoteGroup
   pages: DMNotePageSummary[]
   groups: DMNoteGroup[]
@@ -367,8 +396,10 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
   onDeleteGroup: () => void
   onStartRename: () => void
   onFinishRename: (name: string) => void
+  onChangeGroupColor: (color: string) => void
 }) {
   const [collapsed, setCollapsed] = useState(false)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [renameValue, setRenameValue] = useState(group.name)
   const renameRef = useRef<HTMLInputElement>(null)
 
@@ -376,6 +407,8 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
   const isGroupDragging = dnd.dragItem?.kind === 'group' && dnd.dragItem.id === group.id
   // Highlight the header when a page is being dragged onto this group.
   const pageDropTarget = dnd.dragItem?.kind === 'page' && dropHint?.kind === 'page' && dropHint.container === group.id
+
+  const displayedPages = group.is_system && sortDir === 'desc' ? [...pages].reverse() : pages
 
   useEffect(() => {
     if (isRenaming) {
@@ -389,7 +422,11 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
   }
 
   return (
-    <div style={{ marginBottom: 4, opacity: isGroupDragging ? 0.4 : 1 }}>
+    <div
+      style={{ marginBottom: 4, opacity: isGroupDragging ? 0.4 : 1 }}
+      onDragOver={e => { if (dnd.dragItem?.kind === 'group') dnd.onGroupHeaderDragOver(groupIndex, group.id, e) }}
+      onDrop={e => { e.preventDefault(); dnd.commitDrop() }}
+    >
       {/* Group header — drag handle (group reorder) + drop target (page into group) */}
       <div
         style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 4px 3px', borderRadius: 'var(--radius-sm)', background: pageDropTarget ? `${group.color}22` : 'transparent' }}
@@ -398,7 +435,11 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
       >
         <span
           draggable={!isRenaming}
-          onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; dnd.startGroupDrag(group.id) }}
+          onDragStart={e => {
+            e.dataTransfer.effectAllowed = 'move'
+            const id = group.id
+            requestAnimationFrame(() => dnd.startGroupDrag(id))
+          }}
           onDragEnd={() => dnd.endDrag()}
           title="Drag to reorder group"
           style={{ display: 'flex', alignItems: 'center', cursor: 'grab', color: 'var(--text-muted)', flexShrink: 0 }}
@@ -422,8 +463,9 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
               style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-gold)', borderRadius: 'var(--radius-sm)', padding: '1px 6px', fontSize: 12, color: group.color, fontFamily: 'var(--font-display)', outline: 'none', minWidth: 0 }}
             />
           ) : (
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, color: group.color, letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, color: group.color, letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
               {group.name}
+              {!!group.is_system && <Lock size={9} style={{ flexShrink: 0, opacity: 0.6 }} />}
             </span>
           )}
           <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-elevated)', padding: '0px 5px', borderRadius: 99, border: '1px solid var(--border-light)', flexShrink: 0 }}>
@@ -434,6 +476,16 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
             : <ChevronUp size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
           }
         </button>
+        {!!group.is_system && (
+          <button
+            onClick={e => { e.stopPropagation(); setSortDir(d => d === 'asc' ? 'desc' : 'asc') }}
+            title={sortDir === 'asc' ? 'Sorted ascending — click for descending' : 'Sorted descending — click for ascending'}
+            className="btn btn-ghost btn-icon btn-sm"
+            style={{ color: 'var(--text-muted)', flexShrink: 0 }}
+          >
+            {sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />}
+          </button>
+        )}
         <GroupMenu
           group={group}
           isFirst={isFirst}
@@ -442,6 +494,7 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
           onMoveDown={onMoveGroupDown}
           onRename={onStartRename}
           onDelete={onDeleteGroup}
+          onChangeColor={onChangeGroupColor}
         />
       </div>
 
@@ -452,12 +505,12 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
           onDragOver={e => dnd.onContainerDragOver(group.id, pages.length, e)}
           onDrop={e => { e.preventDefault(); dnd.commitDrop() }}
         >
-          {pages.length === 0 && (
+          {displayedPages.length === 0 && (
             <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 8px', fontStyle: 'italic' }}>
               Empty group
             </div>
           )}
-          {pages.map((p, idx) => (
+          {displayedPages.map((p, idx) => (
             <Fragment key={p.id}>
               {dropHint?.kind === 'page' && dropHint.container === group.id && dropHint.index === idx && <DropLine />}
               <PageItem
@@ -465,7 +518,7 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
                 isActive={activePage?.id === p.id}
                 groups={groups}
                 isFirst={idx === 0}
-                isLast={idx === pages.length - 1}
+                isLast={idx === displayedPages.length - 1}
                 dnd={dnd}
                 index={idx}
                 container={group.id}
@@ -477,22 +530,24 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
               />
             </Fragment>
           ))}
-          {dropHint?.kind === 'page' && dropHint.container === group.id && dropHint.index === pages.length && <DropLine />}
-          <button
-            onClick={() => onCreatePage(group.id)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '4px 8px', background: 'none',
-              border: '1px dashed var(--border-light)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer',
-              transition: 'all 120ms ease', marginTop: 2,
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = group.color; (e.currentTarget as HTMLElement).style.color = group.color }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
-          >
-            <Plus size={10} /> Add to {group.name}
-          </button>
+          {dropHint?.kind === 'page' && dropHint.container === group.id && dropHint.index === displayedPages.length && <DropLine />}
+          {!group.is_system && (
+            <button
+              onClick={() => onCreatePage(group.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '4px 8px', background: 'none',
+                border: '1px dashed var(--border-light)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer',
+                transition: 'all 120ms ease', marginTop: 2,
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = group.color; (e.currentTarget as HTMLElement).style.color = group.color }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+            >
+              <Plus size={10} /> Add to {group.name}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -506,20 +561,21 @@ function PageEditor({ page, onDeleted, onTitleChange }: {
   onDeleted: () => void
   onTitleChange: (id: number, title: string) => void
 }) {
-  const { navigateToArticleByTitle } = useStore()
+  const { navigateToArticleByTitle, patchSessionInMemory } = useStore()
   const [title, setTitle] = useState(page.title)
   const [content, setContent] = useState(page.content)
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const pendingRef = useRef({ title, content, dirty, id: page.id })
-  pendingRef.current = { title, content, dirty, id: page.id }
+  const pendingRef = useRef({ title, content, dirty, id: page.id, sessionId: page.session_id })
+  pendingRef.current = { title, content, dirty, id: page.id, sessionId: page.session_id }
 
   useEffect(() => {
     return () => {
       const p = pendingRef.current
       if (p.dirty) {
         window.api.updateDMNotePage(p.id, { title: p.title, content: p.content })
+        if (p.sessionId) patchSessionInMemory(p.sessionId, { notes: p.content })
       }
     }
   }, [])
@@ -534,9 +590,10 @@ function PageEditor({ page, onDeleted, onTitleChange }: {
     if (!dirty) return
     setSaving(true)
     await window.api.updateDMNotePage(page.id, { title, content })
+    if (page.session_id) patchSessionInMemory(page.session_id, { notes: content })
     setDirty(false)
     setSaving(false)
-  }, [page.id, dirty, title, content])
+  }, [page.id, page.session_id, dirty, title, content])
 
   // Auto-save debounce for content
   useEffect(() => {
@@ -641,10 +698,13 @@ export default function DMNotesPage() {
   }, [currentCampaign?.id])
 
   useEffect(() => {
-    loadAll().then(ps => {
-      if (ps && ps.length > 0 && !activePage) {
-        openPage(ps[0].id)
-      }
+    if (!currentCampaign) return
+    window.api.syncDMSessionNotes(currentCampaign.id).then(() => {
+      loadAll().then(ps => {
+        if (ps && ps.length > 0 && !activePage) {
+          openPage(ps[0].id)
+        }
+      })
     })
   }, [currentCampaign?.id])
 
@@ -761,6 +821,11 @@ export default function DMNotesPage() {
     setGroups(gs => gs.map(g => g.id === groupId ? { ...g, name } : g))
   }
 
+  const handleChangeGroupColor = async (groupId: number, color: string) => {
+    setGroups(gs => gs.map(g => g.id === groupId ? { ...g, color } : g))
+    window.api.updateDMNoteGroup(groupId, { color })
+  }
+
   const sortedGroups = [...groups].sort((a, b) => a.sort_order - b.sort_order)
 
   // ── Drag-and-drop reordering ──────────────────────────────────────────────────
@@ -807,6 +872,14 @@ export default function DMNotesPage() {
     window.api.reorderDMNoteGroups(orders)
   }
 
+  const canDropPageInto = (pageId: number, targetGroupId: number | null) => {
+    const page = pages.find(p => p.id === pageId)
+    const targetGroup = targetGroupId !== null ? groups.find(g => g.id === targetGroupId) : null
+    if (page?.session_id && targetGroupId !== page.group_id) return false
+    if (!page?.session_id && targetGroup?.is_system) return false
+    return true
+  }
+
   const dnd: NotesDnd = {
     dragItem,
     dropHint,
@@ -815,6 +888,7 @@ export default function DMNotesPage() {
     endDrag: () => { setDragItem(null); setDropHint(null) },
     onPageRowDragOver: (container, index, e) => {
       if (dragItem?.kind !== 'page') return
+      if (!canDropPageInto(dragItem.id, container)) return
       e.preventDefault(); e.stopPropagation()
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
       const after = e.clientY > r.top + r.height / 2
@@ -822,6 +896,7 @@ export default function DMNotesPage() {
     },
     onContainerDragOver: (container, count, e) => {
       if (dragItem?.kind !== 'page') return
+      if (!canDropPageInto(dragItem.id, container)) return
       e.preventDefault()
       setDropHint({ kind: 'page', container, index: count })
     },
@@ -832,14 +907,17 @@ export default function DMNotesPage() {
         const after = e.clientY > r.top + r.height / 2
         setDropHint({ kind: 'group', index: after ? groupIndex + 1 : groupIndex })
       } else if (dragItem?.kind === 'page') {
+        if (!canDropPageInto(dragItem.id, container)) return
         e.preventDefault(); e.stopPropagation()
         setDropHint({ kind: 'page', container, index: 0 })
       }
     },
     commitDrop: () => {
       if (dragItem && dropHint) {
-        if (dragItem.kind === 'page' && dropHint.kind === 'page') movePageTo(dragItem.id, dropHint.container, dropHint.index)
-        else if (dragItem.kind === 'group' && dropHint.kind === 'group') moveGroupTo(dragItem.id, dropHint.index)
+        if (dragItem.kind === 'page' && dropHint.kind === 'page' && canDropPageInto(dragItem.id, dropHint.container))
+          movePageTo(dragItem.id, dropHint.container, dropHint.index)
+        else if (dragItem.kind === 'group' && dropHint.kind === 'group')
+          moveGroupTo(dragItem.id, dropHint.index)
       }
       setDragItem(null); setDropHint(null)
     },
@@ -979,6 +1057,7 @@ export default function DMNotesPage() {
                   onDeleteGroup={() => handleDeleteGroup(group.id)}
                   onStartRename={() => setEditingGroupId(group.id)}
                   onFinishRename={name => handleRenameGroup(group.id, name)}
+                  onChangeGroupColor={color => handleChangeGroupColor(group.id, color)}
                 />
               </Fragment>
             ))}

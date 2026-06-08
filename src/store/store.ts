@@ -62,6 +62,7 @@ interface AppStore {
   createSession: (data: { name: string; session_number: number; session_sub?: string; arc_id?: number | null; date?: string; is_draft?: number }) => Promise<void>
   deleteSession: (id: number) => Promise<void>
   updateSession: (id: number, data: Partial<Session>) => Promise<void>
+  patchSessionInMemory: (id: number, data: Partial<Session>) => void
   promoteSession: (id: number) => Promise<void>
   reorderDrafts: (orders: { id: number; sort_order: number }[]) => Promise<void>
 
@@ -355,13 +356,34 @@ export const useStore = create<AppStore>((set, get) => ({
         const lootTables = await window.api.resetDefaultTables(campaign.id)
         const lootTableByName = Object.fromEntries(lootTables.map(t => [t.name, t.id]))
 
+        // Build a map of bundled creature portrait images keyed by lowercased-hyphenated title
+        const creatureImages = await window.api.listCreatureImages()
+
         await Promise.all(
-          starters.map(m =>
-            window.api.createArticle({
+          starters.map(m => {
+            const imageKey = m.title.toLowerCase().replace(/\s+/g, '-')
+            const portrait_image = creatureImages[imageKey] ?? null
+
+            // Build a merged, deduplicated tags array:
+            //  • explicit tags from the data (comma-separated string)
+            //  • tags derived from every plain-text track value (mirroring WikiPage's getTrackTags logic)
+            const NON_TAG_TRACKS = new Set(['In_World_Date', 'Death_Date', 'Timeline_Milestones'])
+            const explicitTags = m.tags
+              ? m.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
+              : []
+            const trackTags = Object.entries(m.tracks)
+              .filter(([k, v]) =>
+                !NON_TAG_TRACKS.has(k) && !k.endsWith('_Date') &&
+                v && !v.startsWith('{') && !v.startsWith('[')
+              )
+              .map(([, v]) => v.toLowerCase().replace(/\s+/g, '-'))
+            const tags = JSON.stringify(Array.from(new Set([...explicitTags, ...trackTags])))
+
+            return window.api.createArticle({
               campaign_id: campaign.id,
               title: m.title,
               article_type: 'creature',
-              tags: m.tags,
+              tags,
               tracks: JSON.stringify(m.tracks),
               // Store variants array as statblock JSON for creature articles
               statblock: JSON.stringify(m.variants.map((v, i) => ({
@@ -373,8 +395,9 @@ export const useStore = create<AppStore>((set, get) => ({
                 loot_table: JSON.stringify({ name: v.name, items: v.loot_items ?? [] }),
               }))),
               content: m.content,
+              portrait_image,
             })
-          )
+          })
         )
       }
     }
@@ -456,6 +479,14 @@ export const useStore = create<AppStore>((set, get) => ({
           ? { ...e, session: { ...e.session, ...data }, label: `Session ${(data as any).session_number ?? e.session.session_number}${(data as any).session_sub ?? e.session.session_sub ?? ''}: ${(data as any).name ?? e.session.name}` }
           : e
       ),
+    }))
+  },
+
+  patchSessionInMemory: (id, data) => {
+    set(s => ({
+      sessions: s.sessions.map(s2 => s2.id === id ? { ...s2, ...data } : s2),
+      drafts: s.drafts.map(d => d.id === id ? { ...d, ...data } : d),
+      currentSession: s.currentSession?.id === id ? { ...s.currentSession!, ...data } : s.currentSession,
     }))
   },
 

@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('api', {
   addCombatCreature: (encounterId: number, articleId: number, maxHp: number, variantData?: any) =>
                                                 ipcRenderer.invoke('combat:add-creature', encounterId, articleId, maxHp, variantData),
   saveCombatCreatures: (creatures: any[])     => ipcRenderer.invoke('combat:save-creatures', creatures),
+  deleteCombatCreature: (creatureId: number)  => ipcRenderer.invoke('combat:delete-creature', creatureId),
   saveLootResult:      (creatureId: number, lootResult: any[]) => ipcRenderer.invoke('combat:save-loot-result', creatureId, lootResult),
   getLootResults:      (encounterId: number)  => ipcRenderer.invoke('combat:get-loot-results', encounterId),
   openStatBlockWindow: (articleId: number, overrides?: { statblock?: string; name?: string }) =>
@@ -111,6 +112,10 @@ contextBridge.exposeInMainWorld('api', {
                          ipcRenderer.invoke('dm-notes:delete-group', id),
   reorderDMNoteGroups: (orders: any[]) =>
                          ipcRenderer.invoke('dm-notes:reorder-groups', orders),
+  syncDMSessionNotes:  (campaignId: number) =>
+                         ipcRenderer.invoke('dm-notes:sync-session-notes', campaignId),
+  listCreatureImages:  () =>
+                         ipcRenderer.invoke('creatures:list-images'),
 
   // Master Loot Tables
   getLootTables:      (campaignId: number) =>

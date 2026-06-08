@@ -53,6 +53,45 @@ function defaultSoundboardDir(): string | null {
   return candidates.find(p => fs.existsSync(p)) ?? null
 }
 
+function defaultCreaturesDir(): string | null {
+  const candidates = [
+    path.join(__dirname, '../../src/data/creatures'),      // dev
+    path.join(process.resourcesPath ?? '', 'creatures'),   // prod (extraResources)
+  ]
+  return candidates.find(p => fs.existsSync(p)) ?? null
+}
+
+/** Copy bundled creature images into userData/images/.
+ *  Uses per-file mtime comparison so new or updated images are always picked up
+ *  without needing a manual version bump. */
+function syncCreatureImages(imagesPath: string) {
+  const src = defaultCreaturesDir()
+  if (!src) return
+  for (const file of fs.readdirSync(src)) {
+    if (file === 'version') continue
+    const srcFile = path.join(src, file)
+    const destFile = path.join(imagesPath, `creature_${file}`)
+    try {
+      const srcMtime = fs.statSync(srcFile).mtimeMs
+      const destMtime = fs.existsSync(destFile) ? fs.statSync(destFile).mtimeMs : 0
+      if (srcMtime > destMtime) fs.copyFileSync(srcFile, destFile)
+    } catch {}
+  }
+}
+
+/** Returns a map of lowercased-hyphenated name → relative image path for all bundled creature images. */
+function buildCreatureImageMap(imagesPath: string): Record<string, string> {
+  const map: Record<string, string> = {}
+  try {
+    for (const file of fs.readdirSync(imagesPath)) {
+      if (!file.startsWith('creature_')) continue
+      const name = path.basename(file, path.extname(file)).replace(/^creature_/, '').toLowerCase()
+      map[name] = `images/${file}`
+    }
+  } catch {}
+  return map
+}
+
 function deriveSoundName(filename: string): string {
   const ext  = path.extname(filename)
   return filename
@@ -385,6 +424,7 @@ function initDatabase() {
   const dbPath = path.join(userDataPath, 'dmforge.db')
   const imagesPath = path.join(userDataPath, 'images')
   if (!fs.existsSync(imagesPath)) fs.mkdirSync(imagesPath, { recursive: true })
+  syncCreatureImages(imagesPath)
   const soundsPath = path.join(userDataPath, 'sounds')
   if (!fs.existsSync(soundsPath)) fs.mkdirSync(soundsPath, { recursive: true })
 
@@ -491,6 +531,7 @@ function initDatabase() {
       variant_statblock     TEXT,
       variant_loot_table_id INTEGER,
       variant_loot_table    TEXT,
+      cr                    TEXT,
       created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -647,6 +688,9 @@ function initDatabase() {
   if (!creatureCols.some(c => c.name === 'variant_loot_table')) {
     db.exec(`ALTER TABLE combat_creatures ADD COLUMN variant_loot_table TEXT`)
   }
+  if (!creatureCols.some(c => c.name === 'cr')) {
+    db.exec(`ALTER TABLE combat_creatures ADD COLUMN cr TEXT`)
+  }
 
   const campaignCols = db.pragma('table_info(campaigns)') as { name: string }[]
   if (!campaignCols.some(c => c.name === 'timeline_base_year')) {
@@ -722,6 +766,14 @@ function initDatabase() {
   if (!dmNotesPageCols.some(c => c.name === 'sort_order')) {
     db.exec(`ALTER TABLE dm_notes_pages ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
     db.exec(`UPDATE dm_notes_pages SET sort_order = id`)
+  }
+  if (!dmNotesPageCols.some(c => c.name === 'session_id')) {
+    db.exec(`ALTER TABLE dm_notes_pages ADD COLUMN session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL`)
+  }
+
+  const dmNotesGroupCols = db.pragma('table_info(dm_notes_groups)') as { name: string }[]
+  if (!dmNotesGroupCols.some(c => c.name === 'is_system')) {
+    db.exec(`ALTER TABLE dm_notes_groups ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0`)
   }
 
   const mapSortCols = db.pragma('table_info(maps)') as { name: string }[]
@@ -1033,7 +1085,7 @@ function registerIPC(imagesPath: string) {
     for (const article of articles) {
       extractInlineImagePaths(article.content, userDataPath).forEach(safeUnlink)
       safeUnlinkRelative(article.cover_image, userDataPath)
-      safeUnlinkRelative(article.portrait_image, userDataPath)
+      if (!article.portrait_image?.includes('creature_')) safeUnlinkRelative(article.portrait_image, userDataPath)
     }
   })
 
@@ -1066,7 +1118,27 @@ function registerIPC(imagesPath: string) {
       INSERT INTO sessions (campaign_id, name, session_number, session_sub, arc_id, date, notes, is_draft, sort_order)
       VALUES (@campaign_id, @name, @session_number, @session_sub, @arc_id, @date, @notes, @is_draft, @sort_order)
     `).run({ date: null, notes: '', session_sub: '', arc_id: null, ...data, session_number: sessionNumber, is_draft: isDraft, sort_order: sortOrder })
-    return db.prepare('SELECT * FROM sessions WHERE id = ?').get(result.lastInsertRowid)
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(result.lastInsertRowid) as any
+
+    if (!isDraft) {
+      const sysGroup = db.prepare(
+        'SELECT * FROM dm_notes_groups WHERE campaign_id = ? AND is_system = 1'
+      ).get(data.campaign_id) as any
+      if (sysGroup) {
+        const title = data.session_sub
+          ? `Session ${sessionNumber}${data.session_sub}`
+          : `Session ${sessionNumber}`
+        const { m } = db.prepare(
+          'SELECT COALESCE(MAX(sort_order), -1) as m FROM dm_notes_pages WHERE group_id = ?'
+        ).get(sysGroup.id) as { m: number }
+        db.prepare(`
+          INSERT INTO dm_notes_pages (campaign_id, title, content, group_id, sort_order, session_id)
+          VALUES (?, ?, '{"type":"doc","content":[]}', ?, ?, ?)
+        `).run(data.campaign_id, title, sysGroup.id, m + 1, session.id)
+      }
+    }
+
+    return session
   })
 
   ipcMain.handle('sessions:update', (_e, id: number, data: any) => {
@@ -1082,10 +1154,32 @@ function registerIPC(imagesPath: string) {
     const { m } = db.prepare(
       'SELECT COALESCE(MAX(session_number), 0) AS m FROM sessions WHERE campaign_id = ? AND is_draft = 0'
     ).get(session.campaign_id) as { m: number }
+    const newNumber = m + 1
     db.prepare(
       "UPDATE sessions SET is_draft = 0, session_number = ?, session_sub = '', sort_order = 0 WHERE id = ?"
-    ).run(m + 1, id)
-    return db.prepare('SELECT * FROM sessions WHERE id = ?').get(id)
+    ).run(newNumber, id)
+    const promoted = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as any
+
+    const sysGroup = db.prepare(
+      'SELECT * FROM dm_notes_groups WHERE campaign_id = ? AND is_system = 1'
+    ).get(session.campaign_id) as any
+    if (sysGroup) {
+      const already = db.prepare(
+        'SELECT id FROM dm_notes_pages WHERE session_id = ?'
+      ).get(id) as any
+      if (!already) {
+        const title = `Session ${newNumber}`
+        const { m: maxOrder } = db.prepare(
+          'SELECT COALESCE(MAX(sort_order), -1) as m FROM dm_notes_pages WHERE group_id = ?'
+        ).get(sysGroup.id) as { m: number }
+        db.prepare(`
+          INSERT INTO dm_notes_pages (campaign_id, title, content, group_id, sort_order, session_id)
+          VALUES (?, ?, '{"type":"doc","content":[]}', ?, ?, ?)
+        `).run(session.campaign_id, title, sysGroup.id, maxOrder + 1, id)
+      }
+    }
+
+    return promoted
   })
 
   ipcMain.handle('sessions:reorder-drafts', (_e, orders: { id: number; sort_order: number }[]) => {
@@ -1409,8 +1503,8 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('articles:create', (_e, data: any) => {
     const result = db.prepare(`
-      INSERT INTO articles (campaign_id, title, content, article_type, tags, tracks, statblock, loot_table, loot_table_id)
-      VALUES (@campaign_id, @title, @content, @article_type, @tags, @tracks, @statblock, @loot_table, @loot_table_id)
+      INSERT INTO articles (campaign_id, title, content, article_type, tags, tracks, statblock, loot_table, loot_table_id, portrait_image)
+      VALUES (@campaign_id, @title, @content, @article_type, @tags, @tracks, @statblock, @loot_table, @loot_table_id, @portrait_image)
     `).run({
       content: '{"type":"doc","content":[]}',
       article_type: 'location',
@@ -1419,6 +1513,7 @@ function registerIPC(imagesPath: string) {
       statblock: '{}',
       loot_table: '{"name":"Loot","items":[]}',
       loot_table_id: null,
+      portrait_image: null,
       ...data,
     })
     return db.prepare('SELECT * FROM articles WHERE id = ?').get(result.lastInsertRowid)
@@ -1484,7 +1579,7 @@ function registerIPC(imagesPath: string) {
     if (article) {
       extractInlineImagePaths(article.content, userDataPath).forEach(safeUnlink)
       safeUnlinkRelative(article.cover_image, userDataPath)
-      safeUnlinkRelative(article.portrait_image, userDataPath)
+      if (!article.portrait_image?.includes('creature_')) safeUnlinkRelative(article.portrait_image, userDataPath)
     }
   })
 
@@ -1501,7 +1596,7 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('combat:get-creatures', (_e, encounterId: number) => {
     const rows = db.prepare(`
-      SELECT cc.*, a.title, a.statblock, a.loot_table, a.loot_table_id
+      SELECT cc.*, a.title, a.statblock, a.loot_table, a.loot_table_id, a.article_type
       FROM combat_creatures cc
       JOIN articles a ON a.id = cc.article_id
       WHERE cc.encounter_id = ?
@@ -1528,6 +1623,7 @@ function registerIPC(imagesPath: string) {
     variant_statblock: string | null
     variant_loot_table_id: number | null
     variant_loot_table: string | null
+    cr: string | null
   }) => {
     // Instance number scoped to article + variant so two different variants
     // of the same creature don't share instance numbering
@@ -1542,18 +1638,19 @@ function registerIPC(imagesPath: string) {
     const result = db.prepare(`
       INSERT INTO combat_creatures
         (encounter_id, article_id, instance_number, max_hp, current_hp,
-         variant_name, variant_statblock, variant_loot_table_id, variant_loot_table)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         variant_name, variant_statblock, variant_loot_table_id, variant_loot_table, cr)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       encounterId, articleId, instanceNumber, maxHp, maxHp,
       variantName,
       variantData?.variant_statblock     ?? null,
       variantData?.variant_loot_table_id ?? null,
       variantData?.variant_loot_table    ?? null,
+      variantData?.cr                    ?? null,
     )
 
     const row = db.prepare(`
-      SELECT cc.*, a.title, a.statblock, a.loot_table, a.loot_table_id
+      SELECT cc.*, a.title, a.statblock, a.loot_table, a.loot_table_id, a.article_type
       FROM combat_creatures cc
       JOIN articles a ON a.id = cc.article_id
       WHERE cc.id = ?
@@ -1567,6 +1664,10 @@ function registerIPC(imagesPath: string) {
       loot_table:    row.variant_loot_table     ?? row.loot_table,
       display_name:  row.variant_name           ?? row.title,
     }
+  })
+
+  ipcMain.handle('combat:delete-creature', (_e, creatureId: number) => {
+    db.prepare('DELETE FROM combat_creatures WHERE id = ?').run(creatureId)
   })
 
   ipcMain.handle('combat:save-creatures', (_e, creatures: any[]) => {
@@ -1756,7 +1857,7 @@ function registerIPC(imagesPath: string) {
 
   ipcMain.handle('dm-notes:get-all', (_e, campaignId: number) => {
     return db.prepare(`
-      SELECT id, campaign_id, title, group_id, sort_order, created_at, updated_at
+      SELECT id, campaign_id, title, group_id, sort_order, session_id, created_at, updated_at
       FROM dm_notes_pages
       WHERE campaign_id = ?
       ORDER BY sort_order ASC
@@ -1764,7 +1865,13 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('dm-notes:get', (_e, id: number) => {
-    return db.prepare('SELECT * FROM dm_notes_pages WHERE id = ?').get(id) ?? null
+    const page = db.prepare('SELECT * FROM dm_notes_pages WHERE id = ?').get(id) as any
+    if (!page) return null
+    if (page.session_id) {
+      const session = db.prepare('SELECT notes FROM sessions WHERE id = ?').get(page.session_id) as any
+      if (session) page.content = session.notes && session.notes !== '' ? session.notes : '{"type":"doc","content":[]}'
+    }
+    return page
   })
 
   ipcMain.handle('dm-notes:create', (_e, campaignId: number, groupId: number | null) => {
@@ -1780,10 +1887,28 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('dm-notes:update', (_e, id: number, data: any) => {
-    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
-    db.prepare(`UPDATE dm_notes_pages SET ${fields}, updated_at = datetime('now') WHERE id = @id`)
-      .run({ ...data, id })
-    return db.prepare('SELECT * FROM dm_notes_pages WHERE id = ?').get(id)
+    const page = db.prepare('SELECT session_id FROM dm_notes_pages WHERE id = ?').get(id) as any
+    if (page?.session_id && 'content' in data) {
+      // Route content changes to the linked session instead of the page's own content column
+      db.prepare('UPDATE sessions SET notes = ? WHERE id = ?').run(data.content, page.session_id)
+      const rest = Object.fromEntries(Object.entries(data).filter(([k]) => k !== 'content'))
+      if (Object.keys(rest).length > 0) {
+        const fields = Object.keys(rest).map(k => `${k} = @${k}`).join(', ')
+        db.prepare(`UPDATE dm_notes_pages SET ${fields}, updated_at = datetime('now') WHERE id = @id`).run({ ...rest, id })
+      } else {
+        db.prepare(`UPDATE dm_notes_pages SET updated_at = datetime('now') WHERE id = @id`).run({ id })
+      }
+    } else {
+      const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
+      db.prepare(`UPDATE dm_notes_pages SET ${fields}, updated_at = datetime('now') WHERE id = @id`).run({ ...data, id })
+    }
+    // Return the page with session content substituted if applicable
+    const updated = db.prepare('SELECT * FROM dm_notes_pages WHERE id = ?').get(id) as any
+    if (updated?.session_id) {
+      const session = db.prepare('SELECT notes FROM sessions WHERE id = ?').get(updated.session_id) as any
+      if (session) updated.content = session.notes && session.notes !== '' ? session.notes : '{"type":"doc","content":[]}'
+    }
+    return updated
   })
 
   ipcMain.handle('dm-notes:delete', (_e, id: number) => {
@@ -1820,6 +1945,8 @@ function registerIPC(imagesPath: string) {
   })
 
   ipcMain.handle('dm-notes:delete-group', (_e, id: number) => {
+    const grp = db.prepare('SELECT is_system FROM dm_notes_groups WHERE id = ?').get(id) as any
+    if (grp?.is_system) return
     db.prepare('UPDATE dm_notes_pages SET group_id = NULL WHERE group_id = ?').run(id)
     db.prepare('DELETE FROM dm_notes_groups WHERE id = ?').run(id)
   })
@@ -1830,6 +1957,67 @@ function registerIPC(imagesPath: string) {
       for (const o of list) stmt.run(o)
     })
     transaction(orders)
+  })
+
+  // Ensures the "Session Notes" system group exists and every non-draft session has a page in it.
+  ipcMain.handle('dm-notes:sync-session-notes', (_e, campaignId: number) => {
+    return db.transaction(() => {
+      let group = db.prepare(
+        'SELECT * FROM dm_notes_groups WHERE campaign_id = ? AND is_system = 1'
+      ).get(campaignId) as any
+      if (!group) {
+        const { m } = db.prepare(
+          'SELECT COALESCE(MAX(sort_order), -1) as m FROM dm_notes_groups WHERE campaign_id = ?'
+        ).get(campaignId) as { m: number }
+        const r = db.prepare(`
+          INSERT INTO dm_notes_groups (campaign_id, name, color, sort_order, is_system)
+          VALUES (?, 'Session Notes', '#5b9fe8', ?, 1)
+        `).run(campaignId, m + 1)
+        group = db.prepare('SELECT * FROM dm_notes_groups WHERE id = ?').get(r.lastInsertRowid)
+      }
+
+      const sessions = db.prepare(
+        'SELECT * FROM sessions WHERE campaign_id = ? AND is_draft = 0 ORDER BY session_number ASC, session_sub ASC'
+      ).all(campaignId) as any[]
+
+      const existingSessionIds = new Set(
+        (db.prepare('SELECT session_id FROM dm_notes_pages WHERE group_id = ? AND session_id IS NOT NULL').all(group.id) as any[])
+          .map((p: any) => p.session_id)
+      )
+
+      const newPages: any[] = []
+      for (const session of sessions) {
+        if (existingSessionIds.has(session.id)) continue
+        const title = session.session_sub
+          ? `Session ${session.session_number}${session.session_sub}`
+          : `Session ${session.session_number}`
+        const { m } = db.prepare(
+          'SELECT COALESCE(MAX(sort_order), -1) as m FROM dm_notes_pages WHERE group_id = ?'
+        ).get(group.id) as { m: number }
+        const r = db.prepare(`
+          INSERT INTO dm_notes_pages (campaign_id, title, content, group_id, sort_order, session_id)
+          VALUES (?, ?, '{"type":"doc","content":[]}', ?, ?, ?)
+        `).run(campaignId, title, group.id, m + 1, session.id)
+        newPages.push(db.prepare('SELECT * FROM dm_notes_pages WHERE id = ?').get(r.lastInsertRowid))
+      }
+
+      return { group, newPages }
+    })()
+  })
+
+  // ── Creature Images ───────────────────────────────────────────────────────────
+
+  // Returns { "goblin": "C:\\Users\\...\\images\\creature_goblin.jpg", … }
+  // Values are full absolute paths (no file:// prefix) — matching the format WikiPage stores for all images.
+  ipcMain.handle('creatures:list-images', () => {
+    const userDataPath = app.getPath('userData')
+    const imagesPath = path.join(userDataPath, 'images')
+    const relMap = buildCreatureImageMap(imagesPath)
+    const fullMap: Record<string, string> = {}
+    for (const [key, relativePath] of Object.entries(relMap)) {
+      fullMap[key] = path.join(userDataPath, relativePath)
+    }
+    return fullMap
   })
 
   // ── Master Loot Tables ────────────────────────────────────────────────────────

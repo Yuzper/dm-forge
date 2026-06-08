@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import type { StatBlock, StatBlockEntry } from '../types'
 import { calcHpAverage } from '../types'
+import { crToXp } from '../utils/encounterBudget'
 import SectionDivider from './SectionDivider'
 import spellsData from '../data/spells_2014.json'
 
@@ -12,9 +13,17 @@ const spells: Spell[] = spellsData as Spell[]
 interface Props {
   value: StatBlock
   onChange: (sb: StatBlock) => void
+  showLevel?: boolean   // player characters: surface level + class for the encounter balancer
+  showCR?: boolean      // named NPCs: surface CR (+ derived XP) so they count as opposition
 }
 
 const DIE_OPTIONS = [4, 6, 8, 10, 12, 20]
+
+// Base 5e classes + Artificer — for the player-character class/level picker.
+const CLASS_OPTIONS = [
+  'Artificer', 'Barbarian', 'Bard', 'Cleric', 'Druid', 'Fighter', 'Monk',
+  'Paladin', 'Ranger', 'Rogue', 'Sorcerer', 'Warlock', 'Wizard',
+]
 
 const ABILITY_KEYS: (keyof StatBlock)[] = ['str', 'dex', 'con', 'int', 'wis', 'cha']
 const ABILITY_LABELS: Record<string, string> = {
@@ -81,7 +90,7 @@ function EntryList({
   )
 }
 
-export default function StatBlockEditor({ value, onChange }: Props) {
+export default function StatBlockEditor({ value, onChange, showLevel, showCR }: Props) {
   const [search, setSearch] = useState('')
   const filteredSpells = spells.filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
 
@@ -97,6 +106,101 @@ export default function StatBlockEditor({ value, onChange }: Props) {
 
   return (
     <div style={{ padding: '16px 24px', fontFamily: 'var(--font-ui)', fontSize: 13 }}>
+
+      {/* ── Class & Level (player characters) — multiclass aware ── */}
+      {showLevel && (() => {
+        const rows = value.classLevels ?? []
+        const total = rows.reduce((s, r) => s + (r.level || 0), 0)
+        const commit = (next: { cls: string; level: number }[]) => {
+          const sum = next.reduce((s, r) => s + (r.level || 0), 0)
+          onChange({ ...value, classLevels: next, level: sum > 0 ? sum : undefined })
+        }
+        const addRow = () => commit([...rows, { cls: '', level: 1 }])
+        const updateRow = (i: number, patch: Partial<{ cls: string; level: number }>) =>
+          commit(rows.map((r, idx) => idx === i ? { ...r, ...patch } : r))
+        const removeRow = (i: number) => commit(rows.filter((_, idx) => idx !== i))
+
+        return (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Classes & Levels</span>
+              <span style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600 }}>
+                {total > 0 ? `Character Level ${total}` : 'No levels set'}
+              </span>
+            </div>
+            {rows.map((r, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                <select
+                  className="input"
+                  style={{ height: 32, fontSize: 13, flex: 1 }}
+                  value={r.cls}
+                  onChange={e => updateRow(i, { cls: e.target.value })}
+                >
+                  <option value="">Class…</option>
+                  {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={20}
+                  style={{ width: 64, height: 32, fontSize: 13, textAlign: 'center' }}
+                  value={r.level}
+                  onChange={e => {
+                    const n = parseInt(e.target.value)
+                    updateRow(i, { level: Number.isFinite(n) ? Math.max(1, Math.min(20, n)) : 1 })
+                  }}
+                />
+                <button
+                  onClick={() => removeRow(i)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                  title="Remove class"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+            <button onClick={addRow} className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              <Plus size={11} /> Add class
+            </button>
+          </div>
+        )
+      })()}
+
+      {/* ── CR & derived XP (named NPCs) ── */}
+      {showCR && (() => {
+        const xp = crToXp(value.cr)
+        return (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Challenge Rating</span>
+              <input
+                className="input"
+                style={{ width: 90, height: 34, fontSize: 14, textAlign: 'center' }}
+                placeholder="e.g. 1/2, 5"
+                value={value.cr ?? ''}
+                onChange={e => set('cr', e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>XP (from CR)</span>
+              <div style={{
+                width: 90, height: 34, border: '1px solid var(--border-light)',
+                borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center',
+                justifyContent: 'center', fontSize: 14, fontWeight: 600,
+                color: xp === null ? 'var(--crimson)' : 'var(--gold)', background: 'var(--bg-elevated)',
+              }}>
+                {xp === null ? '—' : xp.toLocaleString()}
+              </div>
+            </div>
+            {value.cr && xp === null && (
+              <span style={{ fontSize: 11, color: 'var(--crimson)', marginBottom: 9 }}>
+                Unrecognized CR — use 0, 1/8, 1/4, 1/2, or 1–30.
+              </span>
+            )}
+          </div>
+        )
+      })()}
 
     {/* ── AC ── */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>

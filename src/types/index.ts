@@ -132,6 +132,14 @@ export interface StatBlock {
   hp: number
   hpDice: { count: number; die: number; bonus: number }
   speed: string
+  // Player-character only — used by the encounter balancer to size the party.
+  // Optional so existing creature/NPC stat blocks are unaffected.
+  // `level` is the derived total (sum of classLevels); kept in sync for display.
+  level?: number
+  classes?: string
+  classLevels?: { cls: string; level: number }[]
+  // Named-NPC CR (single stat block). XP is derived from this, never stored.
+  cr?: string
   str: number; dex: number; con: number
   int: number; wis: number; cha: number
   savingThrows: string
@@ -329,6 +337,9 @@ export interface CombatCreature {
   statblock: string
   loot_table: string
   loot_table_id: number | null
+  cr?: string | null            // CR captured at add-time (XP derived from it)
+  article_type?: string         // source article type (creature / character / playerCharacter)
+  display_name?: string         // variant name or article title
 }
 
 export interface DMNoteGroup {
@@ -337,6 +348,7 @@ export interface DMNoteGroup {
   name: string
   color: string
   sort_order: number
+  is_system: number
   created_at: string
 }
 
@@ -347,6 +359,7 @@ export interface DMNotePage {
   content: string
   group_id: number | null
   sort_order: number
+  session_id: number | null
   created_at: string
   updated_at: string
 }
@@ -473,6 +486,7 @@ export interface ElectronAPI {
   getCombatCreatures:    (encounterId: number)     => Promise<CombatCreature[]>
   addCombatCreature:     (encounterId: number, articleId: number, maxHp: number) => Promise<CombatCreature>
   saveCombatCreatures:   (creatures: Pick<CombatCreature, 'id' | 'current_hp' | 'ac_override' | 'is_dead' | 'initiative' | 'resources'>[]) => Promise<void>
+  deleteCombatCreature:  (creatureId: number) => Promise<void>
   saveLootResult:        (creatureId: number, lootResult: LootItem[]) => Promise<void>
   getLootResults:        (encounterId: number) => Promise<{ id: number; loot_result: string | null }[]>
   openStatBlockWindow:   (articleId: number)       => Promise<void>
@@ -502,6 +516,8 @@ export interface ElectronAPI {
   updateDMNoteGroup:   (id: number, data: { name?: string; color?: string; sort_order?: number }) => Promise<DMNoteGroup>
   deleteDMNoteGroup:   (id: number) => Promise<void>
   reorderDMNoteGroups: (orders: { id: number; sort_order: number }[]) => Promise<void>
+  syncDMSessionNotes:  (campaignId: number) => Promise<{ group: DMNoteGroup; newPages: Omit<DMNotePage, 'content'>[] }>
+  listCreatureImages:  () => Promise<Record<string, string>>
 
   // Master Loot Tables
   getLootTables:       (campaignId: number) => Promise<MasterLootTable[]>

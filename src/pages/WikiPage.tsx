@@ -12,6 +12,7 @@ import {
 import RichEditor from '../components/RichEditor'
 import type { Article, ArticleSummary, ArticleType, MasterLootTable, LootItem } from '../types'
 import StatBlockEditor from '../components/StatBlockEditor'
+import { crToXp, CR_OPTIONS } from '../utils/encounterBudget'
 import { parseStatBlock, parseItemStatBlock, itemBlockHasData } from '../types'
 import StatBlockView from '../components/StatBlockView'
 import ItemStatBlockEditor from '../components/ItemStatBlockEditor'
@@ -809,7 +810,7 @@ function CreatureVariantsSection({
   const addVariant = () => {
     const id = `v_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
     const newV: CreatureVariant = {
-      id, name: 'New Variant', cr: '—',
+      id, name: 'New Variant', cr: '',
       statblock: parseStatBlock('{}'),
       loot_table_id: null,
       loot_table: '{"name":"Loot","items":[]}',
@@ -868,17 +869,30 @@ function CreatureVariantsSection({
                   placeholder="Variant name…"
                 />
               )}
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 99, padding: '1px 8px', flexShrink: 0 }}>
-                CR {readMode ? variant.cr : (
-                  <input
-                    value={variant.cr}
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 99, padding: '1px 8px', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                CR {readMode ? (variant.cr || '—') : (
+                  <select
+                    value={CR_OPTIONS.includes(variant.cr) ? variant.cr : ''}
                     onClick={e => e.stopPropagation()}
                     onChange={e => updateVariant(variant.id, { cr: e.target.value })}
-                    style={{ width: 28, background: 'transparent', border: 'none', outline: 'none', fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', padding: 0 }}
-                    placeholder="—"
-                  />
+                    style={{ background: 'var(--bg-base)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', outline: 'none', fontSize: 11, color: 'var(--text-secondary)', padding: '1px 2px' }}
+                  >
+                    <option value="">—</option>
+                    {CR_OPTIONS.map(cr => <option key={cr} value={cr}>{cr}</option>)}
+                  </select>
                 )}
               </span>
+              {(() => {
+                const xp = crToXp(variant.cr)
+                return (
+                  <span
+                    title={xp === null ? 'Unrecognized CR — no XP' : `${xp.toLocaleString()} XP`}
+                    style={{ fontSize: 11, color: xp === null ? 'var(--text-muted)' : 'var(--gold)', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 99, padding: '1px 8px', flexShrink: 0 }}
+                  >
+                    {xp === null ? '— XP' : `${xp.toLocaleString()} XP`}
+                  </span>
+                )
+              })()}
               {masterTable && (
                 <span style={{ fontSize: 10, color: '#49c185', background: '#49c18514', border: '1px solid #49c18530', borderRadius: 99, padding: '1px 7px', flexShrink: 0 }}>
                   {masterTable.name}
@@ -1325,7 +1339,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                         <span style={{ fontSize: 13 }}>No stat block yet</span>
                         <span style={{ fontSize: 11 }}>Switch to Edit mode to add combat stats</span>
                       </div>
-                ) : <StatBlockEditor value={statblock} onChange={sb => { setStatblock(sb); setDirty(true) }} />}
+                ) : <StatBlockEditor value={statblock} onChange={sb => { setStatblock(sb); setDirty(true) }} showLevel={articleType === 'playerCharacter' || articleType === 'character'} showCR={articleType === 'character'} />}
               </div>
             )}
 

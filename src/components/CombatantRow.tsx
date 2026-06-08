@@ -1,8 +1,9 @@
 // path: src/components/CombatantRow.tsx
 import { useState } from 'react'
-import { Swords, Skull, PackageOpen } from 'lucide-react'
+import { Swords, Skull, PackageOpen, Trash2, HeartHandshake } from 'lucide-react'
 import type { CombatCreature, LootItem, CombatResource } from '../types'
 import { parseStatBlock, parseLootTable, generateLoot } from '../types'
+import { useConfirmDelete } from '../hooks/useConfirmDelete'
 import LootResultModal from './LootResultModal'
 
 interface Props {
@@ -10,9 +11,14 @@ interface Props {
   onUpdate: (id: number, updates: Partial<Pick<CombatCreature, 'current_hp' | 'is_dead' | 'initiative' | 'ac_override' | 'resources'>>) => void
   onOpenStatBlock: (creature: CombatCreature) => void
   onLootGenerated: (creatureId: number, result: LootItem[], articleId: number) => Promise<LootItem[]>
+  onDelete?: (id: number) => void   // omit to hide the remove button (e.g. read mode)
+  isAlly?: boolean
+  onToggleAlly?: (id: number) => void   // omit to make the ally flag read-only
+  allyEligible?: boolean                // false for PCs — no ally toggle shown
 }
 
-export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLootGenerated }: Props) {
+export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLootGenerated, onDelete, isAlly, onToggleAlly, allyEligible }: Props) {
+  const { confirming: confirmDel, trigger: triggerDel } = useConfirmDelete()
   const [inputAmount, setInputAmount] = useState('')
   const [inputMode, setInputMode] = useState<'damage' | 'heal'>('damage')
   const [editingAc, setEditingAc] = useState(false)
@@ -141,15 +147,46 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
             }}
             title="Initiative"
           />
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{
               fontSize: 13, fontWeight: 600,
               fontFamily: 'var(--font-display)',
               color: isDead ? 'var(--text-muted)' : 'var(--text-primary)',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
               {(creature as any).display_name ?? creature.title} {creature.instance_number}
             </span>
+            {isAlly ? (
+              <button
+                onClick={() => onToggleAlly?.(creature.id)}
+                disabled={!onToggleAlly}
+                title={onToggleAlly ? 'Ally — click to make hostile' : 'Fights for the party'}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0,
+                  fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
+                  color: '#7bc96f', background: 'rgba(123,201,111,0.12)',
+                  border: '1px solid rgba(123,201,111,0.4)', borderRadius: 99, padding: '1px 6px',
+                  cursor: onToggleAlly ? 'pointer' : 'default',
+                }}
+              >
+                <HeartHandshake size={9} /> ALLY
+              </button>
+            ) : (onToggleAlly && allyEligible && (
+              <button
+                onClick={() => onToggleAlly(creature.id)}
+                title="Mark as ally (fights for the party)"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                  color: 'var(--text-muted)', background: 'none',
+                  border: '1px solid var(--border-light)', borderRadius: 99, padding: '1px 4px',
+                  cursor: 'pointer', transition: 'color 120ms ease',
+                }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#7bc96f'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+              >
+                <HeartHandshake size={9} />
+              </button>
+            ))}
           </div>
           {isDead && <Skull size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />}
 
@@ -197,6 +234,26 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
               }}
             >
               <PackageOpen size={11} /> Loot
+            </button>
+          )}
+
+          {/* Remove combatant */}
+          {onDelete && (
+            <button
+              onClick={() => triggerDel(() => onDelete(creature.id))}
+              title={confirmDel ? 'Click again to remove' : 'Remove combatant'}
+              style={{
+                background: confirmDel ? 'rgba(224,85,85,0.15)' : 'none',
+                border: `1px solid ${confirmDel ? 'var(--crimson)' : 'var(--border-light)'}`,
+                borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                padding: '3px 6px', display: 'flex', alignItems: 'center',
+                color: confirmDel ? '#e05555' : 'var(--text-muted)', fontSize: 11, flexShrink: 0,
+                transition: 'all 120ms ease',
+              }}
+              onMouseEnter={e => { if (!confirmDel) (e.currentTarget as HTMLElement).style.color = '#e05555' }}
+              onMouseLeave={e => { if (!confirmDel) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+            >
+              <Trash2 size={11} />
             </button>
           )}
         </div>
