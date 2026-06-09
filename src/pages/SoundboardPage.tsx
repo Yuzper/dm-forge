@@ -45,7 +45,7 @@ function SoundFormRow({ boardId, sound, onSave, onCancel }: {
   const [filePath, setFilePath] = useState(sound?.file_path ?? '')
   const [hotkey, setHotkey]     = useState(sound?.hotkey ?? '')
   const [volume, setVolume]     = useState(sound?.volume ?? 1)
-  const [loop, setLoop]         = useState(sound ? !!sound.loop : (sound?.category ?? 'effect') !== 'effect')
+  const [loop, setLoop]         = useState(sound ? !!sound.loop : category !== 'effect')
   const [touchedLoop, setTouchedLoop] = useState(false)
   const [saving, setSaving]     = useState(false)
 

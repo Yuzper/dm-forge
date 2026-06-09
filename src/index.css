@@ -12,6 +12,7 @@
 
   --gold:          #c8a84b;
   --gold-dim:      #8a7035;
+  --gold-hover:    #dab84f;
   --gold-glow:     rgba(200, 168, 75, 0.15);
   --crimson:       #8b2533;
   --crimson-dim:   #5a1820;
@@ -109,7 +110,7 @@ p, li, blockquote { font-family: var(--font-body); font-size: 16px; line-height:
   color: var(--text-inverse);
   font-weight: 600;
 }
-.btn-primary:hover { background: #dab84f; border-color: #dab84f; color: var(--text-inverse); }
+.btn-primary:hover { background: var(--gold-hover); border-color: var(--gold-hover); color: var(--text-inverse); }
 .btn-danger { border-color: var(--crimson-dim); color: var(--danger); }
 .btn-danger:hover { background: var(--crimson-dim); border-color: var(--crimson); color: var(--danger-hover); }
 .btn-ghost { background: transparent; border-color: transparent; }

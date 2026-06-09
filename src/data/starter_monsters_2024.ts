@@ -4,7 +4,6 @@
 // Sunlight Sensitivity removed from kobolds, Aggressive moved to bonus action on orcs.
 // Seeded automatically when a 2024 campaign is created.
 
-import type { StatBlock } from '../types'
 import type { StarterMonster, StarterVariant } from './starter_monsters_2014'
 export type { StarterMonster, StarterVariant }
 

@@ -354,7 +354,7 @@ function HubPOIEditModal({
 // ── Hub World Map ──────────────────────────────────────────────────────────────
 
 function HubWorldMap() {
-  const { currentCampaign, sessions, articles, navigateToArticleByTitle, navigateToSessionById } = useStore()
+  const { currentCampaign, sessions, navigateToArticleByTitle, navigateToSessionById } = useStore()
 
   const [maps, setMaps] = useState<GameMap[]>([])
   const [localArticles, setLocalArticles] = useState<{ id: number; title: string }[]>([])
@@ -364,7 +364,7 @@ function HubWorldMap() {
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null)
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
   const [editMode, setEditMode] = useState(false)
-  const [mapVisible, setMapVisible] = useState<boolean>(() => {
+  const [mapVisible] = useState<boolean>(() => {
     const stored = localStorage.getItem('worldmap-map-visible')
     return stored === null ? true : stored === 'true'
   })
@@ -463,9 +463,8 @@ function HubWorldMap() {
     }
   }, [scale, offset, currentMap?.id])
 
-  // ── Wheel zoom (hold Ctrl/Cmd; otherwise let the page scroll) ──────────────
+  // ── Wheel zoom ────────────────────────────────────────────────────────────
   const handleWheel = useCallback((e: WheelEvent) => {
-    if (!e.ctrlKey && !e.metaKey) return
     e.preventDefault()
     if (!mapRef.current) return
     const rect = mapRef.current.getBoundingClientRect()
@@ -690,12 +689,12 @@ function HubWorldMap() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ marginBottom: 28 }}>
+    <div>
       {/* Map panel */}
       <div
         ref={mapRef}
         style={{
-          position: 'relative', width: '100%', height: mapVisible ? 500 : 34,
+          position: 'relative', width: '100%', height: mapVisible ? 520 : 34,
           borderRadius: 'var(--radius-lg)',
           border: '1px solid var(--border)',
           overflow: 'hidden',
@@ -856,7 +855,6 @@ function HubWorldMap() {
         {maps.length > 0 && mapVisible && (
           <div style={{ position: 'absolute', bottom: 10, right: 10, zIndex: 15, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 4, padding: '4px 8px' }}
             onMouseDown={e => e.stopPropagation()}>
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginRight: 2, whiteSpace: 'nowrap' }}>Ctrl + scroll</span>
             <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.12)', margin: '0 2px' }} />
             <button onClick={zoomOut} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 2px', fontWeight: 300 }}>−</button>
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', minWidth: 36, textAlign: 'center' }}>{Math.round(scale * 100)}%</span>
@@ -911,46 +909,6 @@ function HubWorldMap() {
   )
 }
 
-// ── Hub Card ───────────────────────────────────────────────────────────────────
-
-function HubCard({ icon, title, description, stat, onClick, accent = 'var(--gold)' }: {
-  icon: React.ReactNode; title: string; description: string; stat?: string; onClick: () => void; accent?: string
-}) {
-  const [hovered, setHovered] = useState(false)
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 16,
-        padding: '28px 24px',
-        background: hovered ? 'var(--bg-elevated)' : 'var(--bg-surface)',
-        border: `1px solid ${hovered ? accent : 'var(--border)'}`,
-        borderRadius: 'var(--radius-lg)', cursor: 'pointer', textAlign: 'left',
-        transition: 'all 180ms ease',
-        boxShadow: hovered ? `0 0 24px ${accent}18` : 'none',
-      }}
-    >
-      <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: `${accent}18`, border: `1px solid ${accent}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: accent, flexShrink: 0, transition: 'all 180ms ease' }}>
-        {icon}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, color: hovered ? accent : 'var(--text-primary)', letterSpacing: '0.04em', marginBottom: 5, transition: 'color 180ms ease' }}>
-          {title}
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-ui)', lineHeight: 1.5 }}>
-          {description}
-        </div>
-      </div>
-      {stat && (
-        <div style={{ fontSize: 11, color: accent, fontFamily: 'var(--font-ui)', letterSpacing: '0.06em', opacity: 0.8 }}>
-          {stat}
-        </div>
-      )}
-    </button>
-  )
-}
 
 // ── ColorPicker ────────────────────────────────────────────────────────────────
 
@@ -2022,6 +1980,55 @@ function ArticlesByTypePanel() {
   )
 }
 
+// ── Nav Dock Card ─────────────────────────────────────────────────────────────
+
+function NavDockCard({ icon, title, stat, onClick, accent }: {
+  icon: React.ReactNode; title: string; stat?: string; onClick: () => void; accent: string
+}) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 6,
+        padding: '11px 8px 9px',
+        background: hovered ? 'var(--bg-elevated)' : 'var(--bg-surface)',
+        border: `1px solid ${hovered ? accent + '66' : 'var(--border)'}`,
+        borderRadius: 'var(--radius-md)',
+        cursor: 'pointer',
+        transition: 'all 140ms ease',
+        boxShadow: hovered ? `0 0 16px ${accent}12` : 'none',
+        minWidth: 0,
+        fontFamily: 'var(--font-ui)',
+      }}
+    >
+      <div style={{
+        width: 32, height: 32, borderRadius: 'var(--radius-sm)',
+        background: `${accent}18`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: accent,
+        opacity: hovered ? 1 : 0.75,
+        transition: 'opacity 140ms ease',
+        flexShrink: 0,
+      }}>
+        {icon}
+      </div>
+      <div style={{ fontSize: 11, color: hovered ? 'var(--text-primary)' : 'var(--text-secondary)', transition: 'color 140ms ease', whiteSpace: 'nowrap' }}>
+        {title}
+      </div>
+      {stat && (
+        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{stat}</div>
+      )}
+    </button>
+  )
+}
+
 // ── Campaign Detail Page ───────────────────────────────────────────────────────
 
 export default function CampaignDetailPage() {
@@ -2069,6 +2076,7 @@ export default function CampaignDetailPage() {
     return <SessionsView onBack={() => setSubView('hub')} />
   }
 
+  const showRightPanels = hubPanels.recentlyUpdated || hubPanels.activeQuests || hubPanels.articlesByType
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
@@ -2087,73 +2095,75 @@ export default function CampaignDetailPage() {
       </div>
 
       {/* Scrollable body */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '28px 40px 40px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '24px 36px 20px' }}>
 
+        {/* Top row: map left, panels right */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: hubPanels.worldMap && showRightPanels ? '1fr 290px' : '1fr',
+          gap: 16,
+          marginBottom: 16,
+          alignItems: 'start',
+        }}>
+          {hubPanels.worldMap && <HubWorldMap />}
+          {showRightPanels && (
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: 12,
+              maxHeight: hubPanels.worldMap ? 520 : undefined,
+              overflowY: 'auto',
+              paddingRight: 2,
+            }}>
+              {hubPanels.activeQuests && <ActiveQuestsPanel />}
+              {hubPanels.recentlyUpdated && <RecentlyUpdatedPanel />}
+              {hubPanels.articlesByType && <ArticlesByTypePanel />}
+            </div>
+          )}
+        </div>
 
-        {/* World map embedded */}
-        {hubPanels.worldMap && <HubWorldMap />}
-
-        {/* Dashboard panels */}
-        {(hubPanels.recentlyUpdated || hubPanels.articlesByType || hubPanels.sessionTimeline || hubPanels.activeQuests) && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14, marginBottom: 28 }}>
-            {hubPanels.recentlyUpdated && <RecentlyUpdatedPanel />}
-            {hubPanels.activeQuests && <ActiveQuestsPanel />}
-            {hubPanels.articlesByType && <ArticlesByTypePanel />}
-            {hubPanels.sessionTimeline && (
-              <div style={{ gridColumn: '1 / -1' }}>
-                <TimelineEmbed />
-              </div>
-            )}
+        {/* Timeline full-width */}
+        {hubPanels.sessionTimeline && (
+          <div style={{ marginBottom: 8 }}>
+            <TimelineEmbed />
           </div>
         )}
+      </div>
 
-        {/* Hub cards */}
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: 16 }}>
-          Where to?
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
-          <HubCard
-            icon={<Scroll size={20} />} title="Sessions"
-            description="Plan and run your sessions, manage maps, points of interest, and combat encounters."
-            stat={sessions.length > 0 ? `${sessions.length} session${sessions.length !== 1 ? 's' : ''}` : undefined}
-            onClick={() => setSubView('sessions')} accent="var(--gold)"
-          />
-          <HubCard
-            icon={<BookOpen size={20} />} title="Wiki"
-            description="Browse and edit your campaign compendium — characters, locations, factions, lore, and more."
-            stat={articleCount > 0 ? `${articleCount} article${articleCount !== 1 ? 's' : ''}` : undefined}
-            onClick={() => setView('wiki')} accent="#5b9fe8"
-          />
-          <HubCard
-            icon={<Sparkles size={20} />} title="DM Notes"
-            description="A freeform scratchpad with wiki, session, and spell links for planning on the fly."
-            stat={noteCount > 0 ? `${noteCount} note${noteCount !== 1 ? 's' : ''}` : undefined}
-            onClick={() => setView('dm-notes')} accent="#9b7de8"
-          />
-          <HubCard
-            icon={<ShoppingBag size={20} />} title="Loot Tables"
-            description="Manage reusable loot tables for creatures and vendors. Edit master tables that update all references live."
-            stat={lootCount > 0 ? `${lootCount} table${lootCount !== 1 ? 's' : ''}` : undefined}
-            onClick={() => setView('loot-tables')} accent="#49c185"
-          />
-          <HubCard
-            icon={<Network size={20} />} title="Relations"
-            description="Map relationships between characters, factions, and entities. Build family trees, hierarchies, and political webs."
-            stat={relationsCount > 0 ? `${relationsCount} web${relationsCount !== 1 ? 's' : ''}` : undefined}
-            onClick={() => setView('relations')} accent="#b07de8"
-          />
-          <HubCard
-            icon={<Clock size={20} />} title="Timeline"
-            description="Visualise your campaign history — arc spans, sessions, and world events on a scrollable in-world timeline."
-            onClick={() => setView('timeline')} accent="#5bbfb0"
-          />
-          <HubCard
-            icon={<Music2 size={20} />} title="Soundboard"
-            description="Manage sound boards for live sessions — ambient loops, music tracks, and one-shot effects with hotkeys."
-            stat={soundboardCount > 0 ? `${soundboardCount} board${soundboardCount !== 1 ? 's' : ''}` : undefined}
-            onClick={() => setView('soundboard')} accent="#3b82f6"
-          />
-        </div>
+      {/* Nav dock */}
+      <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', padding: '14px 36px 16px', display: 'flex', gap: 10 }}>
+        <NavDockCard
+          icon={<Scroll size={16} />} title="Sessions"
+          stat={sessions.length > 0 ? `${sessions.length} session${sessions.length !== 1 ? 's' : ''}` : undefined}
+          onClick={() => setSubView('sessions')} accent="var(--gold)"
+        />
+        <NavDockCard
+          icon={<BookOpen size={16} />} title="Wiki"
+          stat={articleCount > 0 ? `${articleCount} article${articleCount !== 1 ? 's' : ''}` : undefined}
+          onClick={() => setView('wiki')} accent="#5b9fe8"
+        />
+        <NavDockCard
+          icon={<Sparkles size={16} />} title="DM Notes"
+          stat={noteCount > 0 ? `${noteCount} note${noteCount !== 1 ? 's' : ''}` : undefined}
+          onClick={() => setView('dm-notes')} accent="#9b7de8"
+        />
+        <NavDockCard
+          icon={<ShoppingBag size={16} />} title="Loot Tables"
+          stat={lootCount > 0 ? `${lootCount} table${lootCount !== 1 ? 's' : ''}` : undefined}
+          onClick={() => setView('loot-tables')} accent="#49c185"
+        />
+        <NavDockCard
+          icon={<Network size={16} />} title="Relations"
+          stat={relationsCount > 0 ? `${relationsCount} web${relationsCount !== 1 ? 's' : ''}` : undefined}
+          onClick={() => setView('relations')} accent="#b07de8"
+        />
+        <NavDockCard
+          icon={<Clock size={16} />} title="Timeline"
+          onClick={() => setView('timeline')} accent="#5bbfb0"
+        />
+        <NavDockCard
+          icon={<Music2 size={16} />} title="Soundboard"
+          stat={soundboardCount > 0 ? `${soundboardCount} board${soundboardCount !== 1 ? 's' : ''}` : undefined}
+          onClick={() => setView('soundboard')} accent="#3b82f6"
+        />
       </div>
     </div>
   )

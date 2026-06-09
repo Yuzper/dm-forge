@@ -3,6 +3,8 @@ import { create } from 'zustand'
 import type { Campaign, Session, Arc, GameMap, POI, Article, ArticleSummary, ArticleType } from '../types'
 import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
 import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
+import { applyTheme, getStoredTheme, applyTextTheme, getStoredTextTheme } from '../constants/themes'
+import type { ThemeKey, TextThemeKey } from '../constants/themes'
 
 function getStarterMonsters(system: string) {
   if (system === 'D&D 5e 2014') return MONSTERS_2014
@@ -140,6 +142,10 @@ interface AppStore {
   // UI Preferences
   bgStyle: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood'
   setBgStyle: (s: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood') => void
+  colorTheme: ThemeKey
+  setColorTheme: (key: ThemeKey) => void
+  textTheme: TextThemeKey
+  setTextTheme: (key: TextThemeKey) => void
 
   // Feature hints — a floating widget shows the hint for the current context.
   showHints: boolean
@@ -185,6 +191,21 @@ export const useStore = create<AppStore>((set, get) => ({
 
   bgStyle: (localStorage.getItem('bgStyle') as AppStore['bgStyle']) || 'none',
   setBgStyle: (bgStyle) => { localStorage.setItem('bgStyle', bgStyle); set({ bgStyle }) },
+  colorTheme: getStoredTheme(),
+  setColorTheme: (key) => {
+    localStorage.setItem('dmforge:color-theme', key)
+    applyTheme(key)
+    // applyTheme resets the text vars to the theme's defaults — re-apply the
+    // independent text-colour override on top so it survives a theme switch.
+    applyTextTheme(get().textTheme)
+    set({ colorTheme: key })
+  },
+  textTheme: getStoredTextTheme(),
+  setTextTheme: (key) => {
+    localStorage.setItem('dmforge:text-theme', key)
+    applyTextTheme(key)
+    set({ textTheme: key })
+  },
 
   showHints: localStorage.getItem('dmforge:show-hints') !== 'false',
   setShowHints: (v) => {

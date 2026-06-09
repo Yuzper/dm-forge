@@ -30,7 +30,7 @@ function RenameMapModal({ map, onSave, onClose }: { map: GameMap; onSave: (name:
 
 // ── Tab context menu ──────────────────────────────────────────────────────────
 
-function MapTabMenu({ map, onRename, onDelete }: { map: GameMap; onRename: () => void; onDelete: () => void }) {
+function MapTabMenu({ map: _map, onRename, onDelete }: { map: GameMap; onRename: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
   const menuRef = useRef<HTMLDivElement>(null)

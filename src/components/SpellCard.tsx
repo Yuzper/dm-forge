@@ -84,13 +84,17 @@ export function SpellCard({ spell, x, y, onMouseEnter, onMouseLeave }: {
           {([['Casting Time', spell.casting_time], ['Range', spell.range], ['Duration', spell.duration], ['Components', spell.components]] as const).map(([label, val]) => val ? (
             <div key={label} style={{ padding: '6px 12px', borderBottom: '1px solid var(--border-light)', borderRight: '1px solid var(--border-light)' }}>
               <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>{label}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{val}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                {label === 'Components' && val.length > 60
+                  ? val.replace(/\s*\(.*\)/, '') + (val.includes('(') ? ' (…)' : '')
+                  : val}
+              </div>
             </div>
           ) : null)}
         </div>
       )}
       <div style={{ padding: '10px 14px', maxHeight: 160, overflowY: 'auto' }}>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
           {highlightSpellText(spell.desc)}
         </div>
         {spell.higher_levels && (

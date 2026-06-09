@@ -2,6 +2,12 @@
 import { useEffect } from 'react'
 import type React from 'react'
 import { useStore } from './store/store'
+import { applyTheme, getStoredTheme, applyTextTheme, getStoredTextTheme } from './constants/themes'
+
+// Apply saved colour + text themes before the first render so there's no flash.
+// Text theme applies after the colour theme so it overrides the theme's text vars.
+applyTheme(getStoredTheme())
+applyTextTheme(getStoredTextTheme())
 import Sidebar from './components/Sidebar'
 import CampaignsPage from './pages/CampaignsPage'
 import CampaignDetailPage from './pages/CampaignDetailPage'
@@ -65,7 +71,7 @@ function bgStyleCSS(style: string): React.CSSProperties {
   switch (style) {
     case 'parchment':
       return {
-        background: '#0d0b09',
+        background: 'var(--bg-base)',
         backgroundImage: [
           `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E")`,
         ].join(', '),
@@ -73,11 +79,11 @@ function bgStyleCSS(style: string): React.CSSProperties {
       }
     case 'vignette':
       return {
-        background: 'radial-gradient(ellipse at 50% 45%, #1c160f 0%, #100d08 45%, #050403 100%)',
+        background: 'radial-gradient(ellipse at 50% 45%, var(--bg-elevated) 0%, var(--bg-surface) 45%, var(--bg-base) 100%)',
       }
     case 'stone':
       return {
-        backgroundColor: '#0d0b09',
+        backgroundColor: 'var(--bg-base)',
         backgroundImage: [
           `repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,0.018) 39px, rgba(255,255,255,0.018) 40px)`,
           `repeating-linear-gradient(90deg, transparent, transparent 59px, rgba(255,255,255,0.018) 59px, rgba(255,255,255,0.018) 60px)`,
@@ -86,10 +92,10 @@ function bgStyleCSS(style: string): React.CSSProperties {
       }
     case 'wood':
       return {
-        backgroundColor: '#0a0806',
+        backgroundColor: 'var(--bg-base)',
         backgroundImage: [
-          `repeating-linear-gradient(92deg, transparent 0px, rgba(200,168,75,0.012) 1px, transparent 2px, transparent 14px)`,
-          `repeating-linear-gradient(88deg, transparent 0px, rgba(180,140,60,0.01) 1px, transparent 3px, transparent 22px)`,
+          `repeating-linear-gradient(92deg, transparent 0px, rgba(255,255,255,0.02) 1px, transparent 2px, transparent 14px)`,
+          `repeating-linear-gradient(88deg, transparent 0px, rgba(255,255,255,0.015) 1px, transparent 3px, transparent 22px)`,
           `repeating-linear-gradient(90deg, rgba(0,0,0,0.12) 0px, transparent 1px, transparent 7px, rgba(0,0,0,0.06) 8px, transparent 9px, transparent 18px)`,
           `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.02 0.4' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E")`,
         ].join(', '),

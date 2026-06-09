@@ -2,13 +2,15 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store/store'
 import {
-  ChevronLeft, Map, Scroll, Download, Upload, Check,
-  AlertCircle, BookOpen, Clock, ArrowLeft, Timer,
-  FileText, Layers, Sparkles, ShoppingBag, Network, Paintbrush, Lightbulb, Music2,
+  ChevronLeft, Scroll, Download, Upload, Check,
+  AlertCircle, BookOpen, Clock, ArrowLeft,
+  FileText, Layers, Sparkles, ShoppingBag, Network, Paintbrush, Lightbulb, Music2, Palette, Type,
 } from 'lucide-react'
 import POIList from './POIList'
 import type { HistoryEntry } from '../store/store'
 import { StoreMapProvider } from '../context/MapContext'
+import { THEMES, TEXT_THEMES } from '../constants/themes'
+import type { ThemeKey, TextThemeKey } from '../constants/themes'
 
 function historyIcon(entry: HistoryEntry) {
   switch (entry.type) {
@@ -261,6 +263,8 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div style={{ padding: '12px 12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <ThemePicker />
+        <TextPicker />
         <BackgroundPicker />
         <HintsToggle />
         <BackupButton />
@@ -274,12 +278,174 @@ export default function Sidebar() {
 type BgStyle = 'none' | 'parchment' | 'vignette' | 'stone' | 'wood'
 
 const BG_OPTIONS: { value: BgStyle; label: string; preview: string }[] = [
-  { value: 'none',      label: 'None',      preview: '#0d0b09' },
-  { value: 'parchment', label: 'Parchment', preview: 'repeating-linear-gradient(45deg, #141008 0px, #1a1509 4px, #0d0b06 8px)' },
-  { value: 'vignette',  label: 'Vignette',  preview: 'radial-gradient(circle, #1c160f 0%, #050403 100%)' },
-  { value: 'stone',     label: 'Stone',     preview: 'repeating-linear-gradient(0deg, #0d0b09 0px, #0d0b09 9px, #111009 10px), repeating-linear-gradient(90deg, #0d0b09 0px, #0d0b09 14px, #111009 15px)' },
-  { value: 'wood',      label: 'Wood',      preview: 'repeating-linear-gradient(90deg, #0a0806 0px, #100c08 2px, #0a0806 4px, #0a0806 10px)' },
+  { value: 'none',      label: 'None',      preview: 'var(--bg-base)' },
+  { value: 'parchment', label: 'Noise',     preview: 'var(--bg-elevated)' },
+  { value: 'vignette',  label: 'Vignette',  preview: 'radial-gradient(circle, var(--bg-elevated) 0%, var(--bg-base) 100%)' },
+  { value: 'stone',     label: 'Stone',     preview: 'repeating-linear-gradient(0deg, var(--bg-base) 0px, var(--bg-base) 9px, var(--bg-surface) 10px), repeating-linear-gradient(90deg, var(--bg-base) 0px, var(--bg-base) 14px, var(--bg-surface) 15px)' },
+  { value: 'wood',      label: 'Wood',      preview: 'repeating-linear-gradient(90deg, var(--bg-base) 0px, var(--bg-surface) 2px, var(--bg-base) 4px, var(--bg-base) 10px)' },
 ]
+
+function ThemePicker() {
+  const { colorTheme, setColorTheme } = useStore()
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+          padding: '7px 10px', background: open ? 'var(--bg-elevated)' : 'transparent',
+          border: `1px solid ${open ? 'var(--border-gold)' : 'var(--border-light)'}`,
+          borderRadius: 'var(--radius-sm)',
+          color: open ? 'var(--gold)' : 'var(--text-muted)',
+          fontSize: 12, fontFamily: 'var(--font-ui)',
+          cursor: 'pointer', transition: 'all var(--transition)',
+        }}
+        onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
+        onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+      >
+        <Palette size={13} />
+        Theme
+        <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>{THEMES[colorTheme].label}</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, right: 0,
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border-light)',
+          borderRadius: 'var(--radius-md)',
+          padding: '10px',
+          boxShadow: 'var(--shadow-lg)',
+          zIndex: 50,
+        }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 2 }}>
+            Colour theme
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+            {(Object.keys(THEMES) as ThemeKey[]).map(key => {
+              const t = THEMES[key]
+              const active = colorTheme === key
+              return (
+                <button
+                  key={key}
+                  title={t.label}
+                  onClick={() => { setColorTheme(key); setOpen(false) }}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '4px 2px',
+                    borderRadius: 'var(--radius-sm)',
+                  }}
+                >
+                  {/* Swatch: bg colour with accent dot */}
+                  <div style={{
+                    width: 36, height: 28,
+                    borderRadius: 4,
+                    background: t.bgPreview,
+                    border: `2px solid ${active ? 'var(--gold)' : 'var(--border-light)'}`,
+                    boxShadow: active ? 'var(--shadow-gold)' : 'none',
+                    transition: 'border-color var(--transition)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <div style={{
+                      width: 10, height: 10, borderRadius: '50%',
+                      background: t.accentPreview,
+                      boxShadow: `0 0 6px ${t.accentPreview}88`,
+                    }} />
+                  </div>
+                  <span style={{ fontSize: 9, color: active ? 'var(--gold)' : 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                    {t.label}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TextPicker() {
+  const { textTheme, setTextTheme } = useStore()
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+          padding: '7px 10px', background: open ? 'var(--bg-elevated)' : 'transparent',
+          border: `1px solid ${open ? 'var(--border-gold)' : 'var(--border-light)'}`,
+          borderRadius: 'var(--radius-sm)',
+          color: open ? 'var(--gold)' : 'var(--text-muted)',
+          fontSize: 12, fontFamily: 'var(--font-ui)',
+          cursor: 'pointer', transition: 'all var(--transition)',
+        }}
+        onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
+        onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+      >
+        <Type size={13} />
+        Text
+        <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>{TEXT_THEMES[textTheme].label}</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, right: 0,
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border-light)',
+          borderRadius: 'var(--radius-md)',
+          padding: '10px',
+          boxShadow: 'var(--shadow-lg)',
+          zIndex: 50,
+        }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 2 }}>
+            Text colour
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 6 }}>
+            {(Object.keys(TEXT_THEMES) as TextThemeKey[]).map(key => {
+              const t = TEXT_THEMES[key]
+              const active = textTheme === key
+              return (
+                <button
+                  key={key}
+                  title={t.label}
+                  onClick={() => { setTextTheme(key); setOpen(false) }}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '4px 2px',
+                    borderRadius: 'var(--radius-sm)',
+                  }}
+                >
+                  {/* Swatch: 'Aa' letterform in the palette's primary colour on a dark tile */}
+                  <div style={{
+                    width: 30, height: 28,
+                    borderRadius: 4,
+                    background: 'var(--bg-base)',
+                    border: `2px solid ${active ? 'var(--gold)' : 'var(--border-light)'}`,
+                    boxShadow: active ? 'var(--shadow-gold)' : 'none',
+                    transition: 'border-color var(--transition)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontFamily: 'var(--font-display)', fontSize: 14, lineHeight: 1,
+                    color: t.preview,
+                  }}>
+                    Aa
+                  </div>
+                  <span style={{ fontSize: 9, color: active ? 'var(--gold)' : 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                    {t.label}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function BackgroundPicker() {
   const { bgStyle, setBgStyle } = useStore()

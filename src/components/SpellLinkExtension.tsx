@@ -44,7 +44,7 @@ export const SpellLink = Mark.create({
       // ── Fire DOM events for live @ search ────────────────────────────────
       new Plugin({
         key: spellSearchKey,
-        view(editorView) {
+        view(_editorView) {
           return {
             update(view) {
               const { from } = view.state.selection

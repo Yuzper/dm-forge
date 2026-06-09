@@ -1,14 +1,6 @@
 
 Data:
- - Rest of spells 2014 (7-9) and 2024
-
-
-Good — that simplifies things. Dropping the player-facing/second-window ideas entirely (DM-only), and your Sessions tab is the live-run surface, so I won't build a competing "run mode." That leaves your three: global search, calendar, encounter builder. Here's how I'd scope each so we can sequence them.
-
-Global search (command palette)
-Cmd/Ctrl+K overlay; fuzzy-search across articles, sessions, relation webs, loot tables — and optionally run actions ("New NPC", "Open soundboard").
-Reuses your existing setView/setCampaignSubView navigation and the data already in the store. No schema changes.
-Smallest, self-contained, biggest daily payoff. ~1 sitting.
+ - Rest of spells 2014 (7-9)
 
 Encounter builder
 Pick creatures (from your creature articles) → see XP total vs party difficulty thresholds (party size + level config), then push the encounter straight into the combat tracker.

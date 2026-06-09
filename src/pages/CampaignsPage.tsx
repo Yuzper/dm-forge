@@ -6,8 +6,15 @@ import type { Campaign } from '../types'
 import { useMenuClose } from '../hooks/useMenuClose'
 import Modal from '../components/Modal'
 import EmptyState from '../components/EmptyState'
+import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
+import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
 
 const SYSTEMS = ['D&D 5e 2014', 'D&D 5e 2024', 'Other']
+
+const MONSTER_COUNTS: Record<string, number> = {
+  'D&D 5e 2014': MONSTERS_2014.length,
+  'D&D 5e 2024': MONSTERS_2024.length,
+}
 
 function CreateCampaignModal({ onClose }: { onClose: () => void }) {
   const { createCampaign } = useStore()
@@ -82,7 +89,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
               {system === 'Other'
                 ? 'Not available for custom systems'
-                : `Adds 10 standard ${system} creatures to your wiki`}
+                : `Adds ${MONSTER_COUNTS[system]} creature articles to your wiki`}
             </div>
           </div>
         </label>

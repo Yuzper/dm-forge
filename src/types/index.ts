@@ -249,6 +249,8 @@ export interface LootItem {
   description: string
   quantity: string
   chance: number
+  price?: string
+  weight?: string
 }
 
 export interface LootTable {

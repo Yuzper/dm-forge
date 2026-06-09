@@ -2,11 +2,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useStore } from '../store/store'
 import { useMapContext } from '../context/MapContext'
-import { X, Trash2, Plus, Search, Save, Dices } from 'lucide-react'
+import { X, Plus, Search, Save, Dices } from 'lucide-react'
 import RichEditor from './RichEditor'
 import CombatantRow from './CombatantRow'
 import EncounterBalance from './EncounterBalance'
-import type { CombatEncounter, CombatCreature, ArticleSummary, LootItem } from '../types'
+import type { CombatEncounter, CombatCreature, LootItem } from '../types'
 import { parseStatBlock, calcHpAverage, rollHp } from '../types'
 import { parseCreatureVariants } from '../utils/creatureVariants'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
@@ -44,6 +44,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
       setHintContext('combat-tracker')
       return () => setHintContext('session')
     }
+    return undefined
   }, [readMode, activeTab, setHintContext])
 
   // ── Picker state ───────────────────────────────────────────────────────────

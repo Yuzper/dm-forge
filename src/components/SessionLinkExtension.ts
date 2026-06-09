@@ -94,7 +94,7 @@ export const SessionLink = Mark.create({
       // ── Fire DOM events for live \\ search ───────────────────────────────
       new Plugin({
         key: sessionSearchKey,
-        view(editorView) {
+        view(_editorView) {
           return {
             update(view) {
               const { from } = view.state.selection

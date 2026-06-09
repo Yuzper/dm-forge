@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../store/store'
 import {
   ShoppingBag, Plus, Trash2, ArrowLeft, RotateCcw,
-  ChevronDown, ChevronUp, Pencil, Check,
+  ChevronDown, ChevronUp, Check,
 } from 'lucide-react'
 import type { MasterLootTable, LootTableCategory, LootItem } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
@@ -354,7 +354,7 @@ export default function LootTablesPage() {
   const [tables, setTables] = useState<MasterLootTable[]>([])
   const [activeTable, setActiveTable] = useState<MasterLootTable | null>(null)
   const [showCreate, setShowCreate] = useState(false)
-  const [preselectedCategory, setPreselectedCategory] = useState<LootTableCategory>('creature')
+  const [_preselectedCategory, setPreselectedCategory] = useState<LootTableCategory>('creature')
   const [resetting, setResetting] = useState(false)
 
   const loadTables = useCallback(async () => {

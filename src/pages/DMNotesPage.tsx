@@ -398,7 +398,16 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
   onFinishRename: (name: string) => void
   onChangeGroupColor: (color: string) => void
 }) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(`dmnotes:group-collapsed:${group.id}`) === '1' } catch { return false }
+  })
+  const toggleCollapsed = () => {
+    setCollapsed(v => {
+      const next = !v
+      try { localStorage.setItem(`dmnotes:group-collapsed:${group.id}`, next ? '1' : '0') } catch {}
+      return next
+    })
+  }
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [renameValue, setRenameValue] = useState(group.name)
   const renameRef = useRef<HTMLInputElement>(null)
@@ -448,7 +457,7 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
           <GripVertical size={12} />
         </span>
         <button
-          onClick={() => setCollapsed(v => !v)}
+          onClick={toggleCollapsed}
           style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', flex: 1, textAlign: 'left', padding: 0, minWidth: 0 }}
         >
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: group.color, flexShrink: 0 }} />

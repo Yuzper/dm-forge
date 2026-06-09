@@ -84,7 +84,7 @@ export const WikiLink = Mark.create({
       // ── Fire DOM events for live [[ search ───────────────────────────────
       new Plugin({
         key: wikiSearchKey,
-        view(editorView) {
+        view(_editorView) {
           return {
             update(view) {
               const { from } = view.state.selection
@@ -115,7 +115,7 @@ export const WikiLink = Mark.create({
         key: wikiBrokenKey,
         state: {
           init() { return DecorationSet.empty },
-          apply(tr, _old, _oldState, newState) {
+          apply(_tr, _old, _oldState, newState) {
             const articles = useStore.getState().articles
             const knownTitles = new Set(articles.map(a => a.title.toLowerCase()))
             const decorations: Decoration[] = []

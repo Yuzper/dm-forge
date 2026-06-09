@@ -86,7 +86,7 @@ function EntrySection({ title, entries }: { title: string; entries: { name: stri
   )
 }
 
-export default function StatBlockView({ statblock: sb, name, articleType }: Props) {
+export default function StatBlockView({ statblock: sb, name, articleType: _articleType }: Props) {
   const spellMap = new Map(spellsAll.map(s => [s.name, s]))
   return (
     <div style={{

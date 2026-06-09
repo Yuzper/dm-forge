@@ -3,7 +3,6 @@
 
 import { useState, useCallback } from 'react'
 import { Plus, ChevronUp, ChevronDown, Trash2, ChevronRight, ChevronDown as Expand } from 'lucide-react'
-import { useStore } from '../store/store'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -222,7 +221,7 @@ function ProgressBar({ steps }: { steps: Substep[] }) {
 
 // ── Main Export ────────────────────────────────────────────────────────────────
 
-export default function QuestSubstepsSection({ articleId, substeps, readMode, onChange }: {
+export default function QuestSubstepsSection({ articleId: _articleId, substeps, readMode, onChange }: {
   articleId: number
   substeps: Substep[]
   readMode: boolean

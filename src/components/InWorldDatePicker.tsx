@@ -1,10 +1,10 @@
 // path: src/components/InWorldDatePicker.tsx
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
 import { Calendar, X, Trash2 } from 'lucide-react'
 import {
-  ZoomLevel, ZOOM_LABEL, ZOOM_BIN, ZOOM_ORDER, YEAR_LENGTH,
-  isYearMode, dayToWorldYear, worldYearToDay, computeBins,
+  ZoomLevel, ZOOM_LABEL, ZOOM_ORDER, YEAR_LENGTH,
+  isYearMode, dayToWorldYear, computeBins,
   makePickerAxisGeo, DEFAULT_BASE_YEAR,
 } from '../utils/timelineGeometry'
 
@@ -89,7 +89,7 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
   const MIN_DAY = Math.min(...allDays, 1) - 5
   const MAX_DAY = Math.max(...allDays, yearLength + 10) + 10
   const geo = makePickerAxisGeo(zoom, PAD_L, MIN_DAY, PX_PER_DAY, baseYear)
-  const { dx, xToDay, worldYearToX, canvasWidth } = geo
+  const { dx, xToDay, worldYearToX } = geo
   const W_DAY = PAD_L + (MAX_DAY - MIN_DAY) * PX_PER_DAY + PAD_R
   const W_YEAR = 680
   const W = isYearMode(zoom) ? W_YEAR : W_DAY
@@ -345,7 +345,6 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
 // ── Context label ───────────────────────────────────────────────────────────
 
 function contextLabel(day: number, sessions: any[], arcs: any[]): string {
-  const arcMap = Object.fromEntries(arcs.map((a: any) => [a.id, a]))
   const dated = sessions
     .filter((s: any) => s.in_world_day)
     .sort((a: any, b: any) => a.in_world_day - b.in_world_day)

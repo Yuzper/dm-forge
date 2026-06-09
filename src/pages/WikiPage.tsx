@@ -796,7 +796,7 @@ const LOOT_TYPES: ArticleType[] = ['character', 'playerCharacter']
 // ── Creature Variants Section ──────────────────────────────────────────────────
 
 function CreatureVariantsSection({
-  variants, masterTables, readMode, articleTitle, lootSuggestions, onChange,
+  variants, masterTables, readMode, articleTitle: _articleTitle, lootSuggestions, onChange,
 }: {
   variants: CreatureVariant[]
   masterTables: MasterLootTable[]
