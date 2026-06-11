@@ -116,7 +116,7 @@ export const WikiLink = Mark.create({
         state: {
           init() { return DecorationSet.empty },
           apply(_tr, _old, _oldState, newState) {
-            const articles = useStore.getState().articles
+            const articles = useStore.getState().allArticles
             const knownTitles = new Set(articles.map(a => a.title.toLowerCase()))
             const decorations: Decoration[] = []
 

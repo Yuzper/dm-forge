@@ -104,6 +104,10 @@ interface AppStore {
 
   // Wiki state
   articles: ArticleSummary[]
+  // Unfiltered list of every article in the current campaign, regardless of
+  // wikiFilter. Used by editor features (wiki-link autocomplete, item hover
+  // cards) that must be able to reference any article type.
+  allArticles: ArticleSummary[]
   currentArticle: Article | null
   wikiFilter: ArticleType | 'all'
   wikiSearch: string
@@ -111,6 +115,7 @@ interface AppStore {
   wikiShowTags: boolean
   wikiSearchFields: { title: boolean; tags: boolean }
   loadArticles: () => Promise<void>
+  loadAllArticles: () => Promise<void>
   openArticle: (id: number) => Promise<void>
   selectArticle: (a: Article | null) => void
   navigateToArticleByTitle: (title: string) => Promise<void>
@@ -279,10 +284,11 @@ export const useStore = create<AppStore>((set, get) => ({
           arcs: [],
           maps: [], currentMap: null,
           pois: [], selectedPOI: null,
-          articles: [], currentArticle: null,
+          articles: [], allArticles: [], currentArticle: null,
         })
         get().loadSessions(entry.campaign.id)
         get().loadArcs(entry.campaign.id)
+        get().loadAllArticles()
         break
 
       case 'session':
@@ -295,6 +301,7 @@ export const useStore = create<AppStore>((set, get) => ({
         })
         get().loadMaps(entry.session.id)
         get().loadArticles()
+        get().loadAllArticles()
         break
 
       case 'wiki':
@@ -304,6 +311,7 @@ export const useStore = create<AppStore>((set, get) => ({
           wikiFilter: 'all', wikiSearch: '',
         })
         get().loadArticles()
+        get().loadAllArticles()
         break
 
       case 'article': {
@@ -315,6 +323,7 @@ export const useStore = create<AppStore>((set, get) => ({
           wikiFilter: 'all', wikiSearch: '',
         })
         if (get().articles.length === 0) await get().loadArticles()
+        get().loadAllArticles()
         break
       }
 
@@ -359,13 +368,14 @@ export const useStore = create<AppStore>((set, get) => ({
       arcs: [],
       maps: [], currentMap: null,
       pois: [], selectedPOI: null,
-      articles: [], currentArticle: null,
+      articles: [], allArticles: [], currentArticle: null,
       navigationHistory: pushEntry(s.navigationHistory, {
         type: 'campaign', label: campaign.name, campaign,
       }),
     }))
     get().loadSessions(campaign.id)
     get().loadArcs(campaign.id)
+    get().loadAllArticles()
   },
 
   createCampaign: async (data, seedMonsters = true) => {
@@ -702,6 +712,7 @@ export const useStore = create<AppStore>((set, get) => ({
   // ── Wiki ────────────────────────────────────────────────────────────────────
 
   articles: [],
+  allArticles: [],
   currentArticle: null,
   wikiFilter: 'all',
   wikiSearch: '',
@@ -721,6 +732,13 @@ export const useStore = create<AppStore>((set, get) => ({
       tag: wikiTagFilter || undefined,
     })
     set({ articles })
+  },
+
+  loadAllArticles: async () => {
+    const { currentCampaign } = get()
+    if (!currentCampaign) { set({ allArticles: [] }); return }
+    const allArticles = await window.api.getArticlesList({ campaignId: currentCampaign.id })
+    set({ allArticles })
   },
 
   openArticle: async (id) => {
@@ -764,24 +782,26 @@ export const useStore = create<AppStore>((set, get) => ({
     const article = await window.api.createArticle({ campaign_id: currentCampaign.id, ...data })
     set({ wikiFilter: 'all', wikiSearch: '', currentArticle: article })
     const articles = await window.api.getArticlesList({ campaignId: currentCampaign.id })
-    set({ articles })
+    set({ articles, allArticles: articles })
     return article
   },
 
   updateArticle: async (id, data) => {
     const updated = await window.api.updateArticle(id, data)
+    const patch = (a: ArticleSummary) => a.id === id ? {
+      ...a,
+      title:          updated.title,
+      article_type:   updated.article_type,
+      tags:           updated.tags,
+      cover_image:    updated.cover_image,
+      tracks:         updated.tracks,
+      loot_table:     updated.loot_table,
+      loot_table_id:  updated.loot_table_id,
+      updated_at:     updated.updated_at,
+    } : a
     set(s => ({
-      articles: s.articles.map(a => a.id === id ? {
-        ...a,
-        title:          updated.title,
-        article_type:   updated.article_type,
-        tags:           updated.tags,
-        cover_image:    updated.cover_image,
-        tracks:         updated.tracks,
-        loot_table:     updated.loot_table,
-        loot_table_id:  updated.loot_table_id,
-        updated_at:     updated.updated_at,
-      } : a),
+      articles: s.articles.map(patch),
+      allArticles: s.allArticles.map(patch),
       currentArticle: s.currentArticle?.id === id ? updated : s.currentArticle,
       navigationHistory: s.navigationHistory.map(e =>
         e.type === 'article' && e.articleId === id
@@ -795,6 +815,7 @@ export const useStore = create<AppStore>((set, get) => ({
     await window.api.deleteArticle(id)
     set(s => ({
       articles: s.articles.filter(a => a.id !== id),
+      allArticles: s.allArticles.filter(a => a.id !== id),
       currentArticle: null,
       navigationHistory: s.navigationHistory.filter(e => !(e.type === 'article' && e.articleId === id)),
     }))

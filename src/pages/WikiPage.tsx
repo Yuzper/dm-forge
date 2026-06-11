@@ -277,10 +277,10 @@ function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions }: 
 
 // ─── Create Modal ──────────────────────────────────────────────────────────────
 
-function CreateArticleModal({ onClose }: { onClose: () => void }) {
+function CreateArticleModal({ onClose, initialType }: { onClose: () => void; initialType?: ArticleType }) {
   const { createArticle } = useStore()
   const [title, setTitle] = useState('')
-  const [type, setType] = useState<ArticleType>('location')
+  const [type, setType] = useState<ArticleType>(initialType || 'location')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -1903,7 +1903,12 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
         )}
       </div>
 
-      {showCreate && <CreateArticleModal onClose={() => setShowCreate(false)} />}
+      {showCreate && (
+        <CreateArticleModal
+          onClose={() => setShowCreate(false)}
+          initialType={wikiFilter !== 'all' ? wikiFilter : undefined}
+        />
+      )}
     </div>
   )
 }

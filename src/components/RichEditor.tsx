@@ -217,11 +217,11 @@ function WikiLinkPopover({ query, coords, onSelect, onClose }: {
   onSelect: (title: string) => void
   onClose: () => void
 }) {
-  const { articles } = useStore()
+  const { allArticles } = useStore()
   const ref = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
 
-  const filtered = articles.filter(a =>
+  const filtered = allArticles.filter(a =>
     a.title.toLowerCase().includes(query.toLowerCase())
   )
 
@@ -302,7 +302,7 @@ function WikiLinkToolbarPopover({ onSelect, onClose }: {
   onSelect: (title: string) => void
   onClose: () => void
 }) {
-  const { articles } = useStore()
+  const { allArticles } = useStore()
   const [search, setSearch] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const ref = useRef<HTMLDivElement>(null)
@@ -317,7 +317,7 @@ function WikiLinkToolbarPopover({ onSelect, onClose }: {
     return () => document.removeEventListener('mousedown', handler)
   }, [onClose])
 
-  const filtered = articles.filter(a =>
+  const filtered = allArticles.filter(a =>
     a.title.toLowerCase().includes(search.toLowerCase())
   )
 
@@ -588,8 +588,8 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
   const scheduleItemClose = () => { cancelItemClose(); itemHoverTimer.current = setTimeout(() => setHoveredItem(null), 150) }
   const showItemCard = (title: string, x: number, y: number) => {
     // Read live store state — this runs from a mouseover listener bound once,
-    // so closing over render-time `articles` would go stale.
-    const { articles: liveArticles, currentCampaign: liveCampaign } = useStore.getState()
+    // so closing over render-time `allArticles` would go stale.
+    const { allArticles: liveArticles, currentCampaign: liveCampaign } = useStore.getState()
     const summary = liveArticles.find(a => a.title === title && a.article_type === 'item')
     if (!summary) { scheduleItemClose(); return }
     cancelItemClose()

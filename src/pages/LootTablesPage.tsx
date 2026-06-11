@@ -28,14 +28,15 @@ function categoryLabel(cat: LootTableCategory) {
 
 // ── Create Modal ───────────────────────────────────────────────────────────────
 
-function CreateTableModal({ campaignId, onClose, onCreate }: {
+function CreateTableModal({ campaignId, onClose, onCreate, initialCategory }: {
   campaignId: number
   onClose: () => void
   onCreate: (t: MasterLootTable) => void
+  initialCategory?: LootTableCategory
 }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [category, setCategory] = useState<LootTableCategory>('creature')
+  const [category, setCategory] = useState<LootTableCategory>(initialCategory || 'creature')
   const [saving, setSaving] = useState(false)
 
   const handleSubmit = async () => {
@@ -103,7 +104,7 @@ function TableEditorPanel({ table, onUpdate, onDelete }: {
   onUpdate: (updated: MasterLootTable) => void
   onDelete: () => void
 }) {
-  const { articles } = useStore()
+  const { allArticles } = useStore()
   const { confirming, trigger } = useConfirmDelete()
 
   const [name, setName] = useState(table.name)
@@ -145,7 +146,7 @@ function TableEditorPanel({ table, onUpdate, onDelete }: {
     return () => clearTimeout(t)
   }, [dirty, name, description, category, items])
 
-  const lootSuggestions = articles
+  const lootSuggestions = allArticles
     .filter(a => ['item', 'artifact'].includes(a.article_type))
     .map(a => a.title)
 
@@ -354,7 +355,7 @@ export default function LootTablesPage() {
   const [tables, setTables] = useState<MasterLootTable[]>([])
   const [activeTable, setActiveTable] = useState<MasterLootTable | null>(null)
   const [showCreate, setShowCreate] = useState(false)
-  const [_preselectedCategory, setPreselectedCategory] = useState<LootTableCategory>('creature')
+  const [preselectedCategory, setPreselectedCategory] = useState<LootTableCategory>('creature')
   const [resetting, setResetting] = useState(false)
 
   const loadTables = useCallback(async () => {
@@ -524,6 +525,7 @@ export default function LootTablesPage() {
           campaignId={currentCampaign.id}
           onClose={() => setShowCreate(false)}
           onCreate={handleCreated}
+          initialCategory={preselectedCategory}
         />
       )}
     </div>
