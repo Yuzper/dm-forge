@@ -1,6 +1,11 @@
-
 Data:
  - Rest of spells 2014 (7-9)
+
+Add all tracks to filter options in relations.
+Search or alpabetical in species.
+
+
+
 
 Encounter builder
 Pick creatures (from your creature articles) → see XP total vs party difficulty thresholds (party size + level config), then push the encounter straight into the combat tracker.

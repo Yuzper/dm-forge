@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('api', {
                          ipcRenderer.invoke('articles:get-by-title', title, campaignId),
   getArticleBacklinks: (title: string, campaignId: number) =>
                          ipcRenderer.invoke('articles:get-backlinks', title, campaignId),
+  getArticlesHealth:   (campaignId: number) => ipcRenderer.invoke('articles:health', campaignId),
   createArticle:       (data: any)     => ipcRenderer.invoke('articles:create', data),
   updateArticle:       (id: number, data: any) => ipcRenderer.invoke('articles:update', id, data),
   deleteArticle:       (id: number)    => ipcRenderer.invoke('articles:delete', id),

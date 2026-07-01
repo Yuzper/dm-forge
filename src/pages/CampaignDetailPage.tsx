@@ -9,7 +9,7 @@ import {
   Maximize, Eye, Image as ImageIcon,
   PanelRight, ArrowUpToLine, Hammer, Music2,
 } from 'lucide-react'
-import type { Session, Arc, GameMap, POI } from '../types'
+import type { Session, Arc, GameMap, POI, WikiHealth } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 import { useMenuClose } from '../hooks/useMenuClose'
 import { parseDay } from '../utils/dates'
@@ -1729,11 +1729,11 @@ function SessionsView({ onBack }: { onBack: () => void }) {
 
 // ── Hub Settings ──────────────────────────────────────────────────────────────
 
-type HubPanelKey = 'worldMap' | 'recentlyUpdated' | 'articlesByType' | 'sessionTimeline' | 'activeQuests'
+type HubPanelKey = 'worldMap' | 'recentlyUpdated' | 'articlesByType' | 'sessionTimeline' | 'activeQuests' | 'wikiHealth'
 
 
 const HUB_PANEL_DEFAULTS: Record<HubPanelKey, boolean> = {
-  worldMap: true, recentlyUpdated: true, articlesByType: true, sessionTimeline: true, activeQuests: true,
+  worldMap: true, recentlyUpdated: true, articlesByType: true, sessionTimeline: true, activeQuests: true, wikiHealth: true,
 }
 
 function loadHubPanels(campaignId: number): Record<HubPanelKey, boolean> {
@@ -1754,6 +1754,7 @@ const PANEL_LABELS: Record<HubPanelKey, string> = {
   articlesByType: 'Articles by type',
   sessionTimeline: 'Session timeline',
   activeQuests: 'Active quests',
+  wikiHealth: 'Needs attention',
 }
 
 function HubSettingsMenu({ panels, onChange }: {
@@ -1941,6 +1942,109 @@ function ActiveQuestsPanel() {
   )
 }
 
+// ── Wiki Health Panel ──────────────────────────────────────────────────────────
+
+function WikiHealthPanel() {
+  const { currentCampaign, openArticle, setView } = useStore()
+  const [health, setHealth] = useState<WikiHealth | null>(null)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (!currentCampaign) return
+    window.api.getArticlesHealth(currentCampaign.id).then(setHealth)
+  }, [currentCampaign?.id])
+
+  if (!health) return null
+
+  const total = health.stubs.length + health.orphans.length + health.broken.length
+  const goToArticle = (id: number) => { openArticle(id); setView('wiki') }
+
+  const SECTION_LIMIT = 4
+  const section = (
+    key: string, label: string,
+    items: { render: () => React.ReactNode; onClick: () => void; itemKey: string | number }[],
+  ) => {
+    if (items.length === 0) return null
+    const shown = expanded[key] ? items : items.slice(0, SECTION_LIMIT)
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+          {label} · {items.length}
+        </div>
+        {shown.map(item => (
+          <button key={item.itemKey} onClick={item.onClick} className="hover-opacity"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+          >
+            {item.render()}
+          </button>
+        ))}
+        {items.length > SECTION_LIMIT && !expanded[key] && (
+          <button onClick={() => setExpanded(e => ({ ...e, [key]: true }))}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', padding: '2px 0' }}
+          >
+            +{items.length - SECTION_LIMIT} more
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  const titleStyle: React.CSSProperties = { flex: 1, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+  const tagStyle: React.CSSProperties = { fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }
+  const dot = (color: string) => (
+    <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
+  )
+
+  return (
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Needs attention</div>
+        {total > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{total}</div>}
+      </div>
+
+      {total === 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#49c185' }}>
+          <span>✓</span> Wiki looks healthy
+        </div>
+      ) : (
+        <>
+          {section('stubs', 'Empty or short', health.stubs.map(s => ({
+            itemKey: s.id,
+            onClick: () => goToArticle(s.id),
+            render: () => (<>
+              {dot(ARTICLE_TYPE_COLORS[s.article_type] ?? 'var(--text-muted)')}
+              <span style={titleStyle}>{s.title}</span>
+              <span style={tagStyle}>{s.textLen === 0 ? 'empty' : 'short'}</span>
+            </>),
+          })))}
+
+          {section('orphans', 'No connections', health.orphans.map(o => ({
+            itemKey: o.id,
+            onClick: () => goToArticle(o.id),
+            render: () => (<>
+              {dot(ARTICLE_TYPE_COLORS[o.article_type] ?? 'var(--text-muted)')}
+              <span style={titleStyle}>{o.title}</span>
+              <span style={tagStyle}>unlinked</span>
+            </>),
+          })))}
+
+          {section('broken', 'Broken links', health.broken.map(b => ({
+            itemKey: b.title,
+            onClick: () => goToArticle(b.sources[0].id),
+            render: () => (<>
+              {dot('#e05555')}
+              <span style={{ ...titleStyle, color: '#e05555' }} title={`Referenced in: ${b.sources.map(s => s.title).join(', ')}`}>
+                [[{b.title}]]
+              </span>
+              <span style={tagStyle}>in {b.sources.length} article{b.sources.length !== 1 ? 's' : ''}</span>
+            </>),
+          })))}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Articles By Type Panel ─────────────────────────────────────────────────────
 
 function ArticlesByTypePanel() {
@@ -2076,7 +2180,7 @@ export default function CampaignDetailPage() {
     return <SessionsView onBack={() => setSubView('hub')} />
   }
 
-  const showRightPanels = hubPanels.recentlyUpdated || hubPanels.activeQuests || hubPanels.articlesByType
+  const showRightPanels = hubPanels.recentlyUpdated || hubPanels.activeQuests || hubPanels.articlesByType || hubPanels.wikiHealth
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
@@ -2114,6 +2218,7 @@ export default function CampaignDetailPage() {
               paddingRight: 2,
             }}>
               {hubPanels.activeQuests && <ActiveQuestsPanel />}
+              {hubPanels.wikiHealth && <WikiHealthPanel />}
               {hubPanels.recentlyUpdated && <RecentlyUpdatedPanel />}
               {hubPanels.articlesByType && <ArticlesByTypePanel />}
             </div>

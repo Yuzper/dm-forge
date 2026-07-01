@@ -107,6 +107,12 @@ export type ArticleType =
   | 'organization' | 'culture' | 'religion' | 'item' | 'artifact'
   | 'quest' | 'event' | 'lore' | 'creature' | 'note' | 'other'
 
+export interface WikiHealth {
+  stubs:   { id: number; title: string; article_type: string; textLen: number }[]
+  orphans: { id: number; title: string; article_type: string }[]
+  broken:  { title: string; sources: { id: number; title: string }[] }[]
+}
+
 export type LootTableCategory = 'creature' | 'vendor' | 'location' | 'custom'
 
 export interface MasterLootTable {
@@ -480,6 +486,7 @@ export interface ElectronAPI {
   getArticle:          (id: number)                => Promise<Article | null>
   getArticleByTitle:   (title: string, campaignId: number) => Promise<Article | null>
   getArticleBacklinks: (title: string, campaignId: number) => Promise<ArticleSummary[]>
+  getArticlesHealth:   (campaignId: number) => Promise<WikiHealth>
   createArticle:       (data: CreateArticleInput)  => Promise<Article>
   updateArticle:       (id: number, data: Partial<CreateArticleInput>) => Promise<Article>
   deleteArticle:       (id: number)                => Promise<void>

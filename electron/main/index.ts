@@ -1501,6 +1501,129 @@ function registerIPC(imagesPath: string) {
     `).all(campaignId, title, `%"title":"${title}"%`, `%"${title}"%`)
   })
 
+  // Wiki health: stub articles, orphans (no links in/out), and broken [[links]].
+  ipcMain.handle('articles:health', (_e, campaignId: number) => {
+    const rows = db.prepare(`
+      SELECT id, title, article_type, content, tracks, statblock, item_block, substeps, rewards
+      FROM articles WHERE campaign_id = ?
+    `).all(campaignId) as any[]
+
+    // The editor serializes a full default statblock on every save, so column
+    // length says nothing — check each type's block for actual data instead.
+    const hasStructuredContent = (r: any): boolean => {
+      try {
+        if (r.article_type === 'quest') {
+          if (JSON.parse(r.substeps || '[]').length > 0) return true
+          const rewards = JSON.parse(r.rewards || '[]')
+          return Array.isArray(rewards) && rewards.length > 0
+        }
+        if (r.article_type === 'item' || r.article_type === 'artifact') {
+          const ib = JSON.parse(r.item_block || '{}')
+          return !!(ib.category || ib.rarity || (ib.description || '').trim() || ib.properties?.length || ib.requiresAttunement)
+        }
+        if (r.article_type === 'creature' || r.article_type === 'character' || r.article_type === 'playerCharacter') {
+          const parsed = JSON.parse(r.statblock || '{}')
+          // Creatures store an array of variants; others a single statblock.
+          const blocks = Array.isArray(parsed) ? parsed.map((v: any) => v.statblock ?? v) : [parsed]
+          return blocks.some((sb: any) =>
+            sb && (sb.traits?.length || sb.actions?.length || sb.cr || sb.classLevels?.length))
+        }
+      } catch {}
+      return false
+    }
+
+    // Walk a TipTap doc: total trimmed text length + wikiLink titles (original case).
+    const extract = (raw: string) => {
+      let textLen = 0
+      const links = new Map<string, string>() // lowercase → original
+      const walk = (node: any) => {
+        if (!node || typeof node !== 'object') return
+        if (typeof node.text === 'string') {
+          textLen += node.text.trim().length
+          for (const m of node.marks ?? []) {
+            if (m.type === 'wikiLink' && m.attrs?.title) {
+              const t = String(m.attrs.title)
+              links.set(t.toLowerCase(), t)
+            }
+          }
+        }
+        for (const child of node.content ?? []) walk(child)
+      }
+      try { walk(JSON.parse(raw)) } catch {}
+      return { textLen, links }
+    }
+
+    const byTitle = new Map<string, any>()
+    for (const r of rows) byTitle.set(r.title.toLowerCase(), r)
+
+    // Articles placed in a relation web count as connected.
+    const webArticleIds = new Set(db.prepare(`
+      SELECT DISTINCT n.article_id FROM relation_nodes n
+      JOIN relation_webs w ON w.id = n.web_id
+      WHERE w.campaign_id = ? AND n.article_id IS NOT NULL
+    `).all(campaignId).map((r: any) => r.article_id))
+
+    const incoming = new Map<number, number>()
+    const outgoing = new Map<number, number>()
+    const broken = new Map<string, { title: string; sources: { id: number; title: string }[] }>()
+    const stubs: { id: number; title: string; article_type: string; textLen: number }[] = []
+
+    for (const r of rows) {
+      const { textLen, links } = extract(r.content)
+
+      // Track values naming another article (quest giver, ruler, …) count as links.
+      try {
+        const tracks = JSON.parse(r.tracks || '{}')
+        for (const v of Object.values(tracks)) {
+          if (typeof v === 'string' && byTitle.has(v.toLowerCase())) links.set(v.toLowerCase(), v)
+        }
+      } catch {}
+      links.delete(r.title.toLowerCase()) // self-references don't count
+
+      for (const [key, original] of links) {
+        const target = byTitle.get(key)
+        if (target) {
+          outgoing.set(r.id, (outgoing.get(r.id) ?? 0) + 1)
+          incoming.set(target.id, (incoming.get(target.id) ?? 0) + 1)
+        } else {
+          const entry = broken.get(key) ?? { title: original, sources: [] }
+          entry.sources.push({ id: r.id, title: r.title })
+          broken.set(key, entry)
+        }
+      }
+
+      // Stub check: little prose and no real structured content for its type.
+      if (textLen < 100 && !hasStructuredContent(r)) {
+        stubs.push({ id: r.id, title: r.title, article_type: r.article_type, textLen })
+      }
+    }
+
+    // Links from session notes and DM notes count as incoming for orphan purposes.
+    const noteDocs = [
+      ...db.prepare('SELECT notes AS doc FROM sessions WHERE campaign_id = ?').all(campaignId) as any[],
+      ...db.prepare('SELECT content AS doc FROM dm_notes_pages WHERE campaign_id = ?').all(campaignId) as any[],
+    ]
+    for (const n of noteDocs) {
+      for (const [key] of extract(n.doc || '').links) {
+        const target = byTitle.get(key)
+        if (target) incoming.set(target.id, (incoming.get(target.id) ?? 0) + 1)
+      }
+    }
+
+    // Creatures are bestiary reference and notes are intentionally standalone —
+    // neither is expected to be woven into the wiki, so skip the orphan check.
+    const orphans = rows
+      .filter(r => r.article_type !== 'creature' && r.article_type !== 'note')
+      .filter(r => !outgoing.get(r.id) && !incoming.get(r.id) && !webArticleIds.has(r.id))
+      .map(r => ({ id: r.id, title: r.title, article_type: r.article_type }))
+      .sort((a, b) => a.title.localeCompare(b.title))
+
+    stubs.sort((a, b) => a.textLen - b.textLen)
+    const brokenList = [...broken.values()].sort((a, b) => b.sources.length - a.sources.length)
+
+    return { stubs, orphans, broken: brokenList }
+  })
+
   ipcMain.handle('articles:create', (_e, data: any) => {
     const result = db.prepare(`
       INSERT INTO articles (campaign_id, title, content, article_type, tags, tracks, statblock, loot_table, loot_table_id, portrait_image)
