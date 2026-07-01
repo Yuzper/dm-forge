@@ -668,6 +668,12 @@ function initDatabase() {
   if (!poiCols.some(c => c.name === 'hub_links')) {
     db.exec(`ALTER TABLE pois ADD COLUMN hub_links TEXT NOT NULL DEFAULT '[]'`)
   }
+  if (!poiCols.some(c => c.name === 'hub_size')) {
+    db.exec(`ALTER TABLE pois ADD COLUMN hub_size REAL NOT NULL DEFAULT 11`)
+  }
+  if (!poiCols.some(c => c.name === 'hub_opacity')) {
+    db.exec(`ALTER TABLE pois ADD COLUMN hub_opacity REAL NOT NULL DEFAULT 1`)
+  }
 
   const creatureCols = db.pragma('table_info(combat_creatures)') as { name: string }[]
   if (!creatureCols.some(c => c.name === 'loot_result')) {

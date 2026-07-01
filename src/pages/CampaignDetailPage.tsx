@@ -202,12 +202,14 @@ function HubPOIEditModal({
   links: HubLink[]
   sessions: Session[]
   articles: { id: number; title: string }[]
-  onSave: (label: string, description: string, links: HubLink[], color: string) => void
+  onSave: (label: string, description: string, links: HubLink[], color: string, size: number, opacity: number) => void
   onDelete: () => void
   onClose: () => void
 }) {
   const [label, setLabel] = useState(poi.label)
   const [poiColor, setPoiColor] = useState(poi.color || '#c8a84b')
+  const [poiSize, setPoiSize] = useState(poi.hub_size ?? 11)
+  const [poiOpacity, setPoiOpacity] = useState(Math.round((poi.hub_opacity ?? 1) * 100))
   const [description, setDescription] = useState(extractPoiDescription(poi.content))
   const [editLinks, setEditLinks] = useState<HubLink[]>([...links])
   const [wikiSearch, setWikiSearch] = useState('')
@@ -255,6 +257,30 @@ function HubPOIEditModal({
                 <button key={c} type="button" onClick={() => setPoiColor(c)}
                   style={{ width: 20, height: 20, borderRadius: '50%', background: c, padding: 0, border: `2px solid ${poiColor === c ? 'var(--text-primary)' : 'transparent'}`, cursor: 'pointer', flexShrink: 0 }} />
               ))}
+            </div>
+          </div>
+
+          <div className="input-group">
+            <label className="input-label">Marker</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 52, flexShrink: 0 }}>Size</span>
+                  <input type="range" min={6} max={28} step={1} value={poiSize}
+                    onChange={e => setPoiSize(Number(e.target.value))} style={{ flex: 1 }} />
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 32, textAlign: 'right', flexShrink: 0 }}>{poiSize}px</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 52, flexShrink: 0 }}>Opacity</span>
+                  <input type="range" min={10} max={100} step={5} value={poiOpacity}
+                    onChange={e => setPoiOpacity(Number(e.target.value))} style={{ flex: 1 }} />
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 32, textAlign: 'right', flexShrink: 0 }}>{poiOpacity}%</span>
+                </div>
+              </div>
+              {/* Live preview */}
+              <div style={{ width: 40, height: 40, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                <div style={{ width: poiSize, height: poiSize, borderRadius: '50%', background: poiColor, opacity: poiOpacity / 100, border: '1.5px solid rgba(0,0,0,0.5)' }} />
+              </div>
             </div>
           </div>
 
@@ -341,7 +367,7 @@ function HubPOIEditModal({
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" onClick={() => onSave(label.trim() || poi.label, description, editLinks, poiColor)}>
+            <button className="btn btn-primary" onClick={() => onSave(label.trim() || poi.label, description, editLinks, poiColor, poiSize, poiOpacity / 100)}>
               Save
             </button>
           </div>
@@ -668,11 +694,11 @@ function HubWorldMap() {
   }
 
   // ── POI save / delete ─────────────────────────────────────────────────────
-  const handleSavePOI = async (label: string, description: string, links: HubLink[], color: string) => {
+  const handleSavePOI = async (label: string, description: string, links: HubLink[], color: string, size: number, opacity: number) => {
     if (!editingPOI) return
     const content = makePoiContent(description)
     const hub_links = JSON.stringify(links)
-    const updated = await window.api.updatePOI(editingPOI.id, { label, content, hub_links, color } as any)
+    const updated = await window.api.updatePOI(editingPOI.id, { label, content, hub_links, color, hub_size: size, hub_opacity: opacity } as any)
     setPois((prev: POI[]) => prev.map(p => p.id === updated.id ? updated : p))
     setSelectedPOI(updated)
     setEditingPOI(null)
@@ -814,12 +840,14 @@ function HubWorldMap() {
                     }}>{poi.label}</div>
                   )}
                   <div style={{
-                    width: 11, height: 11, borderRadius: '50%',
+                    width: poi.hub_size ?? 11, height: poi.hub_size ?? 11, borderRadius: '50%',
                     background: poi.color || '#c8a84b',
                     border: '1.5px solid rgba(0,0,0,0.5)',
                     cursor: editMode ? 'move' : 'pointer',
+                    // Hover/selection restores full opacity so faded markers stay findable
+                    opacity: hoveredPoiId === poi.id || selectedPOI?.id === poi.id ? 1 : (poi.hub_opacity ?? 1),
                     boxShadow: selectedPOI?.id === poi.id ? `0 0 0 4px ${poi.color || '#c8a84b'}44` : 'none',
-                    transition: 'box-shadow 0.15s',
+                    transition: 'box-shadow 0.15s, opacity 0.15s',
                   }} />
                 </div>
               ))}

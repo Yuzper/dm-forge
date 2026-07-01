@@ -48,6 +48,8 @@ export interface POI {
   id: number
   map_id: number
   hub_links: string   // JSON: HubLink[]
+  hub_size: number    // marker diameter in px on the hub map
+  hub_opacity: number // marker opacity 0–1 on the hub map
   label: string
   x: number
   y: number
