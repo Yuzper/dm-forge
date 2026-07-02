@@ -161,6 +161,10 @@ interface AppStore {
   setHintContext: (key: string | null) => void
   hintMinimized: boolean
   setHintMinimized: (v: boolean) => void
+
+  // Deep-link hand-off: global search asks DMNotesPage to open a specific page.
+  dmNotesOpenPageId: number | null
+  setDMNotesOpenPageId: (id: number | null) => void
 }
 
 function pushEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
@@ -232,6 +236,9 @@ export const useStore = create<AppStore>((set, get) => ({
   setHintContext: (hintContext) => set({ hintContext }),
   hintMinimized: false,
   setHintMinimized: (hintMinimized) => set({ hintMinimized }),
+
+  dmNotesOpenPageId: null,
+  setDMNotesOpenPageId: (dmNotesOpenPageId) => set({ dmNotesOpenPageId }),
 
   view: 'campaigns',
   setView: (view) => set(s => {

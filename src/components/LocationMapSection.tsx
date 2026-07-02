@@ -249,8 +249,7 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
               fontSize: 12, fontWeight: currentMap?.id === map.id ? 600 : 400,
               transition: 'all var(--transition)', whiteSpace: 'nowrap', userSelect: 'none',
             }}
-            onMouseEnter={e => { if (currentMap?.id !== map.id) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-            onMouseLeave={e => { if (currentMap?.id !== map.id) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+            className={(currentMap?.id !== map.id) ? 'hover-bg' : ''}
           >
             <Map size={11} />
             <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>{map.name}</span>
@@ -276,8 +275,7 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
               cursor: importing ? 'wait' : 'pointer',
               transition: 'color var(--transition)', whiteSpace: 'nowrap', height: 36,
             }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--gold)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+            className="hover-gold"
           >
             <Upload size={11} />
             {importing ? 'Importing…' : maps.length === 0 ? 'Import Map Image' : 'Add Map'}

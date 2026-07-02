@@ -100,8 +100,7 @@ export default function StatBlockOverlay({ overlay, index }: Props) {
             color: 'var(--text-muted)', padding: 2, display: 'flex', flexShrink: 0,
             transition: 'color var(--transition)',
           }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--danger-soft)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          className="hover-danger"
           title="Close"
         >
           <X size={13} />

@@ -123,8 +123,7 @@ function ItemRow({
                       background: 'none', border: 'none', cursor: 'pointer',
                       fontSize: 12, color: 'var(--text-secondary)',
                     }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                    className="hover-bg"
                   >
                     {s}
                   </button>

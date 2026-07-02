@@ -254,8 +254,20 @@ input[type="number"].ghost-input { -moz-appearance: textfield; }
 .menu-item-sm { padding: 7px 12px; font-size: 12px; }
 
 /* ─── Hover utilities ─────────────────────────────────────────────────────── */
-.hover-opacity:hover { opacity: 0.75; }
-.hover-text:hover { color: var(--text-primary) !important; }
+/* Replacements for per-element onMouseEnter/onMouseLeave style juggling.
+   !important is needed to override each element's inline base style;
+   on unhover the inline style simply applies again. */
+.hover-opacity:hover        { opacity: 0.75; }
+.hover-text:hover           { color: var(--text-primary) !important; }
+.hover-text-secondary:hover { color: var(--text-secondary) !important; }
+.hover-gold:hover           { color: var(--gold) !important; }
+.hover-danger:hover         { color: var(--danger-soft) !important; }
+.hover-bg:hover             { background: var(--bg-hover) !important; }
+.hover-bg-elevated:hover    { background: var(--bg-elevated) !important; }
+.hover-gold-border:hover        { color: var(--gold) !important; border-color: var(--border-gold) !important; }
+.hover-gold-border-strong:hover { color: var(--gold) !important; border-color: var(--gold) !important; }
+.hover-danger-tint:hover        { color: #e05555 !important; background: #e0555514 !important; }
+.hover-bg-active:hover          { background: var(--bg-active) !important; color: var(--text-primary) !important; }
 
 @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

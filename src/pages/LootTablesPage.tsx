@@ -260,8 +260,7 @@ function TableListItem({ table, isActive, onClick }: {
         transition: 'all 120ms ease',
         display: 'flex', alignItems: 'center', gap: 8,
       }}
-      onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-      onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+      className={(!isActive) ? 'hover-bg' : ''}
     >
       <div style={{ width: 7, height: 7, borderRadius: '50%', background: accent, flexShrink: 0 }} />
       <span style={{
@@ -427,8 +426,7 @@ export default function LootTablesPage() {
             color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
             transition: 'color var(--transition)',
           }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          className="hover-text"
         >
           <ArrowLeft size={14} /> Back
         </button>

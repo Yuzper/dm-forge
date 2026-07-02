@@ -54,6 +54,11 @@ contextBridge.exposeInMainWorld('api', {
   getArticleBacklinks: (title: string, campaignId: number) =>
                          ipcRenderer.invoke('articles:get-backlinks', title, campaignId),
   getArticlesHealth:   (campaignId: number) => ipcRenderer.invoke('articles:health', campaignId),
+  globalSearch:        (campaignId: number, query: string) => ipcRenderer.invoke('search:global', campaignId, query),
+  findInPage:          (text: string, opts?: { forward?: boolean; findNext?: boolean }) => ipcRenderer.invoke('find:in-page', text, opts),
+  stopFindInPage:      () => ipcRenderer.invoke('find:stop'),
+  onFindResult:        (cb: (r: { matches: number; active: number }) => void) =>
+                         ipcRenderer.on('find:result', (_e, r) => cb(r)),
   createArticle:       (data: any)     => ipcRenderer.invoke('articles:create', data),
   updateArticle:       (id: number, data: any) => ipcRenderer.invoke('articles:update', id, data),
   deleteArticle:       (id: number)    => ipcRenderer.invoke('articles:delete', id),
@@ -74,8 +79,8 @@ contextBridge.exposeInMainWorld('api', {
   selectImageFile: () => ipcRenderer.invoke('file:select-image'),
   getImagePath:    (relativePath: string) => ipcRenderer.invoke('file:get-image-path', relativePath),
 
-  // Backup
-  exportBackup: () => ipcRenderer.invoke('backup:export'),
+  // Backup — campaignId scopes the export to one campaign; omit for everything.
+  exportBackup: (campaignId?: number | null) => ipcRenderer.invoke('backup:export', campaignId ?? null),
   importBackup: () => ipcRenderer.invoke('backup:import'),
 
   // Updates

@@ -109,6 +109,13 @@ export type ArticleType =
   | 'organization' | 'culture' | 'religion' | 'item' | 'artifact'
   | 'quest' | 'event' | 'lore' | 'creature' | 'note' | 'other'
 
+export interface GlobalSearchResults {
+  articles: { id: number; title: string; article_type: string; snippet: string | null }[]
+  sessions: { id: number; name: string; session_number: number; session_sub: string; is_draft: boolean; snippet: string | null }[]
+  notes:    { id: number; title: string; snippet: string | null }[]
+  pois:     { id: number; label: string; snippet: string | null; session_id: number | null; article_id: number | null; on_hub_map: boolean; context: string }[]
+}
+
 export interface WikiHealth {
   stubs:   { id: number; title: string; article_type: string; textLen: number }[]
   orphans: { id: number; title: string; article_type: string }[]
@@ -489,6 +496,10 @@ export interface ElectronAPI {
   getArticleByTitle:   (title: string, campaignId: number) => Promise<Article | null>
   getArticleBacklinks: (title: string, campaignId: number) => Promise<ArticleSummary[]>
   getArticlesHealth:   (campaignId: number) => Promise<WikiHealth>
+  globalSearch:        (campaignId: number, query: string) => Promise<GlobalSearchResults>
+  findInPage:          (text: string, opts?: { forward?: boolean; findNext?: boolean }) => Promise<void>
+  stopFindInPage:      () => Promise<void>
+  onFindResult:        (cb: (r: { matches: number; active: number }) => void) => void
   createArticle:       (data: CreateArticleInput)  => Promise<Article>
   updateArticle:       (id: number, data: Partial<CreateArticleInput>) => Promise<Article>
   deleteArticle:       (id: number)                => Promise<void>
@@ -504,8 +515,8 @@ export interface ElectronAPI {
 
   selectImageFile: () => Promise<string | null>
   getImagePath:    (relativePath: string) => Promise<string>
-  exportBackup:    () => Promise<{ success: boolean; path?: string; error?: string; canceled?: boolean }>
-  importBackup:    () => Promise<{ success: boolean; error?: string; canceled?: boolean }>
+  exportBackup:    (campaignId?: number | null) => Promise<{ success: boolean; path?: string; error?: string; canceled?: boolean; failedImages?: number }>
+  importBackup:    () => Promise<{ success: boolean; error?: string; canceled?: boolean; imported?: string[]; replaced?: string[]; skipped?: string[] }>
 
   checkForUpdates:    () => Promise<void>
   installUpdate:      () => Promise<void>

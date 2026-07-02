@@ -490,8 +490,7 @@ export default function SoundboardWidget() {
                 fontFamily: 'var(--font-display)', letterSpacing: '0.04em',
                 transition: 'background var(--transition)',
               }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = boardOpen ? 'var(--bg-hover)' : 'var(--bg-surface)'}
+              className="hover-bg"
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                 {activeBoard?.name ?? '—'}
@@ -516,8 +515,7 @@ export default function SoundboardWidget() {
                       color: b.id === activeBoardId ? 'var(--gold)' : 'var(--text-secondary)',
                       fontFamily: 'var(--font-ui)', fontSize: 12,
                     }}
-                    onMouseEnter={e => { if (b.id !== activeBoardId) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-                    onMouseLeave={e => { if (b.id !== activeBoardId) (e.currentTarget as HTMLElement).style.background = 'none' }}
+                    className={(b.id !== activeBoardId) ? 'hover-bg' : ''}
                   >
                     <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
                     {b.id === DEFAULT_BOARD_ID && (
@@ -545,18 +543,15 @@ export default function SoundboardWidget() {
 
         <button onClick={() => setMixer(v => !v)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: mixer ? 'var(--gold)' : 'var(--text-muted)', padding: 2, display: 'flex', flexShrink: 0, transition: 'color var(--transition)' }}
-          onMouseEnter={e => { if (!mixer) (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}
-          onMouseLeave={e => { if (!mixer) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+          className={(!mixer) ? 'hover-text-secondary' : ''}
           title={mixer ? 'Back to pads' : 'Per-sound volume'}><SlidersHorizontal size={13} /></button>
         <button onClick={() => setSoundboardMinimized(true)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, display: 'flex', flexShrink: 0, transition: 'color var(--transition)' }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          className="hover-text-secondary"
           title="Minimise"><Minus size={13} /></button>
         <button onClick={handleClose}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, display: 'flex', flexShrink: 0, transition: 'color var(--transition)' }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--danger-soft)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          className="hover-danger"
           title="Close"><X size={13} /></button>
       </div>
 
@@ -637,8 +632,7 @@ export default function SoundboardWidget() {
                         maxWidth: 140, overflow: 'hidden',
                         fontFamily: 'var(--font-ui)',
                       }}
-                      onMouseEnter={e => { if (!active && !errored) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-                      onMouseLeave={e => { if (!active && !errored) (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)' }}
+                      className={(!active && !errored) ? 'hover-bg' : ''}
                     >
                       {errored ? (
                         <span style={{ fontSize: 10, flexShrink: 0, lineHeight: 1 }}>⚠</span>

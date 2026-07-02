@@ -91,8 +91,7 @@ export default function LootResultModal({ creatureName, items, onClose, onRegene
               display: 'flex', alignItems: 'center',
               transition: 'color 120ms ease',
             }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+            className="hover-text"
           >
             <X size={16} />
           </button>

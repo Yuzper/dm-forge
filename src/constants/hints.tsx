@@ -29,7 +29,9 @@ export const HINTS: Record<string, Hint> = {
       <>Use <strong>Customise</strong> (top right) to show or hide the world map and dashboard panels.</>,
       <>Panels surface recent edits, articles by type, active quests, and a session timeline at a glance.</>,
       <>After adding a world map, you can press <strong>Edit</strong> to add Points of Interest (POIs) and link sessions and wiki articles that are related to that area.</>,
-      <>POI's on the world map are clickable to show the linked articles and session, which are also clickable.</>
+      <>POI's on the world map are clickable to show the linked articles and session, which are also clickable.</>,
+      <>Press <Kbd>Ctrl+S</Kbd> anywhere to search the whole campaign — articles, sessions, DM notes, and map pins.</>,
+      <>Press <Kbd>Ctrl+F</Kbd> to find and highlight a word on the current page.</>,
     ],
   },
 
@@ -60,6 +62,7 @@ export const HINTS: Record<string, Hint> = {
       <>Articles open read-only — click <strong>Edit</strong> (top right) to make changes.</>,
       <>Changes save on their own when you hit Save or leave the article.</>,
       <>Fill in <strong>tracks</strong> (Vitality, Attitude…) to set the status shown on relation nodes and the timeline.</>,
+      <>Press <Kbd>Ctrl+F</Kbd> to highlight a word in a long article; <Kbd>Ctrl+S</Kbd> searches the whole campaign.</>,
     ],
   },
 
@@ -114,6 +117,7 @@ export const HINTS: Record<string, Hint> = {
     items: [
       <>Drag pages to reorder them, or drop them into a folder.</>,
       <>Notes support the same <Kbd>[[</Kbd> <Kbd>@@</Kbd> <Kbd>\\</Kbd> links as articles.</>,
+      <>Press <Kbd>Ctrl+F</Kbd> to highlight a word in the open note; <Kbd>Ctrl+S</Kbd> searches all notes, articles, and sessions at once.</>,
     ],
   },
 

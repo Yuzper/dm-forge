@@ -369,8 +369,7 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
             color: 'var(--text-muted)', display: 'flex', padding: 4,
             borderRadius: 'var(--radius-sm)', transition: 'color 120ms ease',
           }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          className="hover-text"
         >
           <X size={14} />
         </button>
@@ -464,8 +463,7 @@ export default function SessionPage() {
             cursor: 'pointer', whiteSpace: 'nowrap',
             transition: 'color var(--transition)',
           }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          className="hover-text"
         >
           <ChevronLeft size={14} /> Back
         </button>
@@ -509,8 +507,7 @@ export default function SessionPage() {
                 whiteSpace: 'nowrap',
                 userSelect: 'none',
               }}
-              onMouseEnter={e => { if (currentMap?.id !== map.id) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-              onMouseLeave={e => { if (currentMap?.id !== map.id) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+              className={(currentMap?.id !== map.id) ? 'hover-bg' : ''}
             >
               <Map size={12} />
               <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{map.name}</span>
@@ -540,8 +537,7 @@ export default function SessionPage() {
                 transition: 'color var(--transition)',
                 whiteSpace: 'nowrap',
               }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--gold)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+              className="hover-gold"
             >
               <Upload size={12} />
               {importing ? 'Importing…' : 'Import Map'}
@@ -567,8 +563,7 @@ export default function SessionPage() {
             fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
             transition: 'all var(--transition)', flexShrink: 0,
           }}
-          onMouseEnter={e => { if (!showNotes) (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
-          onMouseLeave={e => { if (!showNotes) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+          className={(!showNotes) ? 'hover-text' : ''}
         >
           <ScrollText size={13} /> Notes
         </button>

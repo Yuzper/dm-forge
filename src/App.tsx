@@ -23,6 +23,8 @@ import SoundboardPage from './pages/SoundboardPage'
 import SoundboardWidget from './components/SoundboardWidget'
 import StatBlockOverlay from './components/StatBlockOverlay'
 import HintsWidget from './components/HintsWidget'
+import GlobalSearch from './components/GlobalSearch'
+import FindBar from './components/FindBar'
 
 const params = new URLSearchParams(window.location.search)
 const statblockMode = params.get('mode') === 'statblock'
@@ -52,6 +54,8 @@ export default function App() {
       {currentSession && soundboardOpen && <SoundboardWidget />}
       {statBlockOverlays.map((o, i) => <StatBlockOverlay key={o.id} overlay={o} index={i} />)}
       <HintsWidget />
+      <GlobalSearch />
+      <FindBar />
       <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {view === 'campaigns'   && <CampaignsPage />}
         {view === 'campaign'    && <CampaignDetailPage />}

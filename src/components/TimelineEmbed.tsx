@@ -56,8 +56,7 @@ function FilterPanel({ filters, onChange, onClose }: { filters: Filters; onChang
       {ROWS.map(row => (
         <button key={row.key} onClick={() => onChange({ ...filters, [row.key]: !filters[row.key] })}
           style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', textAlign: 'left' }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+          className="hover-bg">
           <div style={{ width: 13, height: 13, borderRadius: 3, border: `1.5px solid ${filters[row.key] ? row.color : 'var(--border)'}`, background: filters[row.key] ? row.color : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 120ms' }}>
             {filters[row.key] && <span style={{ fontSize: 8, color: '#000', fontWeight: 700 }}>✓</span>}
           </div>
@@ -281,11 +280,9 @@ export default function TimelineEmbed() {
         {zoom === 'day' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
             <button style={zoomBtnStyle} onClick={() => setDayZoomIdx(i => Math.max(0, i - 1))} disabled={dayZoomIdx === 0}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}><ZoomOut size={11} /></button>
+              className="hover-text"><ZoomOut size={11} /></button>
             <button style={zoomBtnStyle} onClick={() => setDayZoomIdx(i => Math.min(DAY_ZOOM_LEVELS.length - 1, i + 1))} disabled={dayZoomIdx === DAY_ZOOM_LEVELS.length - 1}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}><ZoomIn size={11} /></button>
+              className="hover-text"><ZoomIn size={11} /></button>
           </div>
         )}
 
@@ -293,8 +290,7 @@ export default function TimelineEmbed() {
         <div ref={filterRef} style={{ position: 'relative' }}>
           <button onClick={() => setShowFilter(v => !v)}
             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', fontSize: 11, cursor: 'pointer', background: showFilter ? 'var(--bg-elevated)' : 'transparent', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', transition: 'background var(--transition)' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = showFilter ? 'var(--bg-elevated)' : 'transparent'}>
+            className="hover-bg-elevated">
             <Filter size={11} /> Filter
             {Object.values(filters).some(v => !v) && <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--gold)', flexShrink: 0 }} />}
           </button>
@@ -303,8 +299,7 @@ export default function TimelineEmbed() {
 
         <button onClick={() => setView('timeline')}
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', fontSize: 11, background: 'transparent', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms' }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--gold)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-gold)' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)' }}>
+          className="hover-gold-border">
           <ExternalLink size={10} /> Full timeline
         </button>
       </div>
@@ -376,8 +371,7 @@ export default function TimelineEmbed() {
             {clusterPicker.items.map((it, i) => (
               <button key={`${it.kind}-${it.id}-${i}`} onClick={() => { setClusterPicker(null); openItem(it) }}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', background: 'none', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left', color: 'var(--text-secondary)' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                className="hover-bg">
                 <span style={{ color: it.kind === 'session' ? 'var(--gold)' : it.kind === 'death' ? '#9b7de8' : '#e05555', fontSize: 10, flexShrink: 0 }}>{it.kind === 'session' ? '○' : it.kind === 'death' ? '☠' : '◆'}</span>
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {it.kind === 'session' ? `S${it.session_number}${it.session_sub ?? ''} · ${it.title}` : it.title}

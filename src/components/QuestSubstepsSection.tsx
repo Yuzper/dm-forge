@@ -59,8 +59,7 @@ function StatusPicker({ value, onChange, readMode }: { value: Substep['status'];
           {STATUS_OPTIONS.map(opt => (
             <button key={opt.value} onClick={() => { onChange(opt.value); setOpen(false) }}
               style={{ width: '100%', display: 'flex', alignItems: 'center', padding: '7px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: opt.color, textAlign: 'left', fontStyle: opt.value === 'skipped' ? 'italic' : 'normal' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+              className="hover-bg"
             >
               {opt.label}
             </button>
@@ -155,18 +154,15 @@ function SubstepRow({ step, index, total, readMode, onChange, onDelete, onMoveUp
           <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
             <button onClick={onMoveUp} disabled={index === 0}
               style={{ display: 'flex', padding: 3, background: 'none', border: 'none', cursor: index === 0 ? 'default' : 'pointer', color: index === 0 ? 'var(--border)' : 'var(--text-muted)', borderRadius: 4 }}
-              onMouseEnter={e => { if (index > 0) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+              className={(index > 0) ? 'hover-bg' : ''}
             ><ChevronUp size={12} /></button>
             <button onClick={onMoveDown} disabled={index === total - 1}
               style={{ display: 'flex', padding: 3, background: 'none', border: 'none', cursor: index === total - 1 ? 'default' : 'pointer', color: index === total - 1 ? 'var(--border)' : 'var(--text-muted)', borderRadius: 4 }}
-              onMouseEnter={e => { if (index < total - 1) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+              className={(index < total - 1) ? 'hover-bg' : ''}
             ><ChevronDown size={12} /></button>
             <button onClick={onDelete}
               style={{ display: 'flex', padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', borderRadius: 4 }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#e05555'; (e.currentTarget as HTMLElement).style.background = '#e0555514' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; (e.currentTarget as HTMLElement).style.background = 'none' }}
+              className="hover-danger-tint"
             ><Trash2 size={12} /></button>
           </div>
         )}
@@ -285,8 +281,7 @@ export default function QuestSubstepsSection({ articleId: _articleId, substeps, 
         <button
           onClick={addStep}
           style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, padding: '5px 10px', fontSize: 12, background: 'transparent', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms' }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--gold)'; (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+          className="hover-gold-border-strong"
         >
           <Plus size={12} /> Add substep
         </button>

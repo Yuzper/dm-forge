@@ -6,7 +6,7 @@ import { parseInWorldDate, InWorldDatePicker } from '../components/InWorldDatePi
 import type { ArticleType, Session, Article } from '../types'
 import { buildArticleTimeline, type Lifespan } from '../constants/timelineDates'
 import TimelineCanvas from '../components/TimelineCanvas'
-import { ArticleEditor } from './WikiPage'
+import { ArticleEditor } from '../components/wiki/ArticleEditor'
 import {
   ZoomLevel, ZOOM_LABEL, ZOOM_ORDER,
   isYearMode, dayToWorldYear, worldYearToDay, computeBins,
@@ -74,8 +74,7 @@ function FilterPanel({ filters, onChange, onClose }: {
       {ROWS.map(row => (
         <button key={row.key} onClick={() => onChange({ ...filters, [row.key]: !filters[row.key] })}
           style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)', textAlign: 'left', transition: 'background 80ms' }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+          className="hover-bg">
           <div style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${filters[row.key] ? row.color : 'var(--border)'}`, background: filters[row.key] ? row.color : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 120ms' }}>
             {filters[row.key] && <span style={{ fontSize: 9, color: '#000', fontWeight: 700 }}>✓</span>}
           </div>
@@ -546,8 +545,7 @@ export default function TimelinePage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
               style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', borderRight: '1px solid var(--border)', paddingRight: 12, marginRight: 4, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}>
+              className="hover-text">
               <ArrowLeft size={14} /> Back
             </button>
             <Clock size={20} color='#e88c3a' />
@@ -578,12 +576,10 @@ export default function TimelinePage() {
             {zoom === 'day' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, borderRight: '1px solid var(--border)', paddingRight: 10, marginRight: 2 }}>
                 <button style={zoomBtnStyle} onClick={() => setDayZoomIdx(i => Math.max(0, i - 1))} disabled={dayZoomIdx === 0}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}><ZoomOut size={13} /></button>
+                  className="hover-text"><ZoomOut size={13} /></button>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 28, textAlign: 'center' }}>{pxPerDay}px</span>
                 <button style={zoomBtnStyle} onClick={() => setDayZoomIdx(i => Math.min(DAY_ZOOM_LEVELS.length - 1, i + 1))} disabled={dayZoomIdx === DAY_ZOOM_LEVELS.length - 1}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}><ZoomIn size={13} /></button>
+                  className="hover-text"><ZoomIn size={13} /></button>
               </div>
             )}
 
@@ -591,8 +587,7 @@ export default function TimelinePage() {
             <div ref={filterRef} style={{ position: 'relative' }}>
               <button onClick={() => setShowFilter(v => !v)}
                 style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: showFilter ? 'var(--bg-elevated)' : 'transparent', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', transition: 'background var(--transition)' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = showFilter ? 'var(--bg-elevated)' : 'transparent'}>
+                className="hover-bg-elevated">
                 <Filter size={13} /> Filter
                 {activeFilterCount > 0 && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', flexShrink: 0 }} />}
               </button>
@@ -601,8 +596,7 @@ export default function TimelinePage() {
 
             <button onClick={() => { setCreateDateRaw(''); setShowCreate(true) }}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', transition: 'all 120ms' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--gold)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-gold)' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)' }}>
+              className="hover-gold-border">
               <Plus size={13} /> Add event
             </button>
           </div>
@@ -671,8 +665,7 @@ export default function TimelinePage() {
             {clusterPicker.items.map((it, i) => (
               <button key={`${it.kind}-${it.id}-${i}`} onClick={() => navigateToItem(it)}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', background: 'none', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left', color: 'var(--text-secondary)' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                className="hover-bg">
                 <span style={{ color: it.kind === 'session' ? 'var(--gold)' : it.kind === 'death' ? '#9b7de8' : '#e05555', fontSize: 10, flexShrink: 0 }}>{it.kind === 'session' ? '○' : it.kind === 'death' ? '☠' : '◆'}</span>
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {it.kind === 'session' ? `S${it.session_number}${it.session_sub ?? ''} · ${it.title}` : it.title}

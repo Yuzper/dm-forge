@@ -680,6 +680,8 @@ function PageEditor({ page, onDeleted, onTitleChange }: {
 
 export default function DMNotesPage() {
   const { currentCampaign, setView, setCampaignSubView, setHintContext } = useStore()
+  const dmNotesOpenPageId = useStore(s => s.dmNotesOpenPageId)
+  const setDMNotesOpenPageId = useStore(s => s.setDMNotesOpenPageId)
   useEffect(() => { setHintContext('dmnotes'); return () => setHintContext(null) }, [setHintContext])
   const [pages, setPages] = useState<DMNotePageSummary[]>([])
   const [groups, setGroups] = useState<DMNoteGroup[]>([])
@@ -710,12 +712,20 @@ export default function DMNotesPage() {
     if (!currentCampaign) return
     window.api.syncDMSessionNotes(currentCampaign.id).then(() => {
       loadAll().then(ps => {
-        if (ps && ps.length > 0 && !activePage) {
+        if (ps && ps.length > 0 && !activePage && !useStore.getState().dmNotesOpenPageId) {
           openPage(ps[0].id)
         }
       })
     })
   }, [currentCampaign?.id])
+
+  // Deep-link from global search: open the requested page, then clear the hand-off.
+  useEffect(() => {
+    if (dmNotesOpenPageId != null) {
+      openPage(dmNotesOpenPageId)
+      setDMNotesOpenPageId(null)
+    }
+  }, [dmNotesOpenPageId])
 
   const openPage = async (id: number) => {
     setLoading(true)
@@ -952,8 +962,7 @@ export default function DMNotesPage() {
             color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
             transition: 'color var(--transition)',
           }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          className="hover-text"
         >
           <ArrowLeft size={14} /> Back
         </button>

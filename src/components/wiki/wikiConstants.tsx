@@ -1,0 +1,204 @@
+// path: src/components/wiki/wikiConstants.tsx
+import {
+  BookOpen, MapPin, User, Package, ScrollText, Users, Landmark,
+  FileText, PawPrint, StickyNote,
+} from 'lucide-react'
+import type { ArticleType } from '../../types'
+import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
+
+// ── Article type definitions ───────────────────────────────────────────────────
+// Colors come from the shared ARTICLE_TYPE_COLORS map (single source of truth);
+// only label + icon are defined here.
+
+export const ARTICLE_TYPES: { value: ArticleType; label: string; icon: any; color: string }[] = [
+  { value: 'character',       label: 'Character',    icon: User,        color: ARTICLE_TYPE_COLORS.character },
+  { value: 'playerCharacter', label: 'Player Char',  icon: User,        color: ARTICLE_TYPE_COLORS.playerCharacter },
+  { value: 'creature',        label: 'Creature',     icon: PawPrint,    color: ARTICLE_TYPE_COLORS.creature },
+  { value: 'location',        label: 'Location',     icon: MapPin,      color: ARTICLE_TYPE_COLORS.location },
+  { value: 'faction',         label: 'Faction',      icon: Users,       color: ARTICLE_TYPE_COLORS.faction },
+  { value: 'organization',    label: 'Organization', icon: Users,       color: ARTICLE_TYPE_COLORS.organization },
+  { value: 'culture',         label: 'Culture',      icon: Landmark,    color: ARTICLE_TYPE_COLORS.culture },
+  { value: 'religion',        label: 'Religion',     icon: Landmark,    color: ARTICLE_TYPE_COLORS.religion },
+  { value: 'item',            label: 'Item',         icon: Package,     color: ARTICLE_TYPE_COLORS.item },
+  { value: 'note',            label: 'Note',         icon: StickyNote,  color: ARTICLE_TYPE_COLORS.note },
+  { value: 'quest',           label: 'Quest',        icon: ScrollText,  color: ARTICLE_TYPE_COLORS.quest },
+  { value: 'event',           label: 'Event',        icon: ScrollText,  color: ARTICLE_TYPE_COLORS.event },
+  { value: 'lore',            label: 'Lore',         icon: Landmark,    color: ARTICLE_TYPE_COLORS.lore },
+  { value: 'other',           label: 'Other',        icon: FileText,    color: ARTICLE_TYPE_COLORS.other },
+]
+
+// ── Track definitions ──────────────────────────────────────────────────────────
+
+export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
+  character: {
+    Vitality:      ['Alive', 'Dead', 'Unknown', 'Missing', 'Immortal'],
+    Death_Date:    [],
+    Attitude:    ['Friendly', 'Neutral', 'Hostile'],
+    Attitude_Towards_Party: ['Friendly', 'Neutral', 'Hostile', 'Unknown'],
+    Age:         [],
+    Species:     ['Human', 'Elf', 'High Elf', 'Drow', 'Half-Elf', 'Dwarf', 'Duergar', 'Halfling', 'Gnome', 'Deep Gnome', 'Half-Orc', 'Orc',
+                  'Tiefling', 'Dragonborn', 'Aasimar', 'Owlin', 'Aarakocra', 'Tortle', 'Goliath', 'Lizardfolk', 'Tabaxi',
+                  'Water Genasi', 'Fire Genasi', 'Air Genasi', 'Earth Genasi'],
+    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
+    Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
+    Location:    [],
+    Culture:     [],
+  },
+  playerCharacter: {
+    Vitality:      ['Alive', 'Dead', 'Unknown', 'Retired', 'Immortal'],
+    Death_Date:    [],
+    Disposition: ['Friendly', 'Neutral', 'Hostile'],
+    Age:         [],
+    Species:     ['Human', 'Elf', 'High Elf', 'Drow', 'Half-Elf', 'Dwarf', 'Duergar', 'Halfling', 'Gnome', 'Deep Gnome', 'Half-Orc', 'Orc',
+                  'Tiefling', 'Dragonborn', 'Aasimar', 'Owlin', 'Aarakocra', 'Tortle', 'Goliath', 'Lizardfolk', 'Tabaxi',
+                  'Water Genasi', 'Fire Genasi', 'Air Genasi', 'Earth Genasi'],
+    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
+    Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
+    Location:    [],
+    Culture:     [],
+  },
+  creature: {
+    Vitality:      ['Living', 'Extinct', 'Endangered', 'Unknown'],
+    Disposition:   ['Hostile', 'Neutral', 'Friendly'],
+    Creature_Type: ['Beast', 'Dragon', 'Fiend', 'Celestial', 'Fey', 'Undead', 'Aberration', 'Humanoid', 'Construct', 'Elemental', 'Giant', 'Monstrosity', 'Ooze', 'Plant'],
+    Size:          ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'],
+    Habitat:       ['Forest', 'Desert', 'Mountain', 'Swamp', 'Ocean', 'Underdark', 'Urban', 'Arctic', 'Plains'],
+  },
+  location: {
+    State:  ['Discovered', 'Undiscovered', 'Destroyed', 'Abandoned'],
+    Size:   ['Room', 'Building', 'Village', 'Town', 'City', 'Metropolis', 'Duchy', 'Kingdom', 'Empire', 'Continent', 'World', 'Ruins', 'Dungeon', 'Wilderness', 'Landmark', 'Natural Wonder'],
+    Plane:  ['Material Plane', 'The Nine Hells', 'The Abyss', 'Ethereal Plane', 'Shadowfell', 'Feywild', 'Elemental Plane', 'Astral Plane'],
+    Within: [],
+  },
+  faction: {
+    Status: ['Active', 'Disbanded', 'Unknown'],
+    Scale:  ['Local', 'Regional', 'National', 'Global', 'Secret'],
+    Leader: [],
+    HQ:     [],
+    Follower_Count: [],
+    Allies: [],
+    Rivals: [],
+  },
+  organization: {
+    Status: ['Active', 'Disbanded', 'Unknown'],
+    Scale:  ['Local', 'Regional', 'National', 'Global', 'Secret'],
+    Leader: [],
+    HQ:     [],
+    Follower_Count: [],
+    Allies: [],
+    Rivals: [],
+  },
+  quest: {
+    Status:           ['Active', 'Completed', 'Failed', 'Abandoned'],
+    Type:             ['Main', 'Side', 'Personal', 'Faction'],
+    Quest_Giver:      [],
+    Player_Character: [],
+  },
+  item: {
+    Status:   ['Found', 'Lost', 'Destroyed', 'Unknown'],
+    Rarity:   ['Common', 'Uncommon', 'Rare', 'Very Rare', 'Legendary', 'Artifact'],
+    Location: [],
+  },
+  event: {
+    Status:        ['Upcoming', 'Ongoing', 'Past'],
+    Scale:         ['Personal', 'Local', 'Regional', 'World-shaking'],
+    In_World_Date: [],
+  },
+  culture:  { Status: ['Active', 'Undercover', 'Extinct', 'Unknown'] },
+  religion: {
+    Status:         ['Active', 'Undercover', 'Extinct', 'Unknown'],
+    Leader:         [],
+    Holy_Symbol:    [],
+    Follower_Count: [],
+    Allies:         [],
+    Rivals:         [],
+    Sacred_Sites:   [],
+  },
+  lore:  { Status: ['Active', 'Extinct', 'Unknown'] },
+  note: {
+    Sender:             [],
+    Intended_Recipient: [],
+    Language:           [],
+    Date:               [],
+    Location:           [],
+  },
+  other: { Status: ['Active', 'Inactive', 'Unknown'] },
+}
+
+export const TRACK_VALUE_COLORS: Record<string, string> = {
+  Alive: '#3dbf7f', Active: '#3dbf7f', Found: '#3dbf7f', Discovered: '#3dbf7f', Open: '#3dbf7f',
+  Dead: '#e05555', Destroyed: '#e05555', Disbanded: '#e05555', Failed: '#e05555', Extinct: '#e05555',
+  'Burned Down': '#e05555',
+  Unknown: '#8a8a8a', Missing: '#8a8a8a', Lost: '#8a8a8a', Abandoned: '#8a8a8a',
+  Inactive: '#8a8a8a', Undiscovered: '#8a8a8a', Closed: '#8a8a8a',
+  'Under New Management': '#c8a84b',
+  Friendly: '#3dbf7f', Neutral: '#bab637', Hostile: '#e05555',
+  Completed: '#5b9fe8', Past: '#5b9fe8', Retired: '#5b9fe8',
+  Upcoming: '#c8a84b', Ongoing: '#e88c3a',
+  Trivial: '#8a8a8a', Easy: '#3dbf7f', Medium: '#c8a84b', Hard: '#e88c3a', Deadly: '#e05555',
+  Common: '#8a8a8a', Uncommon: '#3dbf7f', Rare: '#5b9fe8',
+  'Very Rare': '#b07de8', Legendary: '#e8d44d', Artifact: '#c8a84b',
+  Personal: '#8a8a8a', Local: '#5bbfb0', Regional: '#5b9fe8',
+  National: '#b07de8', Global: '#e88c3a', Secret: '#e05555', 'World-shaking': '#e05555',
+  Tiny: '#8a8a8a', Small: '#5bbfb0', Large: '#e88c3a', Huge: '#e05555', Gargantuan: '#8b2533',
+}
+
+// Date tracks hold JSON (e.g. {"day":3,"year":1507}) and shouldn't become tags.
+export const NON_TAG_TRACKS = new Set(['In_World_Date', 'Death_Date', 'Timeline_Milestones'])
+
+// A plain enum/text track value becomes a tag; JSON values (date pickers,
+// milestone lists) and any *_Date field are skipped so they never leak in.
+export function isTaggableTrack(key: string, value: string): boolean {
+  if (NON_TAG_TRACKS.has(key)) return false
+  if (key.endsWith('_Date')) return false
+  const v = value.trim()
+  if (!v) return false
+  if (v.startsWith('{') || v.startsWith('[')) return false
+  return true
+}
+
+export function getTrackTags(tracks: Record<string, string>): string[] {
+  return Object.entries(tracks)
+    .filter(([k, v]) => isTaggableTrack(k, v))
+    .map(([, v]) => v.toLowerCase().replace(/\s+/g, '-'))
+}
+
+// Parse a stored tags array, dropping any JSON-fragment garbage that earlier
+// leaked in from date/milestone tracks (never present in legitimate tags).
+export function parseTags(raw: string | null | undefined): string[] {
+  try {
+    const arr = JSON.parse(raw || '[]')
+    if (!Array.isArray(arr)) return []
+    return arr.filter((t): t is string => typeof t === 'string' && t.trim() !== '' && !/[{}[\]"]/.test(t))
+  } catch { return [] }
+}
+
+export function formatTrackName(key: string): string {
+  if (key === 'Within') return 'Located within'
+  return key.replace(/_/g, ' ')
+}
+
+export const ALL_FILTERS = [
+  { value: 'all', label: 'All', icon: BookOpen, color: 'var(--text-secondary)' },
+  ...ARTICLE_TYPES,
+]
+
+export const imgBtnStyle: React.CSSProperties = {
+  background: 'rgba(0,0,0,0.6)', border: '1px solid var(--border-light)',
+  borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
+  padding: '4px 10px', fontSize: 11, cursor: 'pointer',
+  display: 'flex', alignItems: 'center', gap: 5,
+}
+
+export const addBannerStyle: React.CSSProperties = {
+  width: '100%', padding: '12px', background: 'var(--bg-elevated)',
+  border: 'none', borderBottom: '1px solid var(--border)',
+  color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+  transition: 'background var(--transition)',
+}
+
+export const sidebarSectionLabel: React.CSSProperties = {
+  fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)',
+  textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
+}

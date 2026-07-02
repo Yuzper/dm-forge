@@ -412,8 +412,7 @@ export default function StatBlockEditor({ value, onChange, showLevel, showCR }: 
                     display: 'flex', alignItems: 'center', gap: 8,
                     opacity: alreadyAdded ? 0.5 : 1,
                   }}
-                  onMouseEnter={e => { if (!alreadyAdded) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                  className={(!alreadyAdded) ? 'hover-bg' : ''}
                 >
                   <span style={{ flex: 1 }}>{spell.name}</span>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>

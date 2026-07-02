@@ -200,8 +200,7 @@ function ColorPalette({ onSelect, onClear, onClose, currentColor }: {
           background: 'none', border: '1px solid var(--border-light)',
           borderRadius: 3, padding: '3px 8px', cursor: 'pointer', width: '100%',
         }}
-        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+        className="hover-text"
       >
         Clear colour
       </button>
@@ -358,8 +357,7 @@ function WikiLinkToolbarPopover({ onSelect, onClose }: {
                 color: 'var(--text-secondary)', fontSize: 13,
                 fontFamily: 'var(--font-ui)', cursor: 'pointer', textAlign: 'left',
               }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+              className="hover-bg"
             >
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {a.title}

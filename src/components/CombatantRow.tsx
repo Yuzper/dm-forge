@@ -409,8 +409,7 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
                 color: 'var(--text-muted)', fontSize: 11, padding: '2px 0',
                 marginBottom: 4, transition: 'color 120ms ease',
               }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+              className="hover-text-secondary"
             >
               + Resource
             </button>

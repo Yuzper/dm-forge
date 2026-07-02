@@ -236,8 +236,7 @@ function SoundRow({ sound, onEdit, onDelete }: {
       borderBottom: '1px solid var(--border)',
       transition: 'background 120ms ease',
     }}
-      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+      className="hover-bg"
     >
       <button
         onClick={togglePreview}
@@ -471,8 +470,7 @@ function BoardPanel({ board, onBoardUpdate, onBoardDelete }: {
                         padding: '7px 12px', background: 'none', border: 'none', cursor: 'pointer',
                         color: linkedHere ? 'var(--text-primary)' : 'var(--text-secondary)', fontSize: 12,
                       }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                      className="hover-bg"
                     >
                       <span style={{
                         width: 14, height: 14, borderRadius: 3, flexShrink: 0,
@@ -689,8 +687,7 @@ function AddToBoardButton({ sound, boards }: { sound: DefaultSound; boards: Soun
                   padding: '7px 12px', background: 'none', border: 'none', cursor: 'pointer',
                   color: 'var(--text-secondary)', fontSize: 12, fontFamily: 'var(--font-ui)',
                 }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                className="hover-bg"
               >
                 {b.name}
               </button>
@@ -786,8 +783,7 @@ function BoardListItem({ board, isActive, onClick }: {
         transition: 'all 120ms ease',
         display: 'flex', alignItems: 'center', gap: 8,
       }}
-      onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-      onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+      className={(!isActive) ? 'hover-bg' : ''}
     >
       <Music2 size={11} style={{ color: isActive ? '#3b82f6' : 'var(--text-muted)', flexShrink: 0 }} />
       <span style={{
@@ -881,8 +877,7 @@ export default function SoundboardPage() {
             color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
             transition: 'color var(--transition)',
           }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          className="hover-text"
         >
           <ArrowLeft size={14} /> Back
         </button>

@@ -20,8 +20,7 @@ function POIListItem({ poi, isSelected }: { poi: POI; isSelected: boolean }) {
         background: isSelected ? `${color}12` : 'transparent',
         transition: 'all 120ms ease', userSelect: 'none',
       }}
-      onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-      onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+      className={(!isSelected) ? 'hover-bg' : ''}
     >
       <div style={{
         width: 24, height: 24, borderRadius: 4,

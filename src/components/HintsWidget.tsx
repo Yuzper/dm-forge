@@ -99,8 +99,7 @@ export default function HintsWidget() {
           onClick={() => setHintMinimized(true)}
           title="Minimise"
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, display: 'flex', flexShrink: 0, transition: 'color var(--transition)' }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          className="hover-text-secondary"
         >
           <Minus size={13} />
         </button>
@@ -108,8 +107,7 @@ export default function HintsWidget() {
           onClick={() => dismissHint(hintContext)}
           title="Dismiss this hint"
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, display: 'flex', flexShrink: 0, transition: 'color var(--transition)' }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--danger-soft)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          className="hover-danger"
         >
           <X size={13} />
         </button>

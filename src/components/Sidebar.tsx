@@ -1,6 +1,7 @@
 // path: src/components/Sidebar.tsx
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useStore } from '../store/store'
+import { useMenuClose } from '../hooks/useMenuClose'
 import {
   ChevronLeft, Scroll, Download, Upload, Check,
   AlertCircle, BookOpen, Clock, ArrowLeft,
@@ -208,8 +209,7 @@ export default function Sidebar() {
                   color: 'var(--text-muted)', fontSize: 11, padding: '2px 4px',
                   borderRadius: 'var(--radius-sm)', transition: 'color var(--transition)',
                 }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--gold)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+                className="hover-gold"
               >
                 <ArrowLeft size={11} /> Back
               </button>
@@ -302,8 +302,7 @@ function ThemePicker() {
           fontSize: 12, fontFamily: 'var(--font-ui)',
           cursor: 'pointer', transition: 'all var(--transition)',
         }}
-        onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
-        onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+        className={(!open) ? 'hover-gold' : ''}
       >
         <Palette size={13} />
         Theme
@@ -384,8 +383,7 @@ function TextPicker() {
           fontSize: 12, fontFamily: 'var(--font-ui)',
           cursor: 'pointer', transition: 'all var(--transition)',
         }}
-        onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
-        onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+        className={(!open) ? 'hover-gold' : ''}
       >
         <Type size={13} />
         Text
@@ -464,8 +462,7 @@ function BackgroundPicker() {
           fontSize: 12, fontFamily: 'var(--font-ui)',
           cursor: 'pointer', transition: 'all var(--transition)',
         }}
-        onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
-        onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+        className={(!open) ? 'hover-gold' : ''}
       >
         <Paintbrush size={13} />
         Background
@@ -531,8 +528,7 @@ function HintsToggle() {
         fontSize: 12, fontFamily: 'var(--font-ui)', cursor: 'pointer',
         transition: 'all var(--transition)',
       }}
-      onMouseEnter={e => { if (!showHints) (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
-      onMouseLeave={e => { if (!showHints) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+      className={(!showHints) ? 'hover-gold' : ''}
     >
       <Lightbulb size={13} />
       Hints
@@ -544,12 +540,17 @@ function HintsToggle() {
 function BackupButton() {
   const [status, setStatus] = useState<'idle' | 'working' | 'done' | 'error'>('idle')
   const [message, setMessage] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const { campaigns, loadCampaigns } = useStore()
+  useMenuClose(menuOpen, menuRef, setMenuOpen)
 
-  const handleBackup = async () => {
+  const handleBackup = async (campaignId: number | null) => {
+    setMenuOpen(false)
     if (status === 'working') return
     setStatus('working')
     setMessage('')
-    const result = await window.api.exportBackup()
+    const result = await window.api.exportBackup(campaignId)
     if (result.canceled) { setStatus('idle'); return }
     if (result.success && result.path) {
       setStatus('done')
@@ -562,14 +563,38 @@ function BackupButton() {
     }
   }
 
+  const openMenu = () => {
+    if (status === 'working') return
+    if (!menuOpen) loadCampaigns()
+    setMenuOpen(o => !o)
+  }
+
   const icon = status === 'done' ? <Check size={13} /> : status === 'error' ? <AlertCircle size={13} /> : <Download size={13} />
   const color = status === 'done' ? 'var(--teal)' : status === 'error' ? '#e05555' : 'var(--text-muted)'
   const label = status === 'working' ? 'Backing up…' : status === 'done' ? 'Backup saved!' : status === 'error' ? 'Backup failed' : 'Export Backup'
 
   return (
-    <div>
+    <div ref={menuRef} style={{ position: 'relative' }}>
+      {menuOpen && (
+        <div style={{
+          position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 4,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+          borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)',
+          zIndex: 60, overflow: 'hidden', maxHeight: 220, overflowY: 'auto',
+        }}>
+          <button onClick={() => handleBackup(null)} className="menu-item menu-item-sm">
+            <Download size={12} /> Everything
+          </button>
+          {campaigns.length > 0 && <div style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />}
+          {campaigns.map(c => (
+            <button key={c.id} onClick={() => handleBackup(c.id)} className="menu-item menu-item-sm">
+              <Layers size={12} /> {c.name}
+            </button>
+          ))}
+        </div>
+      )}
       <button
-        onClick={handleBackup}
+        onClick={openMenu}
         disabled={status === 'working'}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 8,
@@ -580,8 +605,7 @@ function BackupButton() {
           cursor: status === 'working' ? 'wait' : 'pointer',
           transition: 'all var(--transition)',
         }}
-        onMouseEnter={e => { if (status === 'idle') (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
-        onMouseLeave={e => { if (status === 'idle') (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+        className={(status === 'idle') ? 'hover-gold' : ''}
       >
         {icon} {label}
       </button>
@@ -595,14 +619,15 @@ function BackupButton() {
 }
 
 function ImportButton() {
-  const [status, setStatus] = useState<'idle' | 'working' | 'confirm' | 'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'working' | 'confirm' | 'done' | 'error'>('idle')
   const [message, setMessage] = useState('')
+  const loadCampaigns = useStore(s => s.loadCampaigns)
 
   const handleClick = () => {
     if (status === 'working') return
     if (status !== 'confirm') {
       setStatus('confirm')
-      setTimeout(() => setStatus('idle'), 5000)
+      setTimeout(() => setStatus(s => (s === 'confirm' ? 'idle' : s)), 5000)
       return
     }
     doImport()
@@ -617,13 +642,22 @@ function ImportButton() {
       setStatus('error')
       setMessage(result.error || 'Unknown error')
       setTimeout(() => setStatus('idle'), 4000)
+      return
     }
+    await loadCampaigns()
+    const parts: string[] = []
+    if (result.imported?.length) parts.push(`${result.imported.length} imported`)
+    if (result.replaced?.length) parts.push(`${result.replaced.length} replaced`)
+    if (result.skipped?.length) parts.push(`${result.skipped.length} kept current`)
+    setStatus('done')
+    setMessage(parts.join(', ') || 'nothing imported')
+    setTimeout(() => setStatus('idle'), 5000)
   }
 
-  const icon = status === 'error' ? <AlertCircle size={13} /> : <Upload size={13} />
-  const color = status === 'confirm' ? 'var(--gold)' : status === 'error' ? '#e05555' : 'var(--text-muted)'
-  const borderColor = status === 'confirm' ? 'var(--border-gold)' : status === 'error' ? 'rgba(139,37,51,0.4)' : 'var(--border-light)'
-  const label = status === 'working' ? 'Importing…' : status === 'confirm' ? 'Click again to confirm' : status === 'error' ? 'Import failed' : 'Import Backup'
+  const icon = status === 'error' ? <AlertCircle size={13} /> : status === 'done' ? <Check size={13} /> : <Upload size={13} />
+  const color = status === 'confirm' ? 'var(--gold)' : status === 'error' ? '#e05555' : status === 'done' ? 'var(--teal)' : 'var(--text-muted)'
+  const borderColor = status === 'confirm' ? 'var(--border-gold)' : status === 'error' ? 'rgba(139,37,51,0.4)' : status === 'done' ? 'rgba(42,122,110,0.4)' : 'var(--border-light)'
+  const label = status === 'working' ? 'Importing…' : status === 'confirm' ? 'Click again to confirm' : status === 'error' ? 'Import failed' : status === 'done' ? 'Import complete!' : 'Import Backup'
 
   return (
     <div>
@@ -639,14 +673,18 @@ function ImportButton() {
           cursor: status === 'working' ? 'wait' : 'pointer',
           transition: 'all var(--transition)',
         }}
-        onMouseEnter={e => { if (status === 'idle') (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
-        onMouseLeave={e => { if (status === 'idle') (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+        className={(status === 'idle') ? 'hover-gold' : ''}
       >
         {icon} {label}
       </button>
       {status === 'confirm' && (
         <div style={{ fontSize: 10, color: 'var(--gold-dim)', marginTop: 4, paddingLeft: 4, lineHeight: 1.4 }}>
-          This will replace all current data and restart the app.
+          Campaigns are imported alongside your current ones. If one already exists you'll be asked which version to keep.
+        </div>
+      )}
+      {status === 'done' && message && (
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, paddingLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          → {message}
         </div>
       )}
       {status === 'error' && message && (
