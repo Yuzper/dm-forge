@@ -346,7 +346,10 @@ function HubPOIEditModal({
 
 // ── Hub World Map ──────────────────────────────────────────────────────────────
 
-export default function HubWorldMap() {
+export default function HubWorldMap({ fullBleed = false, onHasMapsChange }: {
+  fullBleed?: boolean
+  onHasMapsChange?: (has: boolean) => void
+}) {
   const { currentCampaign, sessions, navigateToArticleByTitle, navigateToSessionById } = useStore()
 
   const [maps, setMaps] = useState<GameMap[]>([])
@@ -414,6 +417,7 @@ export default function HubWorldMap() {
     )
     window.api.getMapsForCampaign(currentCampaign.id).then((fetched: GameMap[]) => {
       setMaps(fetched)
+      onHasMapsChange?.(fetched.length > 0)
       const savedId = Number(localStorage.getItem(`worldmap-selected-${currentCampaign.id}`))
       const first = fetched.find(m => m.id === savedId) ?? fetched[0] ?? null
       setCurrentMap(first)
@@ -535,6 +539,7 @@ export default function HubWorldMap() {
     setImporting(true)
     const map = await window.api.createMap({ campaign_id: currentCampaign.id, name: result.name, image_path: result.path })
     setMaps((prev: GameMap[]) => [...prev, map])
+    onHasMapsChange?.(true)
     handleSelectMap(map)
     setImporting(false)
   }
@@ -549,6 +554,7 @@ export default function HubWorldMap() {
     await window.api.deleteMap(id)
     setMaps((prev: GameMap[]) => {
       const next = prev.filter(m => m.id !== id)
+      onHasMapsChange?.(next.length > 0)
       if (currentMap?.id === id) {
         const fallback = next[0] ?? null
         setCurrentMap(fallback)
@@ -682,16 +688,16 @@ export default function HubWorldMap() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div>
+    <div style={fullBleed ? { height: '100%' } : undefined}>
       {/* Map panel */}
       <div
         ref={mapRef}
         style={{
-          position: 'relative', width: '100%', height: mapVisible ? 520 : 34,
-          borderRadius: 'var(--radius-lg)',
-          border: '1px solid var(--border)',
+          position: 'relative', width: '100%', height: fullBleed ? '100%' : (mapVisible ? 520 : 34),
+          borderRadius: fullBleed ? 0 : 'var(--radius-lg)',
+          border: fullBleed ? 'none' : '1px solid var(--border)',
           overflow: 'hidden',
-          background: 'var(--bg-elevated)',
+          background: fullBleed ? 'var(--bg-base)' : 'var(--bg-elevated)',
           cursor: cursorStyle,
           userSelect: 'none',
         }}
@@ -847,7 +853,7 @@ export default function HubWorldMap() {
         )}
 
         {/* Zoom controls */}
-        {maps.length > 0 && mapVisible && (
+        {maps.length > 0 && (mapVisible || fullBleed) && (
           <div style={{ position: 'absolute', bottom: 10, right: 10, zIndex: 15, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 4, padding: '4px 8px' }}
             onMouseDown={e => e.stopPropagation()}>
             <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.12)', margin: '0 2px' }} />
@@ -863,7 +869,7 @@ export default function HubWorldMap() {
 
         {/* Edit hint */}
         {editMode && (
-          <div style={{ position: 'absolute', bottom: 10, left: 12, fontSize: 10, color: 'rgba(255,255,255,0.35)', pointerEvents: 'none', userSelect: 'none', zIndex: 15 }}>
+          <div style={{ position: 'absolute', ...(fullBleed ? { top: 42, left: 14 } : { bottom: 10, left: 12 }), fontSize: 10, color: 'rgba(255,255,255,0.35)', pointerEvents: 'none', userSelect: 'none', zIndex: 15 }}>
             Click to place · drag to move · scroll to zoom
           </div>
         )}

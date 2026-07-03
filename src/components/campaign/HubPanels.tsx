@@ -6,6 +6,16 @@ import type { WikiHealth } from '../../types'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
 
+// Card chrome for the classic hub grid; `bare` panels are wrapped by the
+// map hub's floating overlay shell instead and skip background + title.
+const panelCardStyle: React.CSSProperties = {
+  background: 'var(--bg-surface)', border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-lg)', padding: '16px 18px',
+}
+const bareEmptyStyle: React.CSSProperties = {
+  fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', padding: '2px 0',
+}
+
 // ── Hub Settings ──────────────────────────────────────────────────────────────
 
 export type HubPanelKey = 'worldMap' | 'recentlyUpdated' | 'articlesByType' | 'sessionTimeline' | 'activeQuests' | 'wikiHealth'
@@ -81,7 +91,7 @@ export function HubSettingsMenu({ panels, onChange }: {
 
 // ── Recently Updated Panel ─────────────────────────────────────────────────────
 
-export function RecentlyUpdatedPanel() {
+export function RecentlyUpdatedPanel({ bare = false }: { bare?: boolean } = {}) {
   const { currentCampaign, openArticle, setView } = useStore()
   const [items, setItems] = useState<{ id: number; title: string; article_type: string; updated_at: string }[]>([])
 
@@ -105,11 +115,11 @@ export function RecentlyUpdatedPanel() {
     return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   }
 
-  if (items.length === 0) return null
+  if (items.length === 0) return bare ? <div style={bareEmptyStyle}>No articles yet</div> : null
 
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px 18px' }}>
-      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Recently updated</div>
+    <div style={bare ? undefined : panelCardStyle}>
+      {!bare && <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Recently updated</div>}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {items.map((item, i) => (
           <button key={item.id} onClick={() => { openArticle(item.id); setView('wiki') }}
@@ -128,7 +138,7 @@ export function RecentlyUpdatedPanel() {
 
 // ── Active Quests Panel ────────────────────────────────────────────────────────
 
-export function ActiveQuestsPanel() {
+export function ActiveQuestsPanel({ bare = false }: { bare?: boolean } = {}) {
   const { currentCampaign, openArticle, setView } = useStore()
   const [quests, setQuests] = useState<{
     id: number; title: string; updated_at: string
@@ -168,14 +178,16 @@ export function ActiveQuestsPanel() {
     Main: '#e88c3a', Side: '#5b9fe8', Personal: '#9b7de8', Faction: '#49c185',
   }
 
-  if (quests.length === 0) return null
+  if (quests.length === 0) return bare ? <div style={bareEmptyStyle}>No active quests</div> : null
 
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px 18px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Active quests</div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{quests.length}</div>
-      </div>
+    <div style={bare ? undefined : panelCardStyle}>
+      {!bare && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Active quests</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{quests.length}</div>
+        </div>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {quests.map((q, i) => {
           const total = q.substeps.length
@@ -221,7 +233,7 @@ export function ActiveQuestsPanel() {
 
 // ── Wiki Health Panel ──────────────────────────────────────────────────────────
 
-export function WikiHealthPanel() {
+export function WikiHealthPanel({ bare = false }: { bare?: boolean } = {}) {
   const { currentCampaign, openArticle, setView } = useStore()
   const [health, setHealth] = useState<WikiHealth | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -273,11 +285,13 @@ export function WikiHealthPanel() {
   )
 
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px 18px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Needs attention</div>
-        {total > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{total}</div>}
-      </div>
+    <div style={bare ? undefined : panelCardStyle}>
+      {!bare && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Needs attention</div>
+          {total > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{total}</div>}
+        </div>
+      )}
 
       {total === 0 ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#49c185' }}>
@@ -324,7 +338,7 @@ export function WikiHealthPanel() {
 
 // ── Articles By Type Panel ─────────────────────────────────────────────────────
 
-export function ArticlesByTypePanel() {
+export function ArticlesByTypePanel({ bare = false }: { bare?: boolean } = {}) {
   const { currentCampaign } = useStore()
   const [counts, setCounts] = useState<{ type: string; count: number; color: string }[]>([])
 
@@ -340,12 +354,12 @@ export function ArticlesByTypePanel() {
     })
   }, [currentCampaign?.id])
 
-  if (counts.length === 0) return null
+  if (counts.length === 0) return bare ? <div style={bareEmptyStyle}>No articles yet</div> : null
   const max = Math.max(...counts.map(c => c.count))
 
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px 18px' }}>
-      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Articles by type</div>
+    <div style={bare ? undefined : panelCardStyle}>
+      {!bare && <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Articles by type</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
         {counts.map(({ type, count, color }) => (
           <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

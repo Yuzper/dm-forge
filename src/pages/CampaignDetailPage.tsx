@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import TimelineEmbed from '../components/TimelineEmbed'
 import HubWorldMap from '../components/campaign/HubWorldMap'
+import MapHubView from '../components/campaign/MapHub'
 import SessionsView from '../components/campaign/SessionsView'
 import {
   type HubPanelKey, HUB_PANEL_DEFAULTS, loadHubPanels, saveHubPanels,
@@ -76,6 +77,8 @@ export default function CampaignDetailPage() {
   const [lootCount, setLootCount] = useState(0)
   const [relationsCount, setRelationsCount] = useState(0)
   const [soundboardCount, setSoundboardCount] = useState(0)
+  // null while loading — avoids flashing the classic layout before switching to the map hub
+  const [hasMap, setHasMap] = useState<boolean | null>(null)
   const [hubPanels, setHubPanels] = useState<Record<HubPanelKey, boolean>>(() =>
     currentCampaign ? loadHubPanels(currentCampaign.id) : { ...HUB_PANEL_DEFAULTS }
   )
@@ -95,6 +98,8 @@ export default function CampaignDetailPage() {
 
   useEffect(() => {
     if (!currentCampaign) return
+    setHasMap(null)
+    window.api.getMapsForCampaign(currentCampaign.id).then((m: any[]) => setHasMap(m.length > 0))
     window.api.getDMNotesPages(currentCampaign.id).then((p: any[]) => setNoteCount(p.length))
     window.api.getArticlesList({ campaignId: currentCampaign.id }).then((a: any[]) => setArticleCount(a.length))
     window.api.getLootTables(currentCampaign.id).then((t: any[]) => setLootCount(t.length))
@@ -106,6 +111,20 @@ export default function CampaignDetailPage() {
 
   if (subView === 'sessions') {
     return <SessionsView onBack={() => setSubView('hub')} />
+  }
+
+  // Map-first hub: the world map fills the view with panels floating above it.
+  // Falls back to the classic grid when the campaign has no map (or the map panel is off).
+  if (hubPanels.worldMap && hasMap === null) return null
+  if (hubPanels.worldMap && hasMap) {
+    return (
+      <MapHubView
+        panels={hubPanels}
+        onTogglePanel={togglePanel}
+        onHasMapsChange={setHasMap}
+        stats={{ articleCount, noteCount, lootCount, relationsCount, soundboardCount }}
+      />
+    )
   }
 
   const showRightPanels = hubPanels.recentlyUpdated || hubPanels.activeQuests || hubPanels.articlesByType || hubPanels.wikiHealth
@@ -137,7 +156,7 @@ export default function CampaignDetailPage() {
           marginBottom: 16,
           alignItems: 'start',
         }}>
-          {hubPanels.worldMap && <HubWorldMap />}
+          {hubPanels.worldMap && <HubWorldMap onHasMapsChange={setHasMap} />}
           {showRightPanels && (
             <div style={{
               display: 'flex', flexDirection: 'column', gap: 12,

@@ -6,12 +6,37 @@ import {
   ChevronLeft, Scroll, Download, Upload, Check,
   AlertCircle, BookOpen, Clock, ArrowLeft,
   FileText, Layers, Sparkles, ShoppingBag, Network, Paintbrush, Lightbulb, Music2, Palette, Type,
+  PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
 import POIList from './POIList'
 import type { HistoryEntry } from '../store/store'
 import { StoreMapProvider } from '../context/MapContext'
 import { THEMES, TEXT_THEMES } from '../constants/themes'
 import type { ThemeKey, TextThemeKey } from '../constants/themes'
+
+// ── Collapsed rail ─────────────────────────────────────────────────────────────
+
+function RailIcon({ icon, title, active, accent, onClick }: {
+  icon: React.ReactNode; title: string; active: boolean; accent: string; onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: active ? `color-mix(in srgb, ${accent} 14%, transparent)` : 'none',
+        border: `1px solid ${active ? `color-mix(in srgb, ${accent} 45%, transparent)` : 'transparent'}`,
+        borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+        color: active ? accent : 'var(--text-muted)',
+        transition: 'all var(--transition)',
+      }}
+      className={active ? '' : 'hover-gold'}
+    >
+      {icon}
+    </button>
+  )
+}
 
 function historyIcon(entry: HistoryEntry) {
   switch (entry.type) {
@@ -39,12 +64,83 @@ export default function Sidebar() {
     view === 'soundboard'
   const canGoBack = navigationHistory.length >= 2
   const [version, setVersion] = useState('')
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true')
+
+  const toggleCollapsed = () => setCollapsed(c => {
+    localStorage.setItem('sidebar-collapsed', String(!c))
+    return !c
+  })
 
   useEffect(() => {
     window.api.getAppVersion().then(setVersion)
   }, [])
 
   const historyToShow = navigationHistory.slice(0, -1).reverse()
+
+  if (collapsed) {
+    return (
+      <aside style={{
+        width: 54,
+        background: 'var(--bg-surface)',
+        borderRight: '1px solid var(--border)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        flexShrink: 0,
+        userSelect: 'none',
+        padding: '12px 0',
+        gap: 3,
+      }}>
+        <button
+          onClick={() => setView('campaigns')}
+          title="All campaigns"
+          style={{
+            width: 32, height: 32, background: 'var(--gold)', borderRadius: 4, border: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+            marginBottom: 10, flexShrink: 0,
+          }}
+        >
+          <Scroll size={18} color="var(--text-inverse)" strokeWidth={2} />
+        </button>
+
+        {inCampaignContext && currentCampaign && (
+          <>
+            <RailIcon icon={<Layers size={16} />} title={`${currentCampaign.name} — campaign hub`} accent="var(--gold)"
+              active={view === 'campaign' && campaignSubView === 'hub'}
+              onClick={() => { setView('campaign'); setCampaignSubView('hub') }} />
+            <RailIcon icon={<Scroll size={16} />} title="Sessions" accent="var(--gold)"
+              active={view === 'campaign' && campaignSubView === 'sessions'}
+              onClick={() => { setView('campaign'); setCampaignSubView('sessions') }} />
+            <RailIcon icon={<BookOpen size={16} />} title="Wiki" accent="#5b9fe8"
+              active={view === 'wiki'} onClick={() => setView('wiki')} />
+            <RailIcon icon={<Sparkles size={16} />} title="DM Notes" accent="#9b7de8"
+              active={view === 'dm-notes'} onClick={() => setView('dm-notes')} />
+            <RailIcon icon={<ShoppingBag size={16} />} title="Loot Tables" accent="#49c185"
+              active={view === 'loot-tables'} onClick={() => setView('loot-tables')} />
+            <RailIcon icon={<Network size={16} />} title="Relations" accent="#b07de8"
+              active={view === 'relations'} onClick={() => setView('relations')} />
+            <RailIcon icon={<Clock size={16} />} title="Timeline" accent="#e88c3a"
+              active={view === 'timeline'} onClick={() => setView('timeline')} />
+            <RailIcon icon={<Music2 size={16} />} title="Soundboard" accent="#3b82f6"
+              active={view === 'soundboard'} onClick={() => setView('soundboard')} />
+          </>
+        )}
+
+        <button
+          onClick={toggleCollapsed}
+          title="Expand sidebar"
+          style={{
+            marginTop: 'auto', width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'none', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+            color: 'var(--text-muted)', transition: 'color var(--transition)',
+          }}
+          className="hover-gold"
+        >
+          <PanelLeftOpen size={16} />
+        </button>
+      </aside>
+    )
+  }
 
   return (
     <aside style={{
@@ -69,6 +165,18 @@ export default function Sidebar() {
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--gold)', letterSpacing: '0.05em' }}>DM Forge</div>
             <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 1 }}>Dungeon Master</div>
           </div>
+          <button
+            onClick={toggleCollapsed}
+            title="Collapse sidebar"
+            style={{
+              marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'none', border: 'none', cursor: 'pointer', padding: 4,
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', transition: 'color var(--transition)',
+            }}
+            className="hover-gold"
+          >
+            <PanelLeftClose size={15} />
+          </button>
         </div>
       </div>
 
