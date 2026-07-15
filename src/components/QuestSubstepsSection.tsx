@@ -1,8 +1,9 @@
 // path: src/components/QuestSubstepsSection.tsx
 // Substeps panel for quest articles — ordered steps with status, notes, session + POI links.
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Plus, ChevronUp, ChevronDown, Trash2, ChevronRight, ChevronDown as Expand } from 'lucide-react'
+import DropdownPortal from './DropdownPortal'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ function statusConfig(s: Substep['status']) {
 
 function StatusPicker({ value, onChange, readMode }: { value: Substep['status']; onChange: (v: Substep['status']) => void; readMode: boolean }) {
   const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
   const cfg = statusConfig(value)
 
   if (readMode) {
@@ -49,13 +51,14 @@ function StatusPicker({ value, onChange, readMode }: { value: Substep['status'];
   return (
     <div style={{ position: 'relative', flexShrink: 0 }}>
       <button
+        ref={btnRef}
         onClick={() => setOpen(v => !v)}
         style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4, fontStyle: value === 'skipped' ? 'italic' : 'normal' }}
       >
         {cfg.label} <ChevronRight size={9} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 100ms' }} />
       </button>
       {open && (
-        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', zIndex: 50, overflow: 'hidden', minWidth: 120 }}>
+        <DropdownPortal anchor={btnRef.current} align="right" minWidth={120} onClose={() => setOpen(false)}>
           {STATUS_OPTIONS.map(opt => (
             <button key={opt.value} onClick={() => { onChange(opt.value); setOpen(false) }}
               style={{ width: '100%', display: 'flex', alignItems: 'center', padding: '7px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: opt.color, textAlign: 'left', fontStyle: opt.value === 'skipped' ? 'italic' : 'normal' }}
@@ -64,7 +67,7 @@ function StatusPicker({ value, onChange, readMode }: { value: Substep['status'];
               {opt.label}
             </button>
           ))}
-        </div>
+        </DropdownPortal>
       )}
     </div>
   )

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/store'
 import {
-  BookOpen, Scroll, Sparkles, ShoppingBag, Network, Clock, Music2,
+  BookOpen, Scroll, Sparkles, ShoppingBag, Network, Clock, Music2, Map,
 } from 'lucide-react'
 import TimelineEmbed from '../components/TimelineEmbed'
 import HubWorldMap from '../components/campaign/HubWorldMap'
@@ -62,6 +62,20 @@ function NavDockCard({ icon, title, stat, onClick, accent }: {
   )
 }
 
+// ── Hub layout preference ──────────────────────────────────────────────────────
+// 'map' = full-bleed map hub, 'classic' = the original panel grid. Stored per
+// campaign in localStorage alongside the hub panel preferences.
+
+export type HubLayout = 'map' | 'classic'
+
+function loadHubLayout(campaignId: number): HubLayout {
+  return localStorage.getItem(`hub-layout-${campaignId}`) === 'classic' ? 'classic' : 'map'
+}
+
+function saveHubLayout(campaignId: number, layout: HubLayout) {
+  localStorage.setItem(`hub-layout-${campaignId}`, layout)
+}
+
 // ── Campaign Detail Page ───────────────────────────────────────────────────────
 
 export default function CampaignDetailPage() {
@@ -79,13 +93,25 @@ export default function CampaignDetailPage() {
   const [soundboardCount, setSoundboardCount] = useState(0)
   // null while loading — avoids flashing the classic layout before switching to the map hub
   const [hasMap, setHasMap] = useState<boolean | null>(null)
+  const [hubLayout, setHubLayout] = useState<HubLayout>(() =>
+    currentCampaign ? loadHubLayout(currentCampaign.id) : 'map'
+  )
   const [hubPanels, setHubPanels] = useState<Record<HubPanelKey, boolean>>(() =>
     currentCampaign ? loadHubPanels(currentCampaign.id) : { ...HUB_PANEL_DEFAULTS }
   )
 
   useEffect(() => {
-    if (currentCampaign) setHubPanels(loadHubPanels(currentCampaign.id))
+    if (currentCampaign) {
+      setHubPanels(loadHubPanels(currentCampaign.id))
+      setHubLayout(loadHubLayout(currentCampaign.id))
+    }
   }, [currentCampaign?.id])
+
+  const switchLayout = (layout: HubLayout) => {
+    if (!currentCampaign) return
+    saveHubLayout(currentCampaign.id, layout)
+    setHubLayout(layout)
+  }
 
   const togglePanel = (key: HubPanelKey, value: boolean) => {
     if (!currentCampaign) return
@@ -114,14 +140,17 @@ export default function CampaignDetailPage() {
   }
 
   // Map-first hub: the world map fills the view with panels floating above it.
-  // Falls back to the classic grid when the campaign has no map (or the map panel is off).
-  if (hubPanels.worldMap && hasMap === null) return null
-  if (hubPanels.worldMap && hasMap) {
+  // Falls back to the classic grid when the campaign has no map, the map panel
+  // is off, or the user prefers the classic layout.
+  const wantsMapHub = hubPanels.worldMap && hubLayout === 'map'
+  if (wantsMapHub && hasMap === null) return null
+  if (wantsMapHub && hasMap) {
     return (
       <MapHubView
         panels={hubPanels}
         onTogglePanel={togglePanel}
         onHasMapsChange={setHasMap}
+        onSwitchLayout={() => switchLayout('classic')}
         stats={{ articleCount, noteCount, lootCount, relationsCount, soundboardCount }}
       />
     )
@@ -139,7 +168,17 @@ export default function CampaignDetailPage() {
             </div>
             <h1 style={{ fontSize: 28, letterSpacing: '0.04em' }}>{currentCampaign.name}</h1>
           </div>
-          <div style={{ paddingTop: 6 }}>
+          <div style={{ paddingTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+            {hasMap && hubPanels.worldMap && (
+              <button
+                onClick={() => switchLayout('map')}
+                title="Switch to the map-focused hub"
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 99, fontSize: 11, background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}
+                className="hover-gold-border"
+              >
+                <Map size={11} /> Map view
+              </button>
+            )}
             <HubSettingsMenu panels={hubPanels} onChange={togglePanel} />
           </div>
         </div>

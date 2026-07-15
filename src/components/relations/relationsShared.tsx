@@ -99,6 +99,7 @@ export interface DBRelationNode {
   article_type?: string | null
   vitality?: string | null
   tracks?: string | null
+  portrait_image?: string | null
 }
 
 export interface DBRelationEdge {
@@ -122,6 +123,7 @@ export interface NodeData {
   linked: boolean
   articleId: number | null
   articleType: string | null
+  portrait: string | null
   tracks: Record<string, string>
   trackFilters: Record<string, string[]>
   rankName: string | null
@@ -244,6 +246,10 @@ export function dbNodeToRF(
       linked: node.article_id !== null,
       articleId: node.article_id,
       articleType: node.article_type || null,
+      // Portraits only make sense for people — characters and player characters.
+      portrait: (node.article_type === 'character' || node.article_type === 'playerCharacter')
+        ? node.portrait_image ?? null
+        : null,
       tracks: parsedTracks,
       trackFilters,
       rankName: rank?.name ?? null,
@@ -352,6 +358,18 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
       <FourWayHandles baseStyle={handleStyle} />
       {data.rankColor && (
         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, borderRadius: '6px 0 0 6px', background: data.rankColor }} />
+      )}
+      {data.portrait && (
+        <img
+          src={`file://${data.portrait}`}
+          alt=""
+          draggable={false}
+          style={{
+            width: 32, height: 32, borderRadius: '50%', objectFit: 'cover',
+            border: '1px solid var(--border-light)', flexShrink: 0,
+            userSelect: 'none', pointerEvents: 'none',
+          }}
+        />
       )}
       <div style={{ minWidth: 0, flex: 1 }}>
         {data.rankName && (

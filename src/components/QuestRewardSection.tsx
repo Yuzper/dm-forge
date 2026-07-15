@@ -1,8 +1,9 @@
 // path: src/components/QuestRewardSection.tsx
 // Rewards panel for quest articles — typed entries with description and notes.
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Plus, Trash2, ChevronRight, ChevronDown as Expand, Coins, Package, BookOpen, Home, Sparkles } from 'lucide-react'
+import DropdownPortal from './DropdownPortal'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ function typeConfig(t: RewardType) {
 
 function TypePicker({ value, onChange, readMode }: { value: RewardType; onChange: (v: RewardType) => void; readMode: boolean }) {
   const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
   const cfg = typeConfig(value)
   const Icon = cfg.icon
 
@@ -52,13 +54,14 @@ function TypePicker({ value, onChange, readMode }: { value: RewardType; onChange
   return (
     <div style={{ position: 'relative', flexShrink: 0 }}>
       <button
+        ref={btnRef}
         onClick={() => setOpen(v => !v)}
         style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '2px 8px', borderRadius: 99, background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color, cursor: 'pointer', whiteSpace: 'nowrap' }}
       >
         <Icon size={10} /> {cfg.label} <ChevronRight size={9} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 100ms' }} />
       </button>
       {open && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', zIndex: 50, overflow: 'hidden', minWidth: 130 }}>
+        <DropdownPortal anchor={btnRef.current} align="left" minWidth={130} onClose={() => setOpen(false)}>
           {TYPE_OPTIONS.map(opt => {
             const OptIcon = opt.icon
             return (
@@ -70,7 +73,7 @@ function TypePicker({ value, onChange, readMode }: { value: RewardType; onChange
               </button>
             )
           })}
-        </div>
+        </DropdownPortal>
       )}
     </div>
   )

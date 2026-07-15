@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import { useStore } from '../../store/store'
 import {
-  ChevronDown, ChevronUp, X, Clock,
+  ChevronDown, ChevronUp, X, Clock, LayoutGrid,
   Scroll, BookOpen, Sparkles, ShoppingBag, Network, Music2,
 } from 'lucide-react'
 import HubWorldMap from './HubWorldMap'
@@ -210,10 +210,11 @@ function TimelineChip({ open, onToggle }: { open: boolean; onToggle: () => void 
 
 // ── Map Hub View ───────────────────────────────────────────────────────────────
 
-export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, stats }: {
+export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, onSwitchLayout, stats }: {
   panels: Record<HubPanelKey, boolean>
   onTogglePanel: (key: HubPanelKey, value: boolean) => void
   onHasMapsChange: (has: boolean) => void
+  onSwitchLayout: () => void
   stats: MapHubStats
 }) {
   const { currentCampaign } = useStore()
@@ -247,7 +248,15 @@ export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, sta
           </h1>
           <span className="badge badge-gold">{currentCampaign.system}</span>
         </div>
-        <div style={{ pointerEvents: 'auto' }}>
+        <div style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            onClick={onSwitchLayout}
+            title="Switch to the classic hub layout"
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 99, fontSize: 11, background: 'color-mix(in srgb, var(--bg-surface) 88%, transparent)', border: '1px solid var(--border-light)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}
+            className="hover-gold-border"
+          >
+            <LayoutGrid size={11} /> Classic view
+          </button>
           <HubSettingsMenu panels={panels} onChange={onTogglePanel} />
         </div>
       </div>

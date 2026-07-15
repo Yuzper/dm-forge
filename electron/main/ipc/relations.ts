@@ -57,7 +57,7 @@ export function registerRelationIPC() {
   ipcMain.handle('relation-webs:get-data', (_e, webId: number) => {
     const nodes = db.prepare(`
       SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.pos_x, n.pos_y,
-             a.title AS article_title, a.article_type, a.tracks
+             a.title AS article_title, a.article_type, a.tracks, a.portrait_image
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
       WHERE n.web_id = ?
@@ -94,7 +94,7 @@ export function registerRelationIPC() {
 
     const node = db.prepare(`
       SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.pos_x, n.pos_y,
-             a.title AS article_title, a.article_type, a.tracks
+             a.title AS article_title, a.article_type, a.tracks, a.portrait_image
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
       WHERE n.id = ?
@@ -117,7 +117,7 @@ export function registerRelationIPC() {
 
     const node = db.prepare(`
       SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.pos_x, n.pos_y,
-             a.title AS article_title, a.article_type, a.tracks
+             a.title AS article_title, a.article_type, a.tracks, a.portrait_image
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
       WHERE n.id = ?
