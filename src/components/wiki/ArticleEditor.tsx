@@ -1,5 +1,5 @@
 // path: src/components/wiki/ArticleEditor.tsx
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useStore } from '../../store/store'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import {
@@ -39,7 +39,9 @@ function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions }: 
   trackKey: string; name: string; options: string[]; value: string
   onChange: (v: string) => void; dynamicOptions?: string[]
 }) {
-  const resolvedOptions = dynamicOptions ?? options
+  // One alphabetical, de-duplicated list regardless of how the options were
+  // assembled (static list, dynamic article names, or a merge of both).
+  const resolvedOptions = Array.from(new Set(dynamicOptions ?? options)).sort((a, b) => a.localeCompare(b))
   const isCustomOnly = dynamicOptions === undefined && options.length === 0
   const [customMode, setCustomMode] = useState(() => isCustomOnly || (value !== '' && !resolvedOptions.includes(value)))
   const inputRef = useRef<HTMLInputElement>(null)
@@ -420,16 +422,27 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
 }
 
 export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: { article: Article; onBack: () => void; backLabel?: string }) {
-  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, setView, setRelationsOpenWebId, setRelationsFocusArticleId, setHintContext } = useStore()
+  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, allArticles, loadAllArticles, setView, setRelationsOpenWebId, setRelationsFocusArticleId, setHintContext } = useStore()
 
-  const [factionNames, setFactionNames]       = useState<string[]>([])
-  const [organizationNames, setOrgNames]      = useState<string[]>([])
-  const [religionNames, setReligionNames]     = useState<string[]>([])
-  const [cultureNames, setCultureNames]       = useState<string[]>([])
-  const [locationNames, setLocationNames]     = useState<string[]>([])
-  const [creatureNames, setCreatureNames]     = useState<string[]>([])
-  const [characterNames, setCharacterNames]   = useState<string[]>([])
-  const [playerCharacterNames, setPlayerCharacterNames] = useState<string[]>([])
+  // Article names per type for the track dropdowns, derived from the store's
+  // live list so newly created articles show up immediately. Alphabetical.
+  const namesByType = useMemo(() => {
+    const m: Record<string, string[]> = {}
+    for (const a of allArticles) (m[a.article_type] ??= []).push(a.title)
+    for (const k in m) m[k].sort((a, b) => a.localeCompare(b))
+    return m
+  }, [allArticles])
+  const factionNames         = namesByType.faction ?? []
+  const organizationNames    = namesByType.organization ?? []
+  const religionNames        = namesByType.religion ?? []
+  const cultureNames         = namesByType.culture ?? []
+  const locationNames        = namesByType.location ?? []
+  const creatureNames        = namesByType.creature ?? []
+  const playerCharacterNames = namesByType.playerCharacter ?? []
+  const characterNames = useMemo(
+    () => [...(namesByType.character ?? []), ...(namesByType.playerCharacter ?? [])].sort((a, b) => a.localeCompare(b)),
+    [namesByType]
+  )
   const [masterTables, setMasterTables]       = useState<MasterLootTable[]>([])
 
   const [title, setTitle]             = useState(article.title)
@@ -520,19 +533,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
 
   useEffect(() => {
     if (!currentCampaign) return
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'faction' }).then(f => setFactionNames(f.map(a => a.title).sort()))
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'organization' }).then(o => setOrgNames(o.map(a => a.title).sort()))
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'religion' }).then(r => setReligionNames(r.map(a => a.title).sort()))
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'culture' }).then(c => setCultureNames(c.map(a => a.title).sort()))
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'creature' }).then(c => setCreatureNames(c.map(a => a.title).sort()))
-    window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'location' }).then(l => setLocationNames(l.map(a => a.title).sort()))
-    Promise.all([
-      window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'character' }),
-      window.api.getArticlesList({ campaignId: currentCampaign.id, type: 'playerCharacter' }),
-    ]).then(([chars, pcs]) => {
-      setCharacterNames([...chars, ...pcs].map(a => a.title).sort())
-      setPlayerCharacterNames(pcs.map(a => a.title).sort())
-    })
+    loadAllArticles()
     window.api.getLootTables(currentCampaign.id).then(setMasterTables)
   }, [currentCampaign?.id])
 

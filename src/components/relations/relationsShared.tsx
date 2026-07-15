@@ -144,7 +144,8 @@ export const ARTICLE_TRACKS: Partial<Record<string, Record<string, string[]>>> =
   character: {
     Vitality: ['Alive', 'Dead', 'Unknown', 'Missing', 'Immortal'],
     Attitude: ['Friendly', 'Neutral', 'Hostile'],
-    Age: [], Royal_Title: ['Duke','Duchess','Lord','Lady','King','Queen','Prince','Princess','Emperor','Empress','Disowned'],
+    Age: [], Species: [],
+    Royal_Title: ['Duke','Duchess','Lord','Lady','King','Queen','Prince','Princess','Emperor','Empress','Disowned'],
     Title: ['Professor','Captain','General','Admiral','Archmage','High Priest'],
     Location: [], Faction: [], Religion: [], Culture: [],
   },
@@ -153,7 +154,7 @@ export const ARTICLE_TRACKS: Partial<Record<string, Record<string, string[]>>> =
     Disposition: ['Friendly', 'Neutral', 'Hostile'],
     Royalty: ['Duke','Duchess','Lord','Lady','King','Queen','Prince','Princess','Emperor','Empress','Disowned'],
     Title: ['Professor','Captain','General','Admiral','Archmage','High Priest'],
-    Age: [], Location: [], Faction: [], Religion: [], Culture: [],
+    Age: [], Species: [], Location: [], Faction: [], Religion: [], Culture: [],
   },
   creature: {
     Vitality: ['Living','Extinct','Endangered','Unknown'],
