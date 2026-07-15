@@ -45,9 +45,13 @@ export function registerLootTableIPC() {
   })
 
   ipcMain.handle('loot-tables:delete', (_e, id: number) => {
+    // Count before nulling — the previous order always reported 0.
+    const { affected } = db.prepare('SELECT COUNT(*) as affected FROM articles WHERE loot_table_id = ?').get(id) as { affected: number }
     db.prepare('UPDATE articles SET loot_table_id = NULL WHERE loot_table_id = ?').run(id)
     db.prepare('UPDATE pois SET loot_table_id = NULL WHERE loot_table_id = ?').run(id)
-    const { affected } = db.prepare('SELECT COUNT(*) as affected FROM articles WHERE loot_table_id = ?').get(id) as { affected: number }
+    // Combat creatures cache a variant loot table id with no FK — null it so
+    // rolls fall back to the embedded variant_loot_table JSON copy.
+    db.prepare('UPDATE combat_creatures SET variant_loot_table_id = NULL WHERE variant_loot_table_id = ?').run(id)
     db.prepare('DELETE FROM loot_tables WHERE id = ?').run(id)
     return { success: true, affected }
   })

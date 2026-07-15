@@ -1,6 +1,7 @@
 // path: electron/main/ipc/dmNotes.ts
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import { db } from '../db'
+import { extractInlineImagePaths, safeUnlink } from '../helpers'
 
 export function registerDMNotesIPC() {
 
@@ -38,7 +39,15 @@ export function registerDMNotesIPC() {
   })
 
   ipcMain.handle('dm-notes:update', (_e, id: number, data: any) => {
-    const page = db.prepare('SELECT session_id FROM dm_notes_pages WHERE id = ?').get(id) as any
+    const page = db.prepare('SELECT session_id, content FROM dm_notes_pages WHERE id = ?').get(id) as any
+    // Capture the previous content (own column, or the linked session's notes)
+    // so inline images removed by this update can be unlinked afterwards.
+    let oldContent: string | undefined
+    if ('content' in data) {
+      oldContent = page?.session_id
+        ? (db.prepare('SELECT notes FROM sessions WHERE id = ?').get(page.session_id) as any)?.notes
+        : page?.content
+    }
     if (page?.session_id && 'content' in data) {
       // Route content changes to the linked session instead of the page's own content column
       db.prepare('UPDATE sessions SET notes = ? WHERE id = ?').run(data.content, page.session_id)
@@ -53,6 +62,12 @@ export function registerDMNotesIPC() {
       const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
       db.prepare(`UPDATE dm_notes_pages SET ${fields}, updated_at = datetime('now') WHERE id = @id`).run({ ...data, id })
     }
+    if (oldContent !== undefined && data.content !== oldContent) {
+      const userDataPath = app.getPath('userData')
+      const oldPaths = new Set(extractInlineImagePaths(oldContent || '', userDataPath))
+      const newPaths = new Set(extractInlineImagePaths(data.content || '', userDataPath))
+      for (const p of oldPaths) { if (!newPaths.has(p)) safeUnlink(p) }
+    }
     // Return the page with session content substituted if applicable
     const updated = db.prepare('SELECT * FROM dm_notes_pages WHERE id = ?').get(id) as any
     if (updated?.session_id) {
@@ -63,7 +78,9 @@ export function registerDMNotesIPC() {
   })
 
   ipcMain.handle('dm-notes:delete', (_e, id: number) => {
+    const page = db.prepare('SELECT content FROM dm_notes_pages WHERE id = ?').get(id) as { content: string } | undefined
     db.prepare('DELETE FROM dm_notes_pages WHERE id = ?').run(id)
+    if (page) extractInlineImagePaths(page.content, app.getPath('userData')).forEach(safeUnlink)
   })
 
   ipcMain.handle('dm-notes:reorder-pages', (_e, orders: { id: number; sort_order: number; group_id: number | null }[]) => {

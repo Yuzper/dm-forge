@@ -4,8 +4,19 @@ import path from 'path'
 import fs from 'fs'
 import { db } from '../db'
 import { scanDefaultSounds } from '../defaults'
+import { safeUnlinkRelative } from '../helpers'
 
 export function registerSoundIPC() {
+
+  // Copied audio files live under userData/sounds and can be shared by several
+  // sound rows (the picker reuses an existing file instead of duplicating it).
+  // Bundled defaults use `default:` refs and are never touched. Call AFTER the
+  // owning rows are deleted so the ref-count reflects the remaining state.
+  function unlinkSoundFileIfOrphaned(filePath: string) {
+    if (!filePath.startsWith('sounds/')) return
+    const { c } = db.prepare('SELECT COUNT(*) AS c FROM sounds WHERE file_path = ?').get(filePath) as { c: number }
+    if (c === 0) safeUnlinkRelative(filePath, app.getPath('userData'))
+  }
 
   // ── Sound Boards ──────────────────────────────────────────────────────────────
 
@@ -36,7 +47,11 @@ export function registerSoundIPC() {
   })
 
   ipcMain.handle('soundboards:delete', (_e, id: number) => {
+    const files = db.prepare(
+      "SELECT DISTINCT file_path FROM sounds WHERE board_id = ? AND file_path LIKE 'sounds/%'"
+    ).all(id) as { file_path: string }[]
     db.prepare('DELETE FROM sound_boards WHERE id = ?').run(id)
+    for (const f of files) unlinkSoundFileIfOrphaned(f.file_path)
   })
 
   // ── Sounds ────────────────────────────────────────────────────────────────────
@@ -65,7 +80,9 @@ export function registerSoundIPC() {
   })
 
   ipcMain.handle('sounds:delete', (_e, id: number) => {
+    const sound = db.prepare('SELECT file_path FROM sounds WHERE id = ?').get(id) as { file_path: string } | undefined
     db.prepare('DELETE FROM sounds WHERE id = ?').run(id)
+    if (sound) unlinkSoundFileIfOrphaned(sound.file_path)
   })
 
   ipcMain.handle('soundboards:get-defaults', () => {

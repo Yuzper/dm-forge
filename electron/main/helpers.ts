@@ -128,3 +128,16 @@ export function safeUnlinkRelative(relativePath: string | null | undefined, user
   if (!relativePath) return
   safeUnlink(path.join(userDataPath, relativePath))
 }
+
+// Unlinks an image reference regardless of how it was stored: cover/portrait
+// images hold absolute paths (optionally file://-prefixed), map images hold
+// userData-relative paths. Refuses to touch anything outside userData so a
+// malformed reference can never delete unrelated files.
+export function unlinkImageRef(ref: string | null | undefined, userDataPath: string) {
+  if (!ref) return
+  let p = ref.startsWith('file://') ? ref.slice(7) : ref
+  if (!path.isAbsolute(p)) p = path.join(userDataPath, p)
+  p = path.normalize(p)
+  if (!p.startsWith(path.normalize(userDataPath) + path.sep)) return
+  safeUnlink(p)
+}

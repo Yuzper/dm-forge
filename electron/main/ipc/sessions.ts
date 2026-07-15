@@ -1,7 +1,7 @@
 // path: electron/main/ipc/sessions.ts
 import { app, ipcMain } from 'electron'
 import { db } from '../db'
-import { safeUnlinkRelative } from '../helpers'
+import { extractInlineImagePaths, safeUnlink, safeUnlinkRelative } from '../helpers'
 
 export function registerSessionIPC() {
 
@@ -56,8 +56,18 @@ export function registerSessionIPC() {
   })
 
   ipcMain.handle('sessions:update', (_e, id: number, data: any) => {
+    const old = data.notes !== undefined
+      ? db.prepare('SELECT notes FROM sessions WHERE id = ?').get(id) as { notes: string } | undefined
+      : undefined
     const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE sessions SET ${fields} WHERE id = @id`).run({ ...data, id })
+    // Unlink inline images that were removed from the notes in this update.
+    if (old && data.notes !== old.notes) {
+      const userDataPath = app.getPath('userData')
+      const oldPaths = new Set(extractInlineImagePaths(old.notes || '', userDataPath))
+      const newPaths = new Set(extractInlineImagePaths(data.notes || '', userDataPath))
+      for (const p of oldPaths) { if (!newPaths.has(p)) safeUnlink(p) }
+    }
     return db.prepare('SELECT * FROM sessions WHERE id = ?').get(id)
   })
 
@@ -115,9 +125,25 @@ export function registerSessionIPC() {
 
   ipcMain.handle('sessions:delete', (_e, id: number) => {
     const userDataPath = app.getPath('userData')
-    const maps = db.prepare('SELECT image_path FROM maps WHERE session_id = ?').all(id) as { image_path: string }[]
+    const session = db.prepare('SELECT notes FROM sessions WHERE id = ?').get(id) as { notes: string } | undefined
+    const maps = db.prepare('SELECT DISTINCT image_path FROM maps WHERE session_id = ?').all(id) as { image_path: string }[]
+    const pois = db.prepare(`
+      SELECT p.content FROM pois p JOIN maps m ON m.id = p.map_id WHERE m.session_id = ?
+    `).all(id) as { content: string }[]
+
+    // The mirror page in the "Session Notes" DM-notes group has no content of
+    // its own (it reads from session.notes), so it would survive as an empty
+    // orphan — remove it along with the session.
+    db.prepare('DELETE FROM dm_notes_pages WHERE session_id = ?').run(id)
     db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
-    for (const map of maps) safeUnlinkRelative(map.image_path, userDataPath)
+
+    if (session) extractInlineImagePaths(session.notes || '', userDataPath).forEach(safeUnlink)
+    for (const p of pois) extractInlineImagePaths(p.content, userDataPath).forEach(safeUnlink)
+    // Map images can be shared with other maps (picker reuse) — ref-count first.
+    const mapRefs = db.prepare('SELECT COUNT(*) AS c FROM maps WHERE image_path = ?')
+    for (const map of maps) {
+      if ((mapRefs.get(map.image_path) as { c: number }).c === 0) safeUnlinkRelative(map.image_path, userDataPath)
+    }
   })
 
   // ── Arcs ──────────────────────────────────────────────────────────────────────

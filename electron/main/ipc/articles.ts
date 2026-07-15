@@ -1,7 +1,7 @@
 // path: electron/main/ipc/articles.ts
 import { app, ipcMain } from 'electron'
 import { db } from '../db'
-import { extractInlineImagePaths, safeUnlink, safeUnlinkRelative } from '../helpers'
+import { extractInlineImagePaths, safeUnlink, safeUnlinkRelative, unlinkImageRef } from '../helpers'
 import { syncHierarchyForWeb, syncTerritoryWeb } from '../relationsSync'
 
 export function registerArticleIPC() {
@@ -251,10 +251,11 @@ export function registerArticleIPC() {
 
     if (old) {
       if (old.cover_image && data.cover_image !== undefined && data.cover_image !== old.cover_image) {
-        safeUnlinkRelative(old.cover_image, userDataPath)
+        unlinkImageRef(old.cover_image, userDataPath)
       }
-      if (old.portrait_image && data.portrait_image !== undefined && data.portrait_image !== old.portrait_image) {
-        safeUnlinkRelative(old.portrait_image, userDataPath)
+      if (old.portrait_image && data.portrait_image !== undefined && data.portrait_image !== old.portrait_image &&
+          !old.portrait_image.includes('creature_')) {
+        unlinkImageRef(old.portrait_image, userDataPath)
       }
       if (data.content !== undefined && data.content !== old.content) {
         const oldPaths = new Set(extractInlineImagePaths(old.content, userDataPath))
@@ -282,6 +283,14 @@ export function registerArticleIPC() {
       WHERE n.article_id = ? AND w.template = 'org_hierarchy'
     `).all(id) as { web_id: number }[]
 
+    // Article-owned maps (location maps) cascade with the article — capture
+    // their files and POI contents before the delete.
+    const maps = db.prepare('SELECT DISTINCT image_path FROM maps WHERE article_id = ?')
+      .all(id) as { image_path: string }[]
+    const pois = db.prepare(`
+      SELECT p.content FROM pois p JOIN maps m ON m.id = p.map_id WHERE m.article_id = ?
+    `).all(id) as { content: string }[]
+
     db.prepare('DELETE FROM articles WHERE id = ?').run(id)
 
     for (const { web_id } of affectedWebs) syncHierarchyForWeb(web_id)
@@ -294,8 +303,14 @@ export function registerArticleIPC() {
 
     if (article) {
       extractInlineImagePaths(article.content, userDataPath).forEach(safeUnlink)
-      safeUnlinkRelative(article.cover_image, userDataPath)
-      if (!article.portrait_image?.includes('creature_')) safeUnlinkRelative(article.portrait_image, userDataPath)
+      unlinkImageRef(article.cover_image, userDataPath)
+      if (!article.portrait_image?.includes('creature_')) unlinkImageRef(article.portrait_image, userDataPath)
+    }
+    for (const p of pois) extractInlineImagePaths(p.content, userDataPath).forEach(safeUnlink)
+    // Map images can be shared with other maps (picker reuse) — ref-count first.
+    const mapRefs = db.prepare('SELECT COUNT(*) AS c FROM maps WHERE image_path = ?')
+    for (const m of maps) {
+      if ((mapRefs.get(m.image_path) as { c: number }).c === 0) safeUnlinkRelative(m.image_path, userDataPath)
     }
   })
 }

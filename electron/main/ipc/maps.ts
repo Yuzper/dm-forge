@@ -79,8 +79,16 @@ export function registerMapIPC(imagesPath: string) {
       ).get(data.session_id) as { m: number }
       data = { ...data, sort_order: m + 1 }
     }
+    // Replacing the image orphans the old file unless another map shares it.
+    const old = data.image_path !== undefined
+      ? db.prepare('SELECT image_path FROM maps WHERE id = ?').get(id) as { image_path: string } | undefined
+      : undefined
     const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE maps SET ${fields} WHERE id = @id`).run({ ...data, id })
+    if (old && old.image_path !== data.image_path) {
+      const { c } = db.prepare('SELECT COUNT(*) AS c FROM maps WHERE image_path = ?').get(old.image_path) as { c: number }
+      if (c === 0) safeUnlinkRelative(old.image_path, app.getPath('userData'))
+    }
     return db.prepare('SELECT * FROM maps WHERE id = ?').get(id)
   })
 
@@ -94,8 +102,14 @@ export function registerMapIPC(imagesPath: string) {
   ipcMain.handle('maps:delete', (_e, id: number) => {
     const userDataPath = app.getPath('userData')
     const map = db.prepare('SELECT image_path FROM maps WHERE id = ?').get(id) as { image_path: string } | undefined
+    const pois = db.prepare('SELECT content FROM pois WHERE map_id = ?').all(id) as { content: string }[]
     db.prepare('DELETE FROM maps WHERE id = ?').run(id)
-    if (map?.image_path) safeUnlinkRelative(map.image_path, userDataPath)
+    for (const p of pois) extractInlineImagePaths(p.content, userDataPath).forEach(safeUnlink)
+    if (map?.image_path) {
+      // The image may be shared with another map (picker reuse) — ref-count first.
+      const { c } = db.prepare('SELECT COUNT(*) AS c FROM maps WHERE image_path = ?').get(map.image_path) as { c: number }
+      if (c === 0) safeUnlinkRelative(map.image_path, userDataPath)
+    }
   })
 
   ipcMain.handle('maps:import-image', (_e, sessionId: number) =>
@@ -143,8 +157,18 @@ export function registerMapIPC(imagesPath: string) {
   })
 
   ipcMain.handle('pois:update', (_e, id: number, data: any) => {
+    const old = data.content !== undefined
+      ? db.prepare('SELECT content FROM pois WHERE id = ?').get(id) as { content: string } | undefined
+      : undefined
     const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE pois SET ${fields} WHERE id = @id`).run({ ...data, id })
+    // Unlink inline images that were removed from the content in this update.
+    if (old && data.content !== old.content) {
+      const userDataPath = app.getPath('userData')
+      const oldPaths = new Set(extractInlineImagePaths(old.content, userDataPath))
+      const newPaths = new Set(extractInlineImagePaths(data.content || '', userDataPath))
+      for (const p of oldPaths) { if (!newPaths.has(p)) safeUnlink(p) }
+    }
     return db.prepare('SELECT * FROM pois WHERE id = ?').get(id)
   })
 
