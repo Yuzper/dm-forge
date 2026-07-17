@@ -48,6 +48,7 @@ function historyIcon(entry: HistoryEntry) {
     case 'dm-notes': return <Sparkles size={11} />
     case 'loot-tables': return <ShoppingBag size={11} />
     case 'timeline': return <Clock size={11} />
+    case 'soundboard': return <Music2 size={11} />
   }
 }
 

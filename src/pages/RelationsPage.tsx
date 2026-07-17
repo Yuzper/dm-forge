@@ -101,9 +101,17 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
 // ── Page Root ──────────────────────────────────────────────────────────────────
 
 export default function RelationsPage() {
-  const { relationsOpenWebId, setRelationsOpenWebId, relationsFocusArticleId, setRelationsFocusArticleId, setHintContext } = useStore()
+  const { relationsOpenWebId, setRelationsOpenWebId, relationsFocusArticleId, setRelationsFocusArticleId, setHintContext, patchLastHistoryEntry } = useStore()
   useEffect(() => { setHintContext('relations'); return () => setHintContext(null) }, [setHintContext])
   const [openWeb, setOpenWeb] = useState<RelationWeb | null>(null)
+
+  // Record the open web (and its name as the label) into the current Recent
+  // entry, so returning to it reopens the same web rather than the hub.
+  useEffect(() => {
+    patchLastHistoryEntry('relations', openWeb
+      ? { webId: openWeb.id, label: openWeb.name }
+      : { webId: null, label: 'Relations' })
+  }, [openWeb, patchLastHistoryEntry])
   const [loading, setLoading] = useState(false)
   // Deep-link focus: select + center the node linked to this article on open.
   const [focusArticleId, setFocusArticleId] = useState<number | null>(null)

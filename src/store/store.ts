@@ -29,10 +29,13 @@ export type HistoryEntry =
   | { type: 'session';  label: string; campaign: Campaign; session: Session }
   | { type: 'article';  label: string; campaign: Campaign; articleId: number }
   | { type: 'wiki';     label: string; campaign: Campaign }
-  | { type: 'relations'; label: string; campaign: Campaign }
-  | { type: 'dm-notes'; label: string; campaign: Campaign }
+  // webId remembers the specific relation web the user was viewing (null = hub).
+  | { type: 'relations'; label: string; campaign: Campaign; webId?: number | null }
+  // pageId remembers the last DM notes page viewed, so returning reopens it.
+  | { type: 'dm-notes'; label: string; campaign: Campaign; pageId?: number | null }
   | { type: 'loot-tables'; label: string; campaign: Campaign }
   | { type: 'timeline'; label: string; campaign: Campaign }
+  | { type: 'soundboard'; label: string; campaign: Campaign }
 
 interface AppStore {
   // Navigation
@@ -45,6 +48,10 @@ interface AppStore {
   navigateToSessionById: (sessionId: number) => Promise<void>
   navigateToHistoryEntry: (index: number) => Promise<void>
   _navigateToEntry: (entry: HistoryEntry) => Promise<void>
+  // Update the most recent history entry (of a matching type) in place — lets a
+  // page record its sub-location (open relation web, DM notes page) into Recent
+  // without pushing a new entry per sub-navigation.
+  patchLastHistoryEntry: (type: HistoryEntry['type'], patch: Record<string, unknown>) => void
 
   // Campaign state
   campaigns: Campaign[]
@@ -263,7 +270,7 @@ export const useStore = create<AppStore>((set, get) => ({
     // their own select/open actions.)
     const PAGE_LABELS: Partial<Record<View, string>> = {
       wiki: 'Wiki', relations: 'Relations', 'dm-notes': 'DM Notes',
-      'loot-tables': 'Loot Tables', timeline: 'Timeline',
+      'loot-tables': 'Loot Tables', timeline: 'Timeline', soundboard: 'Soundboard',
     }
     const label = PAGE_LABELS[view]
     if (label && s.currentCampaign) {
@@ -296,6 +303,15 @@ export const useStore = create<AppStore>((set, get) => ({
     set({ navigationHistory: [...without.slice(-4), entry] })
     await get()._navigateToEntry(entry)
   },
+
+  patchLastHistoryEntry: (type, patch) => set(s => {
+    const h = s.navigationHistory
+    const last = h[h.length - 1]
+    if (!last || last.type !== type) return {}
+    // No-op if nothing actually changed, to avoid needless history churn.
+    if (Object.entries(patch).every(([k, v]) => (last as any)[k] === v)) return {}
+    return { navigationHistory: [...h.slice(0, -1), { ...last, ...patch } as HistoryEntry] }
+  }),
 
   _navigateToEntry: async (entry: HistoryEntry) => {
     switch (entry.type) {
@@ -351,9 +367,24 @@ export const useStore = create<AppStore>((set, get) => ({
       }
 
       case 'relations':
+        // Restore the specific web the user was viewing (null = relations hub).
+        set({
+          currentCampaign: entry.campaign, view: 'relations',
+          relationsOpenWebId: entry.webId ?? null, relationsFocusArticleId: null,
+        })
+        break
+
       case 'dm-notes':
+        // Reopen the page the user last had open (null = page's own default).
+        set({
+          currentCampaign: entry.campaign, view: 'dm-notes',
+          dmNotesOpenPageId: entry.pageId ?? null,
+        })
+        break
+
       case 'loot-tables':
       case 'timeline':
+      case 'soundboard':
         // These pages load their own data on mount; just restore campaign + view.
         set({ currentCampaign: entry.campaign, view: entry.type })
         break

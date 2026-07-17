@@ -1,13 +1,11 @@
 Data:
  - Rest of spells 2014 (7-9)
 
-
 Encounter builder
 Pick creatures (from your creature articles) → see XP total vs party difficulty thresholds (party size + level config), then push the encounter straight into the combat tracker.
 Needs: a small party-config (level/size) somewhere, the 5e XP-budget + multiplier tables, and a builder UI. Hooks into combat/creatures you already have.
 Medium. Mostly additive, one new config concept.
 Needs a "Unaccounted for" list with creatures with no XP value. The config should be pr session since player amount can differ. Add a disclaimer something like "Remember the dice introduce randomness so an encounter might be more or less difficult than the expected classification."
 
-Add a info button to areas of the app with knowledge to note. Needs attention view excludes creatures.
+Add option for mapless scene. Just a plain text page? imported same as other maps?
 
-Update hints

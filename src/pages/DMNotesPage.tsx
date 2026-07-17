@@ -727,6 +727,13 @@ export default function DMNotesPage() {
     }
   }, [dmNotesOpenPageId])
 
+  // Remember the open page in the current Recent entry (no new entry per switch),
+  // so returning to DM Notes reopens the page you left on.
+  const patchLastHistoryEntry = useStore(s => s.patchLastHistoryEntry)
+  useEffect(() => {
+    if (activePage) patchLastHistoryEntry('dm-notes', { pageId: activePage.id })
+  }, [activePage?.id, patchLastHistoryEntry])
+
   const openPage = async (id: number) => {
     setLoading(true)
     const page = await window.api.getDMNotePage(id)
