@@ -1,12 +1,13 @@
 // path: src/components/campaign/HubPanels.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../../store/store'
-import { Eye, Info } from 'lucide-react'
+import { Eye } from 'lucide-react'
 import type { WikiHealth, Clock } from '../../types'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
 import { ClockList } from '../clocks/ClockWidget'
 import { CLOCKS_INFO } from '../clocks/ClocksSection'
+import { InfoHint } from '../InfoHint'
 
 // Card chrome for the classic hub grid; `bare` panels are wrapped by the
 // map hub's floating overlay shell instead and skip background + title.
@@ -306,9 +307,7 @@ export function WikiHealthPanel({ bare = false }: { bare?: boolean } = {}) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Needs attention</div>
-            <span title={HEALTH_INFO} style={{ display: 'inline-flex', cursor: 'help', color: 'var(--text-muted)' }} className="hover-text">
-              <Info size={12} />
-            </span>
+            <InfoHint text={HEALTH_INFO} />
           </div>
           {total > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{total}</div>}
         </div>
@@ -426,9 +425,7 @@ export function ClocksPanel({ bare = false }: { bare?: boolean } = {}) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Ticking clocks</div>
-          <span title={CLOCKS_INFO} style={{ display: 'inline-flex', cursor: 'help', color: 'var(--text-muted)' }} className="hover-text">
-            <Info size={12} />
-          </span>
+          <InfoHint text={CLOCKS_INFO} />
         </div>
         {active.length > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{active.length}</div>}
       </div>

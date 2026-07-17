@@ -6,11 +6,12 @@ import { useState } from 'react'
 import { useStore } from '../../store/store'
 import {
   ChevronDown, ChevronUp, X, Clock, LayoutGrid,
-  Scroll, BookOpen, Sparkles, ShoppingBag, Network, Music2, Info,
+  Scroll, BookOpen, Sparkles, ShoppingBag, Network, Music2,
 } from 'lucide-react'
 import HubWorldMap from './HubWorldMap'
 import TimelineEmbed from '../TimelineEmbed'
 import { CLOCKS_INFO } from '../clocks/ClocksSection'
+import { InfoHint } from '../InfoHint'
 import {
   type HubPanelKey, HubSettingsMenu, HEALTH_INFO,
   ActiveQuestsPanel, WikiHealthPanel, RecentlyUpdatedPanel, ArticlesByTypePanel, ClocksPanel,
@@ -81,15 +82,7 @@ function FloatingPanel({ title, open, onToggle, width = 280, info, children }: {
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           {title}
-          {info && (
-            <span
-              title={info}
-              onClick={e => e.stopPropagation()}
-              style={{ display: 'inline-flex', cursor: 'help', color: 'var(--text-muted)' }}
-            >
-              <Info size={12} />
-            </span>
-          )}
+          {info && <InfoHint text={info} stopPropagation />}
         </span>
         <ChevronUp size={12} style={{ color: 'var(--text-muted)' }} />
       </button>

@@ -30,6 +30,7 @@ import {
   Undo, Redo, Minus, Table2, Palette,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { InfoHint } from './InfoHint'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -116,6 +117,18 @@ const CustomImage = Image.extend({
     return ['img', { ...attrs, style: style.join('; ') }]
   },
 })
+
+// Explains the typed link macros, which have no toolbar buttons of their own
+// (only articles get the link button). Shown on the toolbar (i) hover.
+const LINK_MACROS_INFO = [
+  'Link as you write — type:',
+  '',
+  '[[   link a wiki article',
+  '@@   link a spell',
+  '\\    link a session',
+  '',
+  'The link button to the left inserts an article link too.',
+].join('\n')
 
 // ── Toolbar Components ─────────────────────────────────────────────────────────
 
@@ -998,6 +1011,12 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
                 onClose={() => setShowToolbarPopover(false)}
               />
             )}
+
+            {/* Typed-macro discoverability: the link button only covers articles;
+                spells and sessions are typed-only, so surface all three here. */}
+            <span style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 2 }}>
+              <InfoHint text={LINK_MACROS_INFO} size={13} />
+            </span>
           </div>
 
           {/* Contextual — image controls */}

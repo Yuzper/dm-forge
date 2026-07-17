@@ -3,10 +3,11 @@
 // Hidden entirely when read-mode and the article has no clocks.
 
 import { useState, useEffect, useCallback } from 'react'
-import { Timer, Info } from 'lucide-react'
+import { Timer } from 'lucide-react'
 import type { Clock } from '../../types'
 import { sidebarSectionLabel } from '../wiki/wikiConstants'
 import { ClockList } from './ClockWidget'
+import { InfoHint } from '../InfoHint'
 
 // In-depth explainer shown on the (i) hover next to the Clocks heading.
 export const CLOCKS_INFO = [
@@ -35,9 +36,7 @@ export function ClocksSection({ articleId, campaignId, readMode }: {
     <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
       <div style={{ ...sidebarSectionLabel, display: 'flex', alignItems: 'center', gap: 5 }}>
         <Timer size={11} /> Clocks
-        <span title={CLOCKS_INFO} style={{ display: 'inline-flex', cursor: 'help', color: 'var(--text-muted)' }} className="hover-text">
-          <Info size={11} />
-        </span>
+        <InfoHint text={CLOCKS_INFO} size={11} />
       </div>
       {!readMode && (
         <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.45, marginBottom: 8 }}>
