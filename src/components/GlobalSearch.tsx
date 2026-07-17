@@ -21,8 +21,7 @@ const GROUPS: { kind: FlatItem['kind']; label: string; icon: React.ReactNode; ac
 ]
 
 export default function GlobalSearch() {
-  const { currentCampaign, openArticle, setView, setCampaignSubView, navigateToSessionById, setDMNotesOpenPageId, setWikiGraphFocusId } = useStore()
-  const [open, setOpen] = useState(false)
+  const { currentCampaign, openArticle, setView, setCampaignSubView, navigateToSessionById, setDMNotesOpenPageId, setWikiGraphFocusId, searchOpen: open, setSearchOpen: setOpen } = useStore()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<GlobalSearchResults>(EMPTY)
   const [activeIdx, setActiveIdx] = useState(0)
@@ -34,7 +33,8 @@ export default function GlobalSearch() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
-        if (useStore.getState().currentCampaign) setOpen(o => !o)
+        const s = useStore.getState()
+        if (s.currentCampaign) s.setSearchOpen(!s.searchOpen)
       } else if (e.key === 'Escape') {
         setOpen(false)
       }

@@ -6,7 +6,7 @@ import {
   ChevronLeft, Scroll, Download, Upload, Check,
   AlertCircle, BookOpen, Clock, ArrowLeft,
   FileText, Layers, Sparkles, ShoppingBag, Network, Paintbrush, Lightbulb, Music2, Palette, Type,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, Search,
 } from 'lucide-react'
 import POIList from './POIList'
 import type { HistoryEntry } from '../store/store'
@@ -55,7 +55,7 @@ export default function Sidebar() {
   const {
     view, setView, currentCampaign,
     navigationHistory, navigateBack, navigateToHistoryEntry,
-    campaignSubView, setCampaignSubView,
+    campaignSubView, setCampaignSubView, setSearchOpen,
   } = useStore()
 
   const inCampaignContext =
@@ -105,6 +105,8 @@ export default function Sidebar() {
 
         {inCampaignContext && currentCampaign && (
           <>
+            <RailIcon icon={<Search size={16} />} title="Search campaign (Ctrl+S)" accent="var(--gold)"
+              active={false} onClick={() => setSearchOpen(true)} />
             <RailIcon icon={<Layers size={16} />} title={`${currentCampaign.name} — campaign hub`} accent="var(--gold)"
               active={view === 'campaign' && campaignSubView === 'hub'}
               onClick={() => { setView('campaign'); setCampaignSubView('hub') }} />
@@ -179,6 +181,34 @@ export default function Sidebar() {
           </button>
         </div>
       </div>
+
+      {/* Campaign-wide search — a visible entry point for the Ctrl+S palette */}
+      {currentCampaign && (
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
+          <button
+            onClick={() => setSearchOpen(true)}
+            title="Search articles, sessions, notes & map pins"
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+              padding: '6px 10px', background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-muted)', fontSize: 12, fontFamily: 'var(--font-ui)',
+              cursor: 'pointer', transition: 'all var(--transition)',
+            }}
+            className="hover-gold-border"
+          >
+            <Search size={13} />
+            <span style={{ flex: 1, textAlign: 'left' }}>Search campaign…</span>
+            <kbd style={{
+              fontFamily: 'var(--font-mono, monospace)', fontSize: 10,
+              background: 'var(--bg-surface)', border: '1px solid var(--border)',
+              borderRadius: 4, padding: '0 5px', color: 'var(--text-muted)',
+            }}>
+              Ctrl+S
+            </kbd>
+          </button>
+        </div>
+      )}
 
       {/* Breadcrumb */}
       {inCampaignContext && (

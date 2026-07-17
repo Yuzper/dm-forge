@@ -170,6 +170,11 @@ interface AppStore {
   // graph view focused on a specific article. Cleared once consumed.
   wikiGraphFocusId: number | null
   setWikiGraphFocusId: (id: number | null) => void
+
+  // Global search palette open state — lifted to the store so a visible
+  // sidebar button can open the same palette that Ctrl+S toggles.
+  searchOpen: boolean
+  setSearchOpen: (v: boolean) => void
 }
 
 function pushEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
@@ -247,6 +252,9 @@ export const useStore = create<AppStore>((set, get) => ({
 
   wikiGraphFocusId: null,
   setWikiGraphFocusId: (wikiGraphFocusId) => set({ wikiGraphFocusId }),
+
+  searchOpen: false,
+  setSearchOpen: (searchOpen) => set({ searchOpen }),
 
   view: 'campaigns',
   setView: (view) => set(s => {
