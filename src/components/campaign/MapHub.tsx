@@ -227,6 +227,9 @@ export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, onS
   const [overlays, setOverlays] = useState<Record<OverlayKey, boolean>>(() =>
     currentCampaign ? loadOverlayState(currentCampaign.id) : { ...OVERLAY_DEFAULTS }
   )
+  // Left-stack slot the world map portals its location list into (callback ref so
+  // the node is available for the portal once mounted).
+  const [locationSlot, setLocationSlot] = useState<HTMLElement | null>(null)
 
   if (!currentCampaign) return null
 
@@ -240,7 +243,7 @@ export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, onS
 
   return (
     <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
-      <HubWorldMap fullBleed onHasMapsChange={onHasMapsChange} />
+      <HubWorldMap fullBleed onHasMapsChange={onHasMapsChange} listSlot={locationSlot} />
 
       {/* Title + hub settings, below the 34px map tab strip */}
       <div style={{
@@ -274,6 +277,9 @@ export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, onS
             <ActiveQuestsPanel bare />
           </FloatingPanel>
         )}
+        {/* World map's location list portals in here so it stacks under the quests
+            panel instead of overlapping the map's top-left. */}
+        <div ref={setLocationSlot} />
       </div>
 
       {/* Right overlay stack */}

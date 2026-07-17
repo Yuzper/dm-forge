@@ -1,5 +1,6 @@
 // path: src/components/campaign/HubWorldMap.tsx
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useStore } from '../../store/store'
 import {
   Map, BookOpen, MoreHorizontal, Trash2, Pencil,
@@ -346,9 +347,12 @@ function HubPOIEditModal({
 
 // ── Hub World Map ──────────────────────────────────────────────────────────────
 
-export default function HubWorldMap({ fullBleed = false, onHasMapsChange }: {
+export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSlot = null }: {
   fullBleed?: boolean
   onHasMapsChange?: (has: boolean) => void
+  // In the map hub, the location list is portaled into this left-stack slot so it
+  // stacks below the floating panels instead of overlapping them.
+  listSlot?: HTMLElement | null
 }) {
   const { currentCampaign, sessions, navigateToArticleByTitle, navigateToSessionById } = useStore()
 
@@ -706,9 +710,92 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange }: {
     setPopupPos(null)
   }
 
+  // ── Location list panel ───────────────────────────────────────────────────
+  // `stacked` = rendered in the map hub's left panel column (static flow, capped
+  // height); otherwise floats absolutely over the classic-hub map.
+  const renderLocationList = (stacked: boolean) => {
+    const visible = [...pois]
+      .filter(p => p.label.toLowerCase().includes(poiListFilter.trim().toLowerCase()))
+      .sort((a, b) => a.label.localeCompare(b.label))
+    return (
+      <div
+        style={{
+          width: 214, display: 'flex', flexDirection: 'column', zIndex: 16,
+          background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)',
+          border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, overflow: 'hidden',
+          ...(stacked
+            ? { maxHeight: 340 }
+            : { position: 'absolute', top: 42, left: 10, maxHeight: 'calc(100% - 84px)' }),
+        }}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          <List size={12} style={{ color: 'rgba(255,255,255,0.55)' }} />
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)' }}>
+            Locations
+          </span>
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{pois.length}</span>
+          <button onClick={togglePoiList} title="Hide list"
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', padding: 2 }}>
+            <X size={12} />
+          </button>
+        </div>
+
+        {/* Filter (only when the list is long enough to warrant it) */}
+        {pois.length > 6 && (
+          <div style={{ padding: '6px 8px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+            <input
+              value={poiListFilter}
+              onChange={e => setPoiListFilter(e.target.value)}
+              placeholder="Filter…"
+              style={{
+                width: '100%', height: 24, fontSize: 11, padding: '0 8px',
+                background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 4, color: '#fff', outline: 'none',
+              }}
+            />
+          </div>
+        )}
+
+        {/* Rows */}
+        <div style={{ overflowY: 'auto', padding: '4px 0' }}>
+          {visible.length === 0 ? (
+            <div style={{ padding: '10px 12px', fontSize: 11, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>
+              {pois.length === 0 ? 'No locations on this map' : 'No matches'}
+            </div>
+          ) : visible.map(poi => (
+            <button
+              key={poi.id}
+              onMouseEnter={() => setHoveredPoiId(poi.id)}
+              onMouseLeave={() => setHoveredPoiId(null)}
+              onClick={() => focusPOIFromList(poi)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px',
+                background: hoveredPoiId === poi.id ? 'rgba(255,255,255,0.09)'
+                  : selectedPOI?.id === poi.id ? 'rgba(200,115,58,0.16)' : 'none',
+                border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background var(--transition)',
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: poi.color || '#c8a84b', flexShrink: 0, border: '1px solid rgba(0,0,0,0.4)' }} />
+              <span style={{ flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {poi.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={fullBleed ? { height: '100%' } : undefined}>
+      {/* Map-hub location list — portaled into MapHub's left stack so it sits
+          below the floating panels rather than overlapping them. */}
+      {fullBleed && listSlot && maps.length > 0 && showPoiList && createPortal(renderLocationList(true), listSlot)}
+
       {/* Map panel */}
       <div
         ref={mapRef}
@@ -868,80 +955,10 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange }: {
           </div>
         )}
 
-        {/* Location list — hover to highlight a marker, click to focus it */}
-        {maps.length > 0 && showPoiList && (mapVisible || fullBleed) && (() => {
-          const visible = [...pois]
-            .filter(p => p.label.toLowerCase().includes(poiListFilter.trim().toLowerCase()))
-            .sort((a, b) => a.label.localeCompare(b.label))
-          return (
-            <div
-              style={{
-                position: 'absolute', top: 42, left: 10, width: 214, maxHeight: 'calc(100% - 84px)',
-                display: 'flex', flexDirection: 'column', zIndex: 16,
-                background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)',
-                border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, overflow: 'hidden',
-              }}
-              onMouseDown={e => e.stopPropagation()}
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                <List size={12} style={{ color: 'rgba(255,255,255,0.55)' }} />
-                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)' }}>
-                  Locations
-                </span>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{pois.length}</span>
-                <button onClick={togglePoiList} title="Hide list"
-                  style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', padding: 2 }}>
-                  <X size={12} />
-                </button>
-              </div>
-
-              {/* Filter (only when the list is long enough to warrant it) */}
-              {pois.length > 6 && (
-                <div style={{ padding: '6px 8px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                  <input
-                    value={poiListFilter}
-                    onChange={e => setPoiListFilter(e.target.value)}
-                    placeholder="Filter…"
-                    style={{
-                      width: '100%', height: 24, fontSize: 11, padding: '0 8px',
-                      background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-                      borderRadius: 4, color: '#fff', outline: 'none',
-                    }}
-                  />
-                </div>
-              )}
-
-              {/* Rows */}
-              <div style={{ overflowY: 'auto', padding: '4px 0' }}>
-                {visible.length === 0 ? (
-                  <div style={{ padding: '10px 12px', fontSize: 11, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>
-                    {pois.length === 0 ? 'No locations on this map' : 'No matches'}
-                  </div>
-                ) : visible.map(poi => (
-                  <button
-                    key={poi.id}
-                    onMouseEnter={() => setHoveredPoiId(poi.id)}
-                    onMouseLeave={() => setHoveredPoiId(null)}
-                    onClick={() => focusPOIFromList(poi)}
-                    style={{
-                      width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px',
-                      background: hoveredPoiId === poi.id ? 'rgba(255,255,255,0.09)'
-                        : selectedPOI?.id === poi.id ? 'rgba(200,115,58,0.16)' : 'none',
-                      border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background var(--transition)',
-                    }}
-                  >
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: poi.color || '#c8a84b', flexShrink: 0, border: '1px solid rgba(0,0,0,0.4)' }} />
-                    <span style={{ flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {poi.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )
-        })()}
+        {/* Location list, classic hub: floats top-left over the map (its cell has
+            no other overlays). In the map hub it's portaled into the left stack
+            instead — see the portal render below. */}
+        {maps.length > 0 && showPoiList && mapVisible && !fullBleed && renderLocationList(false)}
 
         {/* Popup — rendered outside the transform layer in map-panel space */}
         {selectedPOI && popupPos && !editingPOI && (
