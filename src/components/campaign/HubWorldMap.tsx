@@ -4,7 +4,7 @@ import { useStore } from '../../store/store'
 import {
   Map, BookOpen, MoreHorizontal, Trash2, Pencil,
   Scroll, Upload, X, Search, ExternalLink,
-  Maximize, Image as ImageIcon,
+  Maximize, Image as ImageIcon, List,
 } from 'lucide-react'
 import type { Session, GameMap, POI } from '../../types'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
@@ -369,6 +369,9 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange }: {
   const [renamingMap, setRenamingMap] = useState<GameMap | null>(null)
   const [selectedPOI, setSelectedPOI] = useState<POI | null>(null)
   const [hoveredPoiId, setHoveredPoiId] = useState<number | null>(null)
+  const [showPoiList, setShowPoiList] = useState(() => localStorage.getItem('worldmap-poi-list') === 'true')
+  const [poiListFilter, setPoiListFilter] = useState('')
+  const togglePoiList = () => setShowPoiList(v => { localStorage.setItem('worldmap-poi-list', String(!v)); return !v })
   const [editingPOI, setEditingPOI] = useState<POI | null>(null)
   const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null)
@@ -585,12 +588,10 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange }: {
     setRenamingMap(null)
   }
 
-  // ── POI click — popup positioned in screen space ──────────────────────────
-  const handlePOIClick = (poi: POI, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (selectedPOI?.id === poi.id) { setSelectedPOI(null); setPopupPos(null); return }
+  // ── POI popup positioning ─────────────────────────────────────────────────
+  // Convert a POI's % coords through the current transform to map-panel space.
+  const computePopupPos = (poi: POI) => {
     const rect = mapRef.current!.getBoundingClientRect()
-    // Convert POI % coords through the current transform to screen space
     const ib = imgBoundsRef.current
     const dotX = offsetRef.current.x + (ib ? (ib.left + poi.x / 100 * ib.w) : (poi.x / 100 * rect.width)) * scaleRef.current
     const dotY = 34 + offsetRef.current.y + (ib ? (ib.top + poi.y / 100 * ib.h) : (poi.y / 100 * (rect.height - 34))) * scaleRef.current
@@ -600,8 +601,27 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange }: {
     if (left + popW > rect.width - 4) left = dotX - popW - 14
     if (top + popH > rect.height - 8) top = rect.height - popH - 8
     if (top < 38) top = 38
+    return { top, left }
+  }
+
+  const handlePOIClick = (poi: POI, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (selectedPOI?.id === poi.id) { setSelectedPOI(null); setPopupPos(null); return }
     setSelectedPOI(poi)
-    setPopupPos({ top, left })
+    setPopupPos(computePopupPos(poi))
+  }
+
+  // ── Focus a POI from the list — recenter the map on it, then open its popup ─
+  const focusPOIFromList = (poi: POI) => {
+    const ib = imgBoundsRef.current
+    if (ib && containerSize.w > 0 && containerSize.h > 0) {
+      const cx = ib.left + poi.x / 100 * ib.w
+      const cy = ib.top + poi.y / 100 * ib.h
+      // setOffset updates offsetRef synchronously, so computePopupPos below sees it.
+      setOffset({ x: containerSize.w / 2 - scaleRef.current * cx, y: containerSize.h / 2 - scaleRef.current * cy })
+    }
+    setSelectedPOI(poi)
+    setPopupPos(computePopupPos(poi))
   }
 
   // ── Map background click to place POI ────────────────────────────────────
@@ -748,7 +768,22 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange }: {
               <Upload size={11} /> {importing ? 'Importing…' : 'Add map'}
             </button>
           )}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', padding: '0 12px', borderLeft: '1px solid rgba(255,255,255,0.07)' }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderLeft: '1px solid rgba(255,255,255,0.07)' }}>
+            {maps.length > 0 && (
+              <button
+                onClick={e => { e.stopPropagation(); togglePoiList() }}
+                title={showPoiList ? 'Hide location list' : 'Show location list'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  background: showPoiList ? 'rgba(200,115,58,0.2)' : 'rgba(255,255,255,0.06)',
+                  border: `1px solid ${showPoiList ? 'rgba(200,115,58,0.4)' : 'rgba(255,255,255,0.12)'}`,
+                  color: showPoiList ? '#c8733a' : 'rgba(255,255,255,0.55)',
+                  borderRadius: 4, padding: '3px 8px', fontSize: 11, cursor: 'pointer', transition: 'all var(--transition)',
+                }}
+              >
+                <List size={12} /> Locations
+              </button>
+            )}
             {editMode
               ? <button onClick={e => { e.stopPropagation(); setEditMode(false); setSelectedPOI(null) }} style={{ background: 'rgba(200,115,58,0.2)', border: '1px solid rgba(200,115,58,0.4)', color: '#c8733a', borderRadius: 4, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}>Done</button>
               : <button onClick={e => { e.stopPropagation(); setEditMode(true) }} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.55)', borderRadius: 4, padding: '3px 10px', fontSize: 11, cursor: 'pointer', transition: 'all var(--transition)' }}
@@ -819,7 +854,10 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange }: {
                     cursor: editMode ? 'move' : 'pointer',
                     // Hover/selection restores full opacity so faded markers stay findable
                     opacity: hoveredPoiId === poi.id || selectedPOI?.id === poi.id ? 1 : (poi.hub_opacity ?? 1),
-                    boxShadow: selectedPOI?.id === poi.id ? `0 0 0 4px ${poi.color || '#c8a84b'}44` : 'none',
+                    // Ring on select or hover (incl. hovering the location list) so the
+                    // highlighted marker is easy to spot.
+                    boxShadow: selectedPOI?.id === poi.id ? `0 0 0 4px ${poi.color || '#c8a84b'}44`
+                      : hoveredPoiId === poi.id ? `0 0 0 3px ${poi.color || '#c8a84b'}66` : 'none',
                     transition: 'box-shadow 0.15s, opacity 0.15s',
                   }} />
                 </div>
@@ -829,6 +867,81 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange }: {
             </div>
           </div>
         )}
+
+        {/* Location list — hover to highlight a marker, click to focus it */}
+        {maps.length > 0 && showPoiList && (mapVisible || fullBleed) && (() => {
+          const visible = [...pois]
+            .filter(p => p.label.toLowerCase().includes(poiListFilter.trim().toLowerCase()))
+            .sort((a, b) => a.label.localeCompare(b.label))
+          return (
+            <div
+              style={{
+                position: 'absolute', top: 42, left: 10, width: 214, maxHeight: 'calc(100% - 84px)',
+                display: 'flex', flexDirection: 'column', zIndex: 16,
+                background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)',
+                border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, overflow: 'hidden',
+              }}
+              onMouseDown={e => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                <List size={12} style={{ color: 'rgba(255,255,255,0.55)' }} />
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)' }}>
+                  Locations
+                </span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{pois.length}</span>
+                <button onClick={togglePoiList} title="Hide list"
+                  style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', padding: 2 }}>
+                  <X size={12} />
+                </button>
+              </div>
+
+              {/* Filter (only when the list is long enough to warrant it) */}
+              {pois.length > 6 && (
+                <div style={{ padding: '6px 8px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                  <input
+                    value={poiListFilter}
+                    onChange={e => setPoiListFilter(e.target.value)}
+                    placeholder="Filter…"
+                    style={{
+                      width: '100%', height: 24, fontSize: 11, padding: '0 8px',
+                      background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 4, color: '#fff', outline: 'none',
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Rows */}
+              <div style={{ overflowY: 'auto', padding: '4px 0' }}>
+                {visible.length === 0 ? (
+                  <div style={{ padding: '10px 12px', fontSize: 11, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>
+                    {pois.length === 0 ? 'No locations on this map' : 'No matches'}
+                  </div>
+                ) : visible.map(poi => (
+                  <button
+                    key={poi.id}
+                    onMouseEnter={() => setHoveredPoiId(poi.id)}
+                    onMouseLeave={() => setHoveredPoiId(null)}
+                    onClick={() => focusPOIFromList(poi)}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px',
+                      background: hoveredPoiId === poi.id ? 'rgba(255,255,255,0.09)'
+                        : selectedPOI?.id === poi.id ? 'rgba(200,115,58,0.16)' : 'none',
+                      border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background var(--transition)',
+                    }}
+                  >
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: poi.color || '#c8a84b', flexShrink: 0, border: '1px solid rgba(0,0,0,0.4)' }} />
+                    <span style={{ flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {poi.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Popup — rendered outside the transform layer in map-panel space */}
         {selectedPOI && popupPos && !editingPOI && (
