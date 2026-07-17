@@ -28,7 +28,15 @@ const defaultBoard: SoundBoard = {
 // ── Soundboard Widget ──────────────────────────────────────────────────────────
 
 export default function SoundboardWidget() {
-  const { currentCampaign, currentSession, soundboardMinimized, setSoundboardMinimized, setSoundboardOpen } = useStore()
+  const { view, currentCampaign, currentSession, soundboardMinimized, setSoundboardMinimized, setSoundboardOpen } = useStore()
+
+  // Session-aware open state: expand while viewing a session, auto-minimise (but
+  // keep playing) when you navigate elsewhere in the campaign. Keyed on `view`
+  // changes only, so a manual minimise/expand within a view is preserved, and
+  // returning to a session re-expands it.
+  useEffect(() => {
+    setSoundboardMinimized(view !== 'session')
+  }, [view, setSoundboardMinimized])
 
   const [boards, setBoards]             = useState<SoundBoard[]>([])
   const [activeBoardId, setActiveBoardId] = useState<number | null>(null)

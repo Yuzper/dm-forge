@@ -33,7 +33,7 @@ const statblockOverride = statblockMode ? params.get('statblockOverride') : null
 const nameOverride = statblockMode ? params.get('nameOverride') : null
 
 export default function App() {
-  const { view, loadCampaigns, bgStyle, currentSession, soundboardOpen, statBlockOverlays } = useStore()
+  const { view, loadCampaigns, bgStyle, currentCampaign, soundboardOpen, statBlockOverlays } = useStore()
 
   useEffect(() => { if (!statblockMode) loadCampaigns() }, [])
 
@@ -51,7 +51,9 @@ export default function App() {
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', ...bgStyleCSS(bgStyle) }}>
       <Sidebar />
       <UpdateBanner />
-      {currentSession && soundboardOpen && <SoundboardWidget />}
+      {/* Persists across the campaign (not just the session) so music keeps
+          playing when you leave a session; it auto-minimises off-session. */}
+      {currentCampaign && soundboardOpen && <SoundboardWidget />}
       {statBlockOverlays.map((o, i) => <StatBlockOverlay key={o.id} overlay={o} index={i} />)}
       <HintsWidget />
       <GlobalSearch />
