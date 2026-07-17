@@ -60,7 +60,7 @@ export function ClockWidget({ segments, filled, size = 36, color = 'var(--gold)'
   )
 }
 
-const SEGMENT_CHOICES = [4, 6, 8, 10, 12]
+const SEGMENT_CHOICES = [2, 3, 4, 5, 6, 8, 10, 12]
 
 export function ClockList({ clocks, readOnly = false, renderMeta, onTick, onRename, onDelete, onCreate }: {
   clocks: Clock[]

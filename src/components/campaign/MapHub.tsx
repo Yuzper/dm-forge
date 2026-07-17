@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import HubWorldMap from './HubWorldMap'
 import TimelineEmbed from '../TimelineEmbed'
+import { CLOCKS_INFO } from '../clocks/ClocksSection'
 import {
   type HubPanelKey, HubSettingsMenu, HEALTH_INFO,
   ActiveQuestsPanel, WikiHealthPanel, RecentlyUpdatedPanel, ArticlesByTypePanel, ClocksPanel,
@@ -287,7 +288,7 @@ export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, onS
         {panels.clocks && (
           <FloatingPanel
             title="Ticking clocks"
-            info={'Progress clocks: segmented dials for threats and plans advancing off-screen. Click segments to tick. Attach clocks to an article from its editor sidebar, or add campaign-level ones here.'}
+            info={CLOCKS_INFO}
             open={overlays.clocks} onToggle={() => toggleOverlay('clocks')}
           >
             <ClocksPanel bare />
