@@ -309,6 +309,11 @@ export function initDatabase() {
   if (!campaignCols.some(c => c.name === 'timeline_show_lifespans')) {
     db.exec(`ALTER TABLE campaigns ADD COLUMN timeline_show_lifespans INTEGER NOT NULL DEFAULT 0`)
   }
+  // Calendar definition (JSON: unitName, spans[], campaign start date). NULL
+  // falls back to a single 365-day span anchored to timeline_base_year.
+  if (!campaignCols.some(c => c.name === 'timeline_calendar')) {
+    db.exec(`ALTER TABLE campaigns ADD COLUMN timeline_calendar TEXT`)
+  }
 
   const sessionCols = db.pragma('table_info(sessions)') as { name: string }[]
   if (!sessionCols.some(c => c.name === 'session_sub')) {

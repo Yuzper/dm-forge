@@ -12,6 +12,7 @@ export interface Campaign {
   timeline_base_year?: number
   timeline_eras?: string | null
   timeline_show_lifespans?: number
+  timeline_calendar?: string | null
 }
 
 export interface Session {
@@ -120,6 +121,14 @@ export interface WikiHealth {
   stubs:   { id: number; title: string; article_type: string; textLen: number }[]
   orphans: { id: number; title: string; article_type: string }[]
   broken:  { title: string; sources: { id: number; title: string }[] }[]
+}
+
+// Whole-campaign wiki link graph (articles + [[link]]/track references).
+export interface LinkGraph {
+  nodes: { id: number; title: string; article_type: string; updated_at: string }[]
+  edges: { from: number; to: number }[]
+  ghosts: { title: string; sources: number[] }[]   // broken [[links]] → nonexistent titles
+  mentions: { from: number; to: number }[]          // plain-text (unlinked) title occurrences
 }
 
 export type LootTableCategory = 'creature' | 'vendor' | 'location' | 'custom'
@@ -496,6 +505,7 @@ export interface ElectronAPI {
   getArticleByTitle:   (title: string, campaignId: number) => Promise<Article | null>
   getArticleBacklinks: (title: string, campaignId: number) => Promise<ArticleSummary[]>
   getArticlesHealth:   (campaignId: number) => Promise<WikiHealth>
+  getArticleLinkGraph: (campaignId: number) => Promise<LinkGraph>
   globalSearch:        (campaignId: number, query: string) => Promise<GlobalSearchResults>
   findInPage:          (text: string, opts?: { forward?: boolean; findNext?: boolean }) => Promise<void>
   stopFindInPage:      () => Promise<void>

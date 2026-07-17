@@ -94,7 +94,130 @@ export function registerArticleIPC() {
     `).all(campaignId, title, `%"title":"${title}"%`, `%"${title}"%`)
   })
 
-  // Wiki health: stub articles, orphans (no links in/out), and broken [[links]].
+  // Whole-campaign link graph:
+  //  • nodes   = every article
+  //  • edges   = [[wikiLink]] references + track values naming another article
+  //  • ghosts  = [[links]] pointing at a title that has no article (broken links)
+  //  • mentions = an article title appearing as plain (unlinked) text in another
+  // Edges/mentions are undirected and deduped.
+  ipcMain.handle('articles:link-graph', (_e, campaignId: number) => {
+    const rows = db.prepare(`
+      SELECT id, title, article_type, content, tracks, updated_at FROM articles WHERE campaign_id = ?
+    `).all(campaignId) as any[]
+
+    const byTitle = new Map<string, any>()
+    for (const r of rows) byTitle.set(r.title.toLowerCase(), r)
+
+    // wikiLink marks → Map<lowercased title, original-case title>
+    const collectWikiLinks = (raw: string): Map<string, string> => {
+      const links = new Map<string, string>()
+      const walk = (node: any) => {
+        if (!node || typeof node !== 'object') return
+        if (typeof node.text === 'string') {
+          for (const m of node.marks ?? []) {
+            if (m.type === 'wikiLink' && m.attrs?.title) {
+              const t = String(m.attrs.title)
+              links.set(t.toLowerCase(), t)
+            }
+          }
+        }
+        for (const child of node.content ?? []) walk(child)
+      }
+      try { walk(JSON.parse(raw)) } catch {}
+      return links
+    }
+
+    // Plain prose only — text NOT inside a wikiLink mark (already-linked text is
+    // not an "unlinked mention"). Used for mention scanning.
+    const plainText = (raw: string): string => {
+      const parts: string[] = []
+      const walk = (node: any) => {
+        if (!node || typeof node !== 'object') return
+        if (typeof node.text === 'string') {
+          if (!(node.marks ?? []).some((m: any) => m.type === 'wikiLink')) parts.push(node.text)
+        }
+        for (const child of node.content ?? []) walk(child)
+      }
+      try { walk(JSON.parse(raw)) } catch {}
+      return parts.join(' ')
+    }
+
+    const edges: { from: number; to: number }[] = []
+    const edgeSeen = new Set<string>()
+    const ghostMap = new Map<string, { title: string; sources: Set<number> }>()
+
+    for (const r of rows) {
+      const selfLower = r.title.toLowerCase()
+      const targets = new Set<string>()   // lowercased titles this article links to
+
+      for (const [lower, orig] of collectWikiLinks(r.content)) {
+        if (lower === selfLower) continue
+        if (byTitle.has(lower)) targets.add(lower)
+        else {
+          // Broken link → ghost node
+          if (!ghostMap.has(lower)) ghostMap.set(lower, { title: orig, sources: new Set() })
+          ghostMap.get(lower)!.sources.add(r.id)
+        }
+      }
+      // Track values naming an existing article count as links (never ghosts).
+      try {
+        const tracks = JSON.parse(r.tracks || '{}')
+        for (const v of Object.values(tracks)) {
+          if (typeof v === 'string') {
+            const lower = v.toLowerCase()
+            if (lower !== selfLower && byTitle.has(lower)) targets.add(lower)
+          }
+        }
+      } catch {}
+
+      for (const t of targets) {
+        const target = byTitle.get(t)
+        const key = r.id < target.id ? `${r.id}:${target.id}` : `${target.id}:${r.id}`
+        if (edgeSeen.has(key)) continue
+        edgeSeen.add(key)
+        edges.push({ from: r.id, to: target.id })
+      }
+    }
+
+    // ── Unlinked mentions ────────────────────────────────────────────────────
+    // Build one combined whole-word regex of all article titles (≥3 chars, to
+    // avoid noise), longest first so overlapping names prefer the longer match.
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const scanTitles = rows.map(r => r.title).filter(t => t.length >= 3)
+      .sort((a, b) => b.length - a.length)
+    const mentions: { from: number; to: number }[] = []
+    const mentionSeen = new Set<string>()
+    if (scanTitles.length > 0) {
+      const re = new RegExp(`\\b(?:${scanTitles.map(esc).join('|')})\\b`, 'gi')
+      for (const r of rows) {
+        const text = plainText(r.content)
+        if (!text) continue
+        re.lastIndex = 0
+        const found = new Set<number>()
+        let m: RegExpExecArray | null
+        while ((m = re.exec(text)) !== null) {
+          const target = byTitle.get(m[0].toLowerCase())
+          if (target && target.id !== r.id) found.add(target.id)
+        }
+        for (const tid of found) {
+          const key = r.id < tid ? `${r.id}:${tid}` : `${tid}:${r.id}`
+          if (edgeSeen.has(key) || mentionSeen.has(key)) continue  // already a real link
+          mentionSeen.add(key)
+          mentions.push({ from: r.id, to: tid })
+        }
+      }
+    }
+
+    return {
+      nodes: rows.map(r => ({ id: r.id, title: r.title, article_type: r.article_type, updated_at: r.updated_at })),
+      edges,
+      ghosts: [...ghostMap.values()].map(g => ({ title: g.title, sources: [...g.sources] })),
+      mentions,
+    }
+  })
+
+  // Wiki health: stub articles, orphans (no wiki-link/track edges — same rule as
+  // the wiki graph's "unlinked"), and broken [[links]].
   ipcMain.handle('articles:health', (_e, campaignId: number) => {
     const rows = db.prepare(`
       SELECT id, title, article_type, content, tracks, statblock, item_block, substeps, rewards
@@ -149,13 +272,6 @@ export function registerArticleIPC() {
     const byTitle = new Map<string, any>()
     for (const r of rows) byTitle.set(r.title.toLowerCase(), r)
 
-    // Articles placed in a relation web count as connected.
-    const webArticleIds = new Set(db.prepare(`
-      SELECT DISTINCT n.article_id FROM relation_nodes n
-      JOIN relation_webs w ON w.id = n.web_id
-      WHERE w.campaign_id = ? AND n.article_id IS NOT NULL
-    `).all(campaignId).map((r: any) => r.article_id))
-
     const incoming = new Map<number, number>()
     const outgoing = new Map<number, number>()
     const broken = new Map<string, { title: string; sources: { id: number; title: string }[] }>()
@@ -191,23 +307,15 @@ export function registerArticleIPC() {
       }
     }
 
-    // Links from session notes and DM notes count as incoming for orphan purposes.
-    const noteDocs = [
-      ...db.prepare('SELECT notes AS doc FROM sessions WHERE campaign_id = ?').all(campaignId) as any[],
-      ...db.prepare('SELECT content AS doc FROM dm_notes_pages WHERE campaign_id = ?').all(campaignId) as any[],
-    ]
-    for (const n of noteDocs) {
-      for (const [key] of extract(n.doc || '').links) {
-        const target = byTitle.get(key)
-        if (target) incoming.set(target.id, (incoming.get(target.id) ?? 0) + 1)
-      }
-    }
-
-    // Creatures are bestiary reference and notes are intentionally standalone —
-    // neither is expected to be woven into the wiki, so skip the orphan check.
+    // Orphans mirror the wiki graph's "unlinked" definition: an article with no
+    // wiki-link or track-reference edge to/from another article. Deliberately does
+    // NOT count links from session/DM notes or relation-web membership, and (like
+    // the graph's default view) only excludes creatures, so the hub's "No
+    // connections" count matches the graph's "unlinked" count. Creatures are
+    // bestiary reference, rarely woven into the wiki, so they stay excluded.
     const orphans = rows
-      .filter(r => r.article_type !== 'creature' && r.article_type !== 'note')
-      .filter(r => !outgoing.get(r.id) && !incoming.get(r.id) && !webArticleIds.has(r.id))
+      .filter(r => r.article_type !== 'creature')
+      .filter(r => !outgoing.get(r.id) && !incoming.get(r.id))
       .map(r => ({ id: r.id, title: r.title, article_type: r.article_type }))
       .sort((a, b) => a.title.localeCompare(b.title))
 

@@ -125,6 +125,99 @@ export function TrackFilterPanel({
   )
 }
 
+// ── Color-by-track Panel ──────────────────────────────────────────────────────
+// Pick one track (Species, State…), get a legend of every value present in the
+// web with an editable color; nodes are tinted by their value on the canvas.
+
+const COLOR_CHOICES = [
+  '#c8a84b', '#e88c3a', '#e05555', '#d4537e', '#b07de8', '#7F77DD',
+  '#5b9fe8', '#5bbfb0', '#49c185', '#97c459', '#8a8a8a', '#e0e0e0',
+]
+
+export function ColorByPanel({ availableTracks, track, values, colors, onSelectTrack, onSetColor, onClose }: {
+  availableTracks: string[]
+  track: string | null
+  values: [string, number][]          // [track value, node count] — sorted
+  colors: Record<string, string>      // effective color per value
+  onSelectTrack: (track: string | null) => void
+  onSetColor: (value: string, color: string) => void
+  onClose: () => void
+}) {
+  const [picking, setPicking] = useState<string | null>(null)
+
+  return (
+    <div style={{
+      position: 'absolute', top: 48, right: 12, zIndex: 100,
+      background: 'var(--bg-surface)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius)', boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+      width: 270, maxHeight: 480, overflow: 'auto',
+      fontFamily: 'var(--font-ui)',
+    }}>
+      <div style={{ padding: '10px 14px 6px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>Color by track</div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}><X size={13} /></button>
+      </div>
+
+      <div style={{ padding: '10px 14px 12px' }}>
+        <select
+          className="input"
+          value={track ?? ''}
+          style={{ fontSize: 12, padding: '5px 8px', marginBottom: track ? 10 : 0 }}
+          onChange={e => { setPicking(null); onSelectTrack(e.target.value || null) }}
+        >
+          <option value="">— no coloring —</option>
+          {availableTracks.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+        </select>
+
+        {track && values.length === 0 && (
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+            No node in this web has a {track.replace(/_/g, ' ')} value yet.
+          </div>
+        )}
+
+        {track && values.map(([value, count]) => (
+          <div key={value}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+              <button
+                onClick={() => setPicking(p => p === value ? null : value)}
+                title="Change color"
+                style={{
+                  width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
+                  background: colors[value], cursor: 'pointer',
+                  border: picking === value ? '2px solid var(--text-primary)' : '2px solid transparent',
+                  padding: 0,
+                }}
+              />
+              <span style={{ flex: 1, fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{count}</span>
+            </div>
+            {picking === value && (
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', padding: '2px 0 8px 24px' }}>
+                {COLOR_CHOICES.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => { onSetColor(value, c); setPicking(null) }}
+                    style={{
+                      width: 15, height: 15, borderRadius: '50%', background: c, cursor: 'pointer', padding: 0,
+                      border: `2px solid ${colors[value] === c ? 'var(--text-primary)' : 'transparent'}`,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {track && values.length > 0 && (
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+            Nodes without a {track.replace(/_/g, ' ')} value keep their normal look.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Rank Panel ──────────────────────────────────────────────────────────────────
 
 export function RankPanel({ ranks, onChange, onClose }: {

@@ -10,7 +10,8 @@ import TimelineCanvas from '../components/TimelineCanvas'
 import {
   ZoomLevel, ZOOM_LABEL, ZOOM_ORDER,
   isYearMode, dayToWorldYear, worldYearToDay, computeBins,
-  makePageAxisGeo, DEFAULT_BASE_YEAR,
+  makePageAxisGeo,
+  type CampaignCalendar, getCampaignCalendar, yearLength, formatCalendarDay,
   type TimelineEventItem, type ClusterItem, type SessionRenderItem, type BinChip, type Era,
 } from '../utils/timelineGeometry'
 
@@ -88,11 +89,11 @@ export default function TimelineEmbed() {
   const [binTooltip, setBinTooltip] = useState<BinTooltip | null>(null)
   const [dayTooltip, setDayTooltip] = useState<DayTooltip | null>(null)
   const [clusterPicker, setClusterPicker] = useState<{ items: ClusterItem[]; x: number; y: number } | null>(null)
-  const [baseYear, setBaseYear] = useState<number>((currentCampaign as any)?.timeline_base_year ?? DEFAULT_BASE_YEAR)
+  const [cal, setCal] = useState<CampaignCalendar>(() => getCampaignCalendar(currentCampaign))
 
   const pxPerDay = DAY_ZOOM_LEVELS[dayZoomIdx]
 
-  useEffect(() => { setBaseYear((currentCampaign as any)?.timeline_base_year ?? DEFAULT_BASE_YEAR) }, [currentCampaign?.id])
+  useEffect(() => { setCal(getCampaignCalendar(currentCampaign)) }, [currentCampaign?.id, (currentCampaign as any)?.timeline_calendar])
 
   useEffect(() => {
     if (!showFilter) return
@@ -154,10 +155,10 @@ export default function TimelineEmbed() {
   ]
   // Keep day mode anchored to the campaign era; ancient article dates stay in the year views.
   const coreMin = Math.min(1, ...datedSessions.map(s => s.in_world_day!), ...items.filter(i => i.kind === 'event' || i.kind === 'death').map(i => i.day))
-  const minDay = Math.max(Math.min(...allDays), coreMin - 365) - 5
+  const minDay = Math.max(Math.min(...allDays), coreMin - yearLength(cal)) - 5
   const maxDay = Math.max(...allDays) + 20
 
-  const geo = makePageAxisGeo(zoom, PAD_L, minDay, pxPerDay, baseYear)
+  const geo = makePageAxisGeo(zoom, PAD_L, minDay, pxPerDay, cal)
   const { dx, canvasWidth } = geo
   const CANVAS_W = canvasWidth(PAD_R, maxDay)
 
@@ -172,8 +173,8 @@ export default function TimelineEmbed() {
     arc_id: s.arc_id, in_world_day: s.in_world_day!, in_world_day_end: s.in_world_day_end,
   }))
 
-  const bins = computeBins(zoom, baseYear, datedSessions, items)
-  const maxWY = Math.ceil(dayToWorldYear(maxDay, baseYear)) + 1
+  const bins = computeBins(zoom, cal, datedSessions, items)
+  const maxWY = Math.ceil(dayToWorldYear(maxDay, cal)) + 1
   const eras: Era[] = (() => {
     try { const a = JSON.parse((currentCampaign as any)?.timeline_eras ?? '[]'); return Array.isArray(a) ? a : [] } catch { return [] }
   })()
@@ -239,7 +240,7 @@ export default function TimelineEmbed() {
       scrollToBinRef.current = null
       // In day mode pxPerYear is 0, so worldYearToX collapses every year to the
       // same x — convert the target year to a day and use the day axis instead.
-      const x = isYearMode(zoom) ? geo.worldYearToX(targetWY) : geo.dx(worldYearToDay(targetWY, baseYear))
+      const x = isYearMode(zoom) ? geo.worldYearToX(targetWY) : geo.dx(worldYearToDay(targetWY, cal))
       scrollRef.current.scrollLeft = Math.max(0, x - scrollRef.current.clientWidth / 2)
       return
     }
@@ -313,7 +314,7 @@ export default function TimelineEmbed() {
             <TimelineCanvas
               zoom={zoom} geo={geo} width={CANVAS_W} compact
               layout={{ axisY: AXIS_Y, arcY: ARC_Y, arcH: ARC_H, sessionDotY: SESSION_DOT_Y, eventY: EVENT_Y, deathY: DEATH_Y, totalH: TOTAL_H }}
-              padL={PAD_L} padR={PAD_R} minDay={minDay} maxDay={maxDay} maxWY={maxWY} baseYear={baseYear} pxPerDay={pxPerDay}
+              padL={PAD_L} padR={PAD_R} minDay={minDay} maxDay={maxDay} maxWY={maxWY} cal={cal} pxPerDay={pxPerDay}
               arcSpans={arcSpans} arcMap={arcMap} clusterItems={clusterItems} bins={bins}
               eras={eras} showEras={filters.eras}
               lifespans={lifespans} showLifespans={showLifespans}
@@ -352,7 +353,7 @@ export default function TimelineEmbed() {
         {/* Day cluster tooltip */}
         {dayTooltip && (
           <div style={{ position: 'absolute', left: Math.max(8, dayTooltip.x - 70), top: Math.max(8, dayTooltip.y - 110), background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', fontSize: 11, color: 'var(--text-secondary)', pointerEvents: 'none', zIndex: 50, boxShadow: 'var(--shadow-lg)', minWidth: 150 }}>
-            <div style={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4, fontSize: 10 }}>Day {dayTooltip.items[0]?.day}</div>
+            <div style={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4, fontSize: 10 }}>{formatCalendarDay(dayTooltip.items[0]?.day ?? 1, cal)}</div>
             {dayTooltip.items.slice(0, 5).map((it, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
                 <span style={{ color: it.kind === 'session' ? 'var(--gold)' : it.kind === 'death' ? '#9b7de8' : '#e05555', fontSize: 9, flexShrink: 0 }}>{it.kind === 'session' ? '○' : it.kind === 'death' ? '☠' : '◆'}</span>
@@ -367,7 +368,7 @@ export default function TimelineEmbed() {
         {/* Cluster picker — choose one of several overlapping entries */}
         {clusterPicker && (
           <div ref={clusterPickerRef} style={{ position: 'absolute', zIndex: 60, left: Math.max(8, clusterPicker.x - 70), top: Math.max(8, clusterPicker.y - 12), background: 'var(--bg-surface)', border: '1px solid var(--border-gold)', borderRadius: 'var(--radius-sm)', padding: '5px 4px', fontSize: 12, color: 'var(--text-secondary)', boxShadow: 'var(--shadow-lg)', minWidth: 180, maxHeight: 200, overflowY: 'auto' }}>
-            <div style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: 10, padding: '2px 8px 5px' }}>Day {clusterPicker.items[0]?.day} · {clusterPicker.items.length} entries</div>
+            <div style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: 10, padding: '2px 8px 5px' }}>{formatCalendarDay(clusterPicker.items[0]?.day ?? 1, cal)} · {clusterPicker.items.length} entries</div>
             {clusterPicker.items.map((it, i) => (
               <button key={`${it.kind}-${it.id}-${i}`} onClick={() => { setClusterPicker(null); openItem(it) }}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', background: 'none', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left', color: 'var(--text-secondary)' }}

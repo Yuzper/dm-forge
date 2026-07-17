@@ -10,7 +10,9 @@ import { ArticleEditor } from '../components/wiki/ArticleEditor'
 import {
   ZoomLevel, ZOOM_LABEL, ZOOM_ORDER,
   isYearMode, dayToWorldYear, worldYearToDay, computeBins,
-  makePageAxisGeo, DEFAULT_BASE_YEAR,
+  makePageAxisGeo,
+  type CampaignCalendar, getCampaignCalendar,
+  yearLength, dayToCalendarDate, formatCalendarDay, spanLabel,
   type TimelineEventItem, type ClusterItem, type SessionRenderItem, type BinChip, type Era,
 } from '../utils/timelineGeometry'
 
@@ -86,30 +88,101 @@ function FilterPanel({ filters, onChange, onClose }: {
   )
 }
 
-// ── Timeline Settings Modal (base year + era bands) ──────────────────────────────
+// ── Timeline Settings Modal (calendar + era bands) ───────────────────────────────
 
-function TimelineSettingsModal({ currentYear, eras, showLifespans, onSave, onClose }: {
-  currentYear: number; eras: Era[]; showLifespans: boolean
-  onSave: (year: number, eras: Era[], showLifespans: boolean) => void; onClose: () => void
+function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose }: {
+  calendar: CampaignCalendar; eras: Era[]; showLifespans: boolean
+  onSave: (cal: CampaignCalendar, eras: Era[], showLifespans: boolean) => void; onClose: () => void
 }) {
-  const [year, setYear] = useState(currentYear)
+  const [unitName, setUnitName] = useState(calendar.unitName)
+  const [spans, setSpans] = useState(calendar.spans.map(s => ({ ...s })))
+  const [startYear, setStartYear] = useState(calendar.start.year)
+  const [startSpan, setStartSpan] = useState(calendar.start.span)
+  const [startDay, setStartDay] = useState(calendar.start.day)
   const [list, setList] = useState<Era[]>(eras)
   const [lifespansOn, setLifespansOn] = useState(showLifespans)
 
-  const addEra = () => setList(l => [...l, { id: `era_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: 'New Era', startYear: year, endYear: year + 10, color: '#c8a84b' }])
+  const totalDays = spans.reduce((s, sp) => s + (sp.days || 0), 0)
+  const unit = unitName.trim() || 'Month'
+
+  const addSpan = () => setSpans(s => [...s, { name: '', days: 30 }])
+  const updateSpan = (i: number, patch: Partial<{ name: string; days: number }>) =>
+    setSpans(s => s.map((sp, idx) => idx === i ? { ...sp, ...patch } : sp))
+  const removeSpan = (i: number) => {
+    setSpans(s => s.filter((_, idx) => idx !== i))
+    setStartSpan(v => Math.max(0, Math.min(i < v ? v - 1 : v, spans.length - 2)))
+  }
+
+  const buildCalendar = (): CampaignCalendar => {
+    const cleanSpans = spans.length > 0
+      ? spans.map(s => ({ name: s.name.trim(), days: Math.max(1, Math.round(s.days || 1)) }))
+      : [{ name: '', days: 365 }]
+    const span = Math.min(startSpan, cleanSpans.length - 1)
+    return {
+      unitName: unit,
+      spans: cleanSpans,
+      start: { year: startYear, span, day: Math.min(Math.max(1, startDay), cleanSpans[span].days) },
+    }
+  }
+
+  const addEra = () => setList(l => [...l, { id: `era_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: 'New Era', startYear, endYear: startYear + 10, color: '#c8a84b' }])
   const updateEra = (id: string, patch: Partial<Era>) => setList(l => l.map(e => e.id === id ? { ...e, ...patch } : e))
   const removeEra = (id: string) => setList(l => l.filter(e => e.id !== id))
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 480 }}>
+      <div className="modal" style={{ maxWidth: 540, maxHeight: '86vh', overflowY: 'auto' }}>
         <div className="modal-title">Timeline settings</div>
 
+        {/* ── Calendar ─────────────────────────────────────────────────────── */}
         <div className="input-group">
-          <label className="input-label">Base year</label>
-          <input className="input" type="number" value={year} onChange={e => setYear(parseInt(e.target.value) || currentYear)}
-            style={{ color: 'var(--gold)', fontWeight: 600 }} />
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>"Day 1" of the campaign falls in this year.</div>
+          <label className="input-label">Year divisions</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>One division is called a</span>
+            <input className="input" value={unitName} onChange={e => setUnitName(e.target.value)}
+              placeholder="Month, Season, Tenday…" style={{ width: 150 }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, maxHeight: 220, overflowY: 'auto' }}>
+            {spans.map((sp, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                <input className="input" value={sp.name} onChange={e => updateSpan(i, { name: e.target.value })}
+                  placeholder={`${unit} ${i + 1}`} style={{ flex: 1, minWidth: 0 }} />
+                <input className="input" type="number" min={1} value={sp.days}
+                  onChange={e => updateSpan(i, { days: parseInt(e.target.value) || 1 })}
+                  title="Days" style={{ width: 70, flexShrink: 0 }} />
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>days</span>
+                <button onClick={() => removeSpan(i)} disabled={spans.length <= 1} title={spans.length <= 1 ? 'At least one division is needed' : 'Remove'}
+                  style={{ background: 'none', border: 'none', color: spans.length <= 1 ? 'var(--border)' : 'var(--text-muted)', cursor: spans.length <= 1 ? 'default' : 'pointer', padding: 2, flexShrink: 0, display: 'flex' }}><X size={14} /></button>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+            <button className="btn btn-sm" onClick={addSpan}><Plus size={12} /> Add {unit.toLowerCase()}</button>
+            <span style={{ fontSize: 12, color: 'var(--gold)' }}>= {totalDays} days per year</span>
+          </div>
+        </div>
+
+        {/* ── Campaign start date ──────────────────────────────────────────── */}
+        <div className="input-group" style={{ marginTop: 18 }}>
+          <label className="input-label">Campaign start date</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Day</span>
+            <input className="input" type="number" min={1} max={spans[Math.min(startSpan, spans.length - 1)]?.days ?? 1}
+              value={startDay} onChange={e => setStartDay(parseInt(e.target.value) || 1)} style={{ width: 64 }} />
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>of</span>
+            <select className="input" value={Math.min(startSpan, spans.length - 1)}
+              onChange={e => setStartSpan(parseInt(e.target.value))} style={{ width: 150 }}>
+              {spans.map((sp, i) => <option key={i} value={i}>{sp.name.trim() || `${unit} ${i + 1}`}</option>)}
+            </select>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>, year</span>
+            <input className="input" type="number" value={startYear}
+              onChange={e => setStartYear(parseInt(e.target.value) || startYear)}
+              style={{ width: 84, color: 'var(--gold)', fontWeight: 600 }} />
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+            Campaign day 1 falls on this date. Dates are stored as days since campaign start, so changing the calendar re-labels them without moving anything.
+          </div>
         </div>
 
         <div style={{ marginTop: 18 }}>
@@ -142,7 +215,7 @@ function TimelineSettingsModal({ currentYear, eras, showLifespans, onSave, onClo
 
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onSave(year, list.filter(e => e.endYear > e.startYear), lifespansOn)}>Save</button>
+          <button className="btn btn-primary" onClick={() => onSave(buildCalendar(), list.filter(e => e.endYear > e.startYear), lifespansOn)}>Save</button>
         </div>
       </div>
     </div>
@@ -298,7 +371,7 @@ export default function TimelinePage() {
   const [showFilter, setShowFilter] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [baseYear, setBaseYear] = useState<number>((currentCampaign as any)?.timeline_base_year ?? DEFAULT_BASE_YEAR)
+  const [cal, setCal] = useState<CampaignCalendar>(() => getCampaignCalendar(currentCampaign))
   const [eras, setEras] = useState<Era[]>(() => parseEras((currentCampaign as any)?.timeline_eras))
   const [showLifespans, setShowLifespans] = useState<boolean>(!!(currentCampaign as any)?.timeline_show_lifespans)
   const [binTooltip, setBinTooltip] = useState<BinTooltip | null>(null)
@@ -310,7 +383,7 @@ export default function TimelinePage() {
   const pxPerDay = DAY_ZOOM_LEVELS[dayZoomIdx]
 
   useEffect(() => {
-    setBaseYear((currentCampaign as any)?.timeline_base_year ?? DEFAULT_BASE_YEAR)
+    setCal(getCampaignCalendar(currentCampaign))
     setEras(parseEras((currentCampaign as any)?.timeline_eras))
     setShowLifespans(!!(currentCampaign as any)?.timeline_show_lifespans)
   }, [currentCampaign?.id])
@@ -381,10 +454,10 @@ export default function TimelinePage() {
   // founding centuries back) shouldn't stretch it — they remain reachable in the
   // year/decade/full views (which use a log-compressed pre-campaign zone).
   const coreMin = Math.min(1, ...datedSessions.map(s => s.in_world_day!), ...items.filter(i => i.kind === 'event' || i.kind === 'death').map(i => i.day))
-  const minDay = Math.max(Math.min(...allDays), coreMin - 365) - 5
+  const minDay = Math.max(Math.min(...allDays), coreMin - yearLength(cal)) - 5
   const maxDay = Math.max(...allDays) + 20
 
-  const geo = makePageAxisGeo(zoom, PAD_L, minDay, pxPerDay, baseYear)
+  const geo = makePageAxisGeo(zoom, PAD_L, minDay, pxPerDay, cal)
   const { dx, canvasWidth } = geo
   const CANVAS_W = canvasWidth(PAD_R, maxDay)
 
@@ -399,8 +472,8 @@ export default function TimelinePage() {
     arc_id: s.arc_id, in_world_day: s.in_world_day!, in_world_day_end: s.in_world_day_end,
   }))
 
-  const bins = computeBins(zoom, baseYear, datedSessions, items)
-  const maxWY = Math.ceil(dayToWorldYear(maxDay, baseYear)) + 1
+  const bins = computeBins(zoom, cal, datedSessions, items)
+  const maxWY = Math.ceil(dayToWorldYear(maxDay, cal)) + 1
 
   // Marks for day mode (respecting filters). In year mode the canvas renders bins.
   const clusterItems: ClusterItem[] = isYearMode(zoom) ? [] : [
@@ -462,8 +535,7 @@ export default function TimelinePage() {
     if (isYearMode(zoom)) return
     const x = e.clientX - e.currentTarget.getBoundingClientRect().left
     const day = Math.round((x - PAD_L) / pxPerDay) + minDay
-    const year = Math.floor(dayToWorldYear(day, baseYear))
-    setCreateDateRaw(JSON.stringify({ day, year, label: `Day ${day}, Year ${year}` }))
+    setCreateDateRaw(JSON.stringify({ day, year: dayToCalendarDate(day, cal).year, label: formatCalendarDay(day, cal) }))
     setShowCreate(true)
   }
 
@@ -485,7 +557,7 @@ export default function TimelinePage() {
       scrollToBinRef.current = null
       // In day mode pxPerYear is 0, so worldYearToX collapses every year to the
       // same x — convert the target year to a day and use the day axis instead.
-      const x = isYearMode(zoom) ? geo.worldYearToX(targetWY) : geo.dx(worldYearToDay(targetWY, baseYear))
+      const x = isYearMode(zoom) ? geo.worldYearToX(targetWY) : geo.dx(worldYearToDay(targetWY, cal))
       scrollRef.current.scrollLeft = Math.max(0, x - scrollRef.current.clientWidth / 2)
       return
     }
@@ -508,10 +580,17 @@ export default function TimelinePage() {
     loadItems()
   }, [loadItems])
 
-  const handleSaveSettings = useCallback(async (y: number, newEras: Era[], lifespansOn: boolean) => {
+  const handleSaveSettings = useCallback(async (newCal: CampaignCalendar, newEras: Era[], lifespansOn: boolean) => {
     if (!currentCampaign) return
-    await updateCampaign(currentCampaign.id, { timeline_base_year: y, timeline_eras: JSON.stringify(newEras), timeline_show_lifespans: lifespansOn ? 1 : 0 } as any)
-    setBaseYear(y); setEras(newEras); setShowLifespans(lifespansOn); setShowSettings(false)
+    // timeline_base_year mirrors the calendar start year so older code paths
+    // (and the fallback calendar) stay consistent.
+    await updateCampaign(currentCampaign.id, {
+      timeline_base_year: newCal.start.year,
+      timeline_calendar: JSON.stringify(newCal),
+      timeline_eras: JSON.stringify(newEras),
+      timeline_show_lifespans: lifespansOn ? 1 : 0,
+    } as any)
+    setCal(newCal); setEras(newEras); setShowLifespans(lifespansOn); setShowSettings(false)
   }, [currentCampaign, updateCampaign])
 
   const handleOpenSession = useCallback((id: number) => {
@@ -550,9 +629,9 @@ export default function TimelinePage() {
             </button>
             <Clock size={20} color='#e88c3a' />
             <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, letterSpacing: '0.03em', color: 'var(--text-primary)', margin: 0 }}>Timeline</h1>
-            <button onClick={() => setShowSettings(true)} title="Timeline settings (base year, era bands)"
+            <button onClick={() => setShowSettings(true)} title="Timeline settings (calendar, start date, era bands)"
               style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 11, color: 'var(--gold)', cursor: 'pointer' }}>
-              <Settings size={10} /> Year {baseYear}
+              <Settings size={10} /> Calendar · {cal.start.year}
             </button>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               {datedSessions.length} sessions · {items.filter(i => i.kind === 'event').length} events · {items.filter(i => i.kind === 'death').length} deaths
@@ -613,7 +692,7 @@ export default function TimelinePage() {
             <TimelineCanvas
               zoom={zoom} geo={geo} width={CANVAS_W}
               layout={{ axisY: AXIS_Y, arcY: ARC_Y, arcH: ARC_H, sessionDotY: SESSION_DOT_Y, eventY: EVENT_Y, deathY: DEATH_Y, totalH: TOTAL_H }}
-              padL={PAD_L} padR={PAD_R} minDay={minDay} maxDay={maxDay} maxWY={maxWY} baseYear={baseYear} pxPerDay={pxPerDay}
+              padL={PAD_L} padR={PAD_R} minDay={minDay} maxDay={maxDay} maxWY={maxWY} cal={cal} pxPerDay={pxPerDay}
               arcSpans={arcSpans} arcMap={arcMap} clusterItems={clusterItems} bins={bins}
               eras={eras} showEras={filters.eras}
               lifespans={lifespans} showLifespans={showLifespans}
@@ -646,7 +725,7 @@ export default function TimelinePage() {
         {/* Day cluster tooltip */}
         {dayTooltip && (
           <div style={{ position: 'absolute', pointerEvents: 'none', zIndex: 20, left: Math.max(8, dayTooltip.x - 70), top: Math.max(8, dayTooltip.y - 120), background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', fontSize: 11, color: 'var(--text-secondary)', boxShadow: 'var(--shadow-lg)', minWidth: 160 }}>
-            <div style={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4, fontSize: 10 }}>Day {dayTooltip.items[0]?.day}</div>
+            <div style={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4, fontSize: 10 }}>{formatCalendarDay(dayTooltip.items[0]?.day ?? 1, cal)}</div>
             {dayTooltip.items.slice(0, 5).map((it, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
                 <span style={{ color: it.kind === 'session' ? 'var(--gold)' : it.kind === 'death' ? '#9b7de8' : '#e05555', fontSize: 9, flexShrink: 0 }}>{it.kind === 'session' ? '○' : it.kind === 'death' ? '☠' : '◆'}</span>
@@ -661,7 +740,7 @@ export default function TimelinePage() {
         {/* Cluster picker — choose one of several overlapping entries */}
         {clusterPicker && (
           <div ref={clusterPickerRef} style={{ position: 'absolute', zIndex: 30, left: Math.max(8, clusterPicker.x - 70), top: Math.max(8, clusterPicker.y - 12), background: 'var(--bg-surface)', border: '1px solid var(--border-gold)', borderRadius: 'var(--radius-sm)', padding: '5px 4px', fontSize: 12, color: 'var(--text-secondary)', boxShadow: 'var(--shadow-lg)', minWidth: 180, maxHeight: 220, overflowY: 'auto' }}>
-            <div style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: 10, padding: '2px 8px 5px' }}>Day {clusterPicker.items[0]?.day} · {clusterPicker.items.length} entries</div>
+            <div style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: 10, padding: '2px 8px 5px' }}>{formatCalendarDay(clusterPicker.items[0]?.day ?? 1, cal)} · {clusterPicker.items.length} entries</div>
             {clusterPicker.items.map((it, i) => (
               <button key={`${it.kind}-${it.id}-${i}`} onClick={() => navigateToItem(it)}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', background: 'none', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left', color: 'var(--text-secondary)' }}
@@ -706,7 +785,7 @@ export default function TimelinePage() {
         )}
       </div>
 
-      <UnplacedBanner undatedSessions={undatedSessions} undatedEvents={undatedEvents} baseYear={baseYear} onSessionDateSet={handleSessionDateSet} onEventDateSet={handleEventDateSet} />
+      <UnplacedBanner undatedSessions={undatedSessions} undatedEvents={undatedEvents} baseYear={cal.start.year} onSessionDateSet={handleSessionDateSet} onEventDateSet={handleEventDateSet} />
 
       <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', background: 'var(--bg-elevated)' }}>
         {embeddedArticle ? (
@@ -719,8 +798,8 @@ export default function TimelinePage() {
         )}
       </div>
 
-      {showCreate && <CreateEventModal onClose={() => setShowCreate(false)} onCreated={loadItems} baseYear={baseYear} initialDateRaw={createDateRaw} />}
-      {showSettings && <TimelineSettingsModal currentYear={baseYear} eras={eras} showLifespans={showLifespans} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />}
+      {showCreate && <CreateEventModal onClose={() => setShowCreate(false)} onCreated={loadItems} baseYear={cal.start.year} initialDateRaw={createDateRaw} />}
+      {showSettings && <TimelineSettingsModal calendar={cal} eras={eras} showLifespans={showLifespans} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />}
     </div>
   )
 }

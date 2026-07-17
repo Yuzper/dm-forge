@@ -1,11 +1,6 @@
 Data:
  - Rest of spells 2014 (7-9)
 
-Add all tracks to filter options in relations.
-Search or alpabetical in species.
-
-
-
 
 Encounter builder
 Pick creatures (from your creature articles) → see XP total vs party difficulty thresholds (party size + level config), then push the encounter straight into the combat tracker.
@@ -13,8 +8,6 @@ Needs: a small party-config (level/size) somewhere, the 5e XP-budget + multiplie
 Medium. Mostly additive, one new config concept.
 Needs a "Unaccounted for" list with creatures with no XP value. The config should be pr session since player amount can differ. Add a disclaimer something like "Remember the dice introduce randomness so an encounter might be more or less difficult than the expected classification."
 
-Calendar system
-Per-campaign calendar definition (months, days-per-month, weekdays, optional moons/festivals), a "current date" you advance during play, and recurring events that surface on the timeline.
-Biggest because it touches the in-world date model, the timeline, and events — real data-model decisions (and a migration path for existing in-world dates).
-Largest, most foundational. Worth doing carefully.
+Add a info button to areas of the app with knowledge to note. Needs attention view excludes creatures.
 
+Update hints

@@ -3,9 +3,12 @@ import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
 import { Calendar, X, Trash2 } from 'lucide-react'
 import {
-  ZoomLevel, ZOOM_LABEL, ZOOM_ORDER, YEAR_LENGTH,
+  ZoomLevel, ZOOM_LABEL, ZOOM_ORDER,
   isYearMode, dayToWorldYear, computeBins,
   makePickerAxisGeo, DEFAULT_BASE_YEAR,
+  type CampaignCalendar, getCampaignCalendar, defaultCalendar,
+  yearLength, startDayOfYear, dayToCalendarDate, calendarDateToDay,
+  formatCalendarDay, isPlainCalendar, spanLabel,
 } from '../utils/timelineGeometry'
 
 export interface InWorldDate {
@@ -36,12 +39,11 @@ export function serializeInWorldDate(d: InWorldDate): string {
 interface MiniTimelineProps {
   campaignId: number
   selectedDay: number
-  baseYear: number
-  yearLength: number
+  cal: CampaignCalendar
   onPickDay: (day: number) => void
 }
 
-function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay }: MiniTimelineProps) {
+function MiniTimeline({ campaignId, selectedDay, cal, onPickDay }: MiniTimelineProps) {
   const { sessions, arcs } = useStore()
   const svgRef = useRef<SVGSVGElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -84,11 +86,14 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
   const ARC_Y = AXIS_Y - ARC_H - 4
 
   // ── Geometry (shared utility) ────────────────────────────────────────────────
+  const L = yearLength(cal)
+  const startOff = startDayOfYear(cal) - 1   // days of the start year before campaign day 1
+  const baseYear = cal.start.year
   const PX_PER_DAY = zoom === 'day' ? 6 : 2
   const allDays = [...sessions.map(s => (s as any).in_world_day).filter(Boolean), selectedDay || 1, 1]
   const MIN_DAY = Math.min(...allDays, 1) - 5
-  const MAX_DAY = Math.max(...allDays, yearLength + 10) + 10
-  const geo = makePickerAxisGeo(zoom, PAD_L, MIN_DAY, PX_PER_DAY, baseYear)
+  const MAX_DAY = Math.max(...allDays, L + 10) + 10
+  const geo = makePickerAxisGeo(zoom, PAD_L, MIN_DAY, PX_PER_DAY, cal)
   const { dx, xToDay, worldYearToX } = geo
   const W_DAY = PAD_L + (MAX_DAY - MIN_DAY) * PX_PER_DAY + PAD_R
   const W_YEAR = 680
@@ -114,7 +119,7 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
     .map(s => ({ day: (s as any).in_world_day as number, color: arcMap[s.arc_id ?? 0]?.color ?? '#555' }))
 
   // ── Bin chips (pre-campaign context only) ───────────────────────────────────
-  const bins = computeBins(zoom, baseYear, sessions as any[], events).filter(b => b.zone === 'pre')
+  const bins = computeBins(zoom, cal, sessions as any[], events).filter(b => b.zone === 'pre')
 
   // ── Mouse → day ──────────────────────────────────────────────────────────────
   const mouseToDay = (e: MouseEvent | React.MouseEvent): number | null => {
@@ -148,7 +153,7 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
 
   const hasMarker = selectedDay !== 0
   const sx = hasMarker ? dx(selectedDay) : null
-  const markerLabel = isYearMode(zoom) ? `${Math.round(dayToWorldYear(selectedDay, baseYear))}` : `D${selectedDay}`
+  const markerLabel = isYearMode(zoom) ? `${Math.round(dayToWorldYear(selectedDay, cal))}` : `D${selectedDay}`
 
   // ── Year-mode campaign year ticks (guard: pxPerYear=0 means no campaign zone) ─
   const campaignYears = isYearMode(zoom) && geo.pxPerYear > 0 ? (() => {
@@ -255,11 +260,11 @@ function MiniTimeline({ campaignId, selectedDay, baseYear, yearLength, onPickDay
             {/* Day-mode year bands */}
             {(() => {
               const bands: React.ReactNode[] = []
-              const firstYi = Math.floor((MIN_DAY - 1) / yearLength)
+              const firstYi = Math.floor((MIN_DAY - 1 + startOff) / L)
               for (let yi = firstYi; ; yi++) {
-                const bandStart = 1 + yi * yearLength
+                const bandStart = 1 - startOff + yi * L
                 const x1 = Math.max(dx(Math.max(bandStart, MIN_DAY)), PAD_L)
-                const x2 = Math.min(dx(Math.min(bandStart + yearLength - 1, MAX_DAY)), W_DAY - PAD_R)
+                const x2 = Math.min(dx(Math.min(bandStart + L - 1, MAX_DAY)), W_DAY - PAD_R)
                 if (x1 > W_DAY - PAD_R) break
                 const wy = baseYear + yi
                 bands.push(
@@ -379,12 +384,6 @@ interface InWorldDatePickerProps {
   label?: string
 }
 
-const deriveYear = (day: number, baseYear: number) => baseYear + Math.floor((day - 1) / YEAR_LENGTH)
-// 1-based day within its year (1..YEAR_LENGTH), correct for pre-campaign (≤0) days.
-const dayOfYear = (day: number) => ((day - 1) % YEAR_LENGTH + YEAR_LENGTH) % YEAR_LENGTH + 1
-// Absolute campaign day for a given world year, keeping the same day-of-year.
-const dayForYear = (year: number, doy: number, baseYear: number) => (year - baseYear) * YEAR_LENGTH + doy
-
 export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEAR, label = 'In-world date' }: InWorldDatePickerProps) {
   const { currentCampaign, sessions, arcs } = useStore()
   const [open, setOpen] = useState(false)
@@ -393,7 +392,11 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
   const [day, setDay] = useState<number>(() => parseInWorldDate(value)?.day ?? 0)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const year = day !== 0 ? deriveYear(day, baseYear) : baseYear
+  const cal = currentCampaign ? getCampaignCalendar(currentCampaign) : defaultCalendar(baseYear)
+  const plain = isPlainCalendar(cal)
+  // Calendar date of the current selection (day 1 as the editing base when unset).
+  const calDate = dayToCalendarDate(day || 1, cal)
+  const year = day !== 0 ? calDate.year : cal.start.year
 
   // Local text buffer for the editable year field, so partial edits (and
   // clearing the box) don't snap the marker around mid-type.
@@ -426,9 +429,8 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
   }
 
   const commit = (d: number) => {
-    const y = deriveYear(d, baseYear)
-    const date: InWorldDate = { day: d, year: y, label: `Day ${d}, Year ${y}` }
-    onChange(serializeInWorldDate(date))
+    const date: InWorldDate = { day: d, year: dayToCalendarDate(d, cal).year, label: formatCalendarDay(d, cal) }
+    onChange(JSON.stringify(date))
   }
 
   const handlePickDay = (d: number) => {
@@ -443,18 +445,36 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
     commit(n)
   }
 
+  // Day-within-span input (calendar mode) — clamped to the span's length.
+  const handleSpanDayInput = (v: string) => {
+    const n = parseInt(v)
+    if (isNaN(n)) return
+    const clamped = Math.min(Math.max(1, n), cal.spans[calDate.span].days)
+    const d = calendarDateToDay(year, calDate.span, clamped, cal)
+    setDay(d)
+    commit(d)
+  }
+
+  // Span select (calendar mode) — keeps the day-of-span, clamped to the new span.
+  const handleSpanSelect = (idx: number) => {
+    const clampedDay = Math.min(calDate.dayOfSpan, cal.spans[idx].days)
+    const d = calendarDateToDay(year, idx, clampedDay, cal)
+    setDay(d)
+    commit(d)
+  }
+
   // Editing the year shifts the absolute day by whole years, keeping the
   // day-of-year fixed (so the marker lands on the same day in the new year).
   const handleYearInput = (v: string) => {
     setYearInput(v)
     const y = parseInt(v)
     if (isNaN(y)) return
-    const newDay = dayForYear(y, dayOfYear(day || 1), baseYear)
+    const newDay = calendarDateToDay(y, calDate.span, calDate.dayOfSpan, cal)
     setDay(newDay)
     commit(newDay)
   }
 
-  const displayValue = day !== 0 ? `Day ${day}, Year ${year}` : ''
+  const displayValue = day !== 0 ? formatCalendarDay(day, cal) : ''
   const ctx = day !== 0 ? contextLabel(day, sessions as any[], arcs) : ''
 
   return (
@@ -483,14 +503,37 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Day</span>
-              <input
-                type="number" value={day || ''}
-                placeholder="—"
-                onChange={e => handleDayInput(e.target.value)}
-                style={{ width: 56, padding: '3px 6px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: day <= 0 ? '#e88c3a' : 'var(--gold)', fontSize: 12, fontFamily: 'var(--font-ui)', textAlign: 'center' }}
-              />
-              {day !== 0 && (
+              {plain ? (
+                <>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Day</span>
+                  <input
+                    type="number" value={day || ''}
+                    placeholder="—"
+                    onChange={e => handleDayInput(e.target.value)}
+                    style={{ width: 56, padding: '3px 6px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: day <= 0 ? '#e88c3a' : 'var(--gold)', fontSize: 12, fontFamily: 'var(--font-ui)', textAlign: 'center' }}
+                  />
+                </>
+              ) : (
+                <>
+                  <input
+                    type="number" value={day !== 0 ? calDate.dayOfSpan : ''}
+                    placeholder="—"
+                    min={1} max={cal.spans[calDate.span].days}
+                    onChange={e => handleSpanDayInput(e.target.value)}
+                    title={`Day within ${spanLabel(cal, calDate.span)} (1–${cal.spans[calDate.span].days})`}
+                    style={{ width: 46, padding: '3px 6px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: day <= 0 && day !== 0 ? '#e88c3a' : 'var(--gold)', fontSize: 12, fontFamily: 'var(--font-ui)', textAlign: 'center' }}
+                  />
+                  <select
+                    value={calDate.span}
+                    onChange={e => handleSpanSelect(parseInt(e.target.value))}
+                    title={cal.unitName}
+                    style={{ maxWidth: 120, padding: '3px 4px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 12, fontFamily: 'var(--font-ui)', outline: 'none' }}
+                  >
+                    {cal.spans.map((_, i) => <option key={i} value={i}>{spanLabel(cal, i)}</option>)}
+                  </select>
+                </>
+              )}
+              {(day !== 0 || !plain) && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)' }}>
                   Year
                   <input
@@ -515,8 +558,7 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
                 <MiniTimeline
                   campaignId={currentCampaign.id}
                   selectedDay={day}
-                  baseYear={baseYear}
-                  yearLength={YEAR_LENGTH}
+                  cal={cal}
                   onPickDay={handlePickDay}
                 />
               )}
@@ -525,7 +567,8 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
             {/* Context footer */}
             {day !== 0 && (
               <div style={{ padding: '8px 12px 10px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                <span style={{ color: day <= 0 ? '#e88c3a' : 'var(--gold)' }}>Day {day}, Year {year}</span>
+                <span style={{ color: day <= 0 ? '#e88c3a' : 'var(--gold)' }}>{formatCalendarDay(day, cal)}</span>
+                {!plain && <span style={{ color: 'var(--text-muted)' }}> · day {day} of the campaign</span>}
                 {day <= 0 && <span style={{ color: '#e88c3a88' }}> (before campaign start)</span>}
                 {ctx && <span> — {ctx}</span>}
               </div>

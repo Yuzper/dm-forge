@@ -14,14 +14,14 @@ import 'reactflow/dist/style.css'
 import { toPng, toSvg } from 'html-to-image'
 import {
   Network, Plus, ArrowLeft, Pencil, Check, X, ExternalLink, Filter, GitMerge, LayoutGrid,
-  Users, Layers, Unlink, Link2,
+  Users, Layers, Unlink, Link2, Palette,
 } from 'lucide-react'
 import {
-  type Rank, TEMPLATE_CONFIG, type RelationWeb, type DBRelationNode, type DBRelationEdge,
-  parentRoleFromUnionLabel, findFreePosition,
+  type Rank, type ColorByConfig, TEMPLATE_CONFIG, type RelationWeb, type DBRelationNode, type DBRelationEdge,
+  parentRoleFromUnionLabel, findFreePosition, RANK_PALETTE,
   dbNodeToRF, dbEdgeToRF, NODE_TYPES, EDGE_TYPES,
 } from './relationsShared'
-import { TrackFilterPanel, RankPanel, LinkedArticlePill, ExportMenu } from './relationsPanels'
+import { TrackFilterPanel, RankPanel, ColorByPanel, LinkedArticlePill, ExportMenu } from './relationsPanels'
 import {
   AddNodeModal, EdgeLabelModal, EditEdgeModal,
   CreateArticleModal, LinkArticleModal, EditUnionModal,
@@ -72,6 +72,22 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
 
   const [showFilterPanel, setShowFilterPanel] = useState(false)
 
+  // ── Color by track ──────────────────────────────────────────────────────────
+  // One chosen track colors every node by its value; per-web persistence.
+  const colorByKey = `relations_color_by_${web.id}`
+  const [colorBy, setColorBy] = useState<{ track: string | null; colors: Record<string, string> }>(() => {
+    try {
+      const saved = localStorage.getItem(colorByKey)
+      return saved ? JSON.parse(saved) : { track: null, colors: {} }
+    } catch { return { track: null, colors: {} } }
+  })
+
+  useEffect(() => {
+    try { localStorage.setItem(colorByKey, JSON.stringify(colorBy)) } catch {}
+  }, [colorBy, colorByKey])
+
+  const [showColorPanel, setShowColorPanel] = useState(false)
+
   // ── Linked article (one-to-one web↔article) ─────────────────────────────────
   const [linkedArticle, setLinkedArticle] = useState<{ id: number; title: string; article_type: string } | null>(null)
 
@@ -99,6 +115,46 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     new Set(dbNodes.map(n => n.article_type).filter(Boolean) as string[])
   )
 
+  // Track keys usable for coloring — any key holding a plain value on some node.
+  const availableColorTracks = useMemo(() => {
+    const keys = new Set<string>()
+    for (const n of dbNodes) {
+      if (!n.tracks) continue
+      try {
+        for (const [k, v] of Object.entries(JSON.parse(n.tracks))) {
+          if (typeof v === 'string' && v && !v.startsWith('{') && !v.startsWith('[') &&
+              !k.endsWith('_Date') && k !== 'Timeline_Milestones') keys.add(k)
+        }
+      } catch {}
+    }
+    return Array.from(keys).sort((a, b) => a.localeCompare(b))
+  }, [dbNodes])
+
+  // Distinct values (with node counts) of the chosen track in this web.
+  const colorTrackValues = useMemo(() => {
+    if (!colorBy.track) return [] as [string, number][]
+    const counts = new Map<string, number>()
+    for (const n of dbNodes) {
+      if (!n.tracks) continue
+      try {
+        const v = JSON.parse(n.tracks)[colorBy.track]
+        if (typeof v === 'string' && v) counts.set(v, (counts.get(v) ?? 0) + 1)
+      } catch {}
+    }
+    return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+  }, [dbNodes, colorBy.track])
+
+  // Saved picks layered over palette auto-assignment, so every value present
+  // gets a color immediately and user choices persist.
+  const effectiveColorBy = useMemo<ColorByConfig | undefined>(() => {
+    if (!colorBy.track) return undefined
+    const colors: Record<string, string> = {}
+    colorTrackValues.forEach(([v], i) => {
+      colors[v] = colorBy.colors[v] ?? RANK_PALETTE[i % RANK_PALETTE.length]
+    })
+    return { track: colorBy.track, colors }
+  }, [colorBy, colorTrackValues])
+
   const cfg = TEMPLATE_CONFIG[web.template] || TEMPLATE_CONFIG.custom
   // The territory web is auto-generated from location "Located within" links, so
   // its structure is read-only here — only repositioning (which persists) is allowed.
@@ -111,9 +167,9 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     const data = await (window as any).api.getRelationWebData(web.id)
     setDbNodes(data.nodes)
     setDbEdges(data.edges)
-    setNodes(data.nodes.map((n: DBRelationNode) => dbNodeToRF(n, handleCreateArticleRef.current, trackFilters, ranksById)))
+    setNodes(data.nodes.map((n: DBRelationNode) => dbNodeToRF(n, handleCreateArticleRef.current, trackFilters, ranksById, effectiveColorBy)))
     setEdges(data.edges.map((e: DBRelationEdge) => dbEdgeToRF(e)))
-  }, [web.id, trackFilters, ranksById])
+  }, [web.id, trackFilters, ranksById, effectiveColorBy])
 
   useEffect(() => { loadWebDataRef.current = loadWebData }, [loadWebData])
   useEffect(() => { loadWebData() }, [web.id])
@@ -132,14 +188,14 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
 
   useEffect(() => { focusOnArticleNode() }, [focusOnArticleNode])
 
-  // Re-render nodes when track filters or ranks change (without reloading from DB)
+  // Re-render nodes when track filters, ranks or coloring change (without reloading from DB)
   useEffect(() => {
     setNodes(prev => prev.map(n => {
       const dbNode = dbNodes.find(d => String(d.id) === n.id)
       if (!dbNode) return n
-      return dbNodeToRF(dbNode, handleCreateArticleRef.current, trackFilters, ranksById)
+      return dbNodeToRF(dbNode, handleCreateArticleRef.current, trackFilters, ranksById, effectiveColorBy)
     }))
-  }, [trackFilters, ranksById])
+  }, [trackFilters, ranksById, effectiveColorBy])
 
   const syncDerivedRelations = useCallback(async () => {
     // Family trees derive relations; hierarchies derive the leader track. Both
@@ -364,7 +420,7 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
 
   const handleNodeAdded = (newNodes: DBRelationNode[]) => {
     setDbNodes(prev => [...prev, ...newNodes])
-    setNodes(prev => [...prev, ...newNodes.map(n => dbNodeToRF(n, requestCreateArticle, trackFilters, ranksById))])
+    setNodes(prev => [...prev, ...newNodes.map(n => dbNodeToRF(n, requestCreateArticle, trackFilters, ranksById, effectiveColorBy))])
     setShowAddNode(false)
     syncDerivedRelations()
   }
@@ -376,8 +432,8 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
       web_id: web.id, label: '∪', node_type: 'union', pos_x: x, pos_y: y,
     })
     setDbNodes(prev => [...prev, node])
-    setNodes(prev => [...prev, dbNodeToRF(node, requestCreateArticle, trackFilters, ranksById)])
-  }, [dbNodes, web.id, trackFilters, requestCreateArticle])
+    setNodes(prev => [...prev, dbNodeToRF(node, requestCreateArticle, trackFilters, ranksById, effectiveColorBy)])
+  }, [dbNodes, web.id, trackFilters, ranksById, effectiveColorBy, requestCreateArticle])
 
   // Export the canvas as a PNG or SVG image of the whole graph.
   const exportImage = useCallback(async (format: 'png' | 'svg') => {
@@ -483,9 +539,28 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
               <GitMerge size={13} /> Add union
             </button>
           )}
+          {/* Color-by-track button */}
+          <button
+            onClick={() => { setShowColorPanel(v => !v); setShowFilterPanel(false) }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '5px 10px', fontSize: 12, cursor: 'pointer',
+              background: showColorPanel ? 'var(--bg-elevated)' : 'transparent',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
+              transition: 'background var(--transition)',
+            }}
+            className="hover-bg-elevated"
+          >
+            <Palette size={13} />
+            Color
+            {colorBy.track && (
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7F77DD', flexShrink: 0 }} />
+            )}
+          </button>
           {/* Filter button */}
           <button
-            onClick={() => setShowFilterPanel(v => !v)}
+            onClick={() => { setShowFilterPanel(v => !v); setShowColorPanel(false) }}
             style={{
               display: 'flex', alignItems: 'center', gap: 5,
               padding: '5px 10px', fontSize: 12, cursor: 'pointer',
@@ -523,6 +598,19 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
         {/* Rank panel */}
         {showRankPanel && (
           <RankPanel ranks={ranks} onChange={saveRanks} onClose={() => setShowRankPanel(false)} />
+        )}
+
+        {/* Color-by-track panel */}
+        {showColorPanel && (
+          <ColorByPanel
+            availableTracks={availableColorTracks}
+            track={colorBy.track}
+            values={colorTrackValues}
+            colors={effectiveColorBy?.colors ?? {}}
+            onSelectTrack={t => setColorBy(prev => ({ ...prev, track: t }))}
+            onSetColor={(v, c) => setColorBy(prev => ({ ...prev, colors: { ...prev.colors, [v]: c } }))}
+            onClose={() => setShowColorPanel(false)}
+          />
         )}
       </div>
 

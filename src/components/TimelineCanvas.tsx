@@ -8,7 +8,8 @@
 
 import {
   type ZoomLevel, type AxisGeo, type BinChip, type ClusterItem, type Era,
-  isYearMode, worldYearToDay,
+  type CampaignCalendar,
+  isYearMode, worldYearToDay, isPlainCalendar, spanStartsBetween, spanLabel,
 } from '../utils/timelineGeometry'
 import type { Lifespan } from '../constants/timelineDates'
 
@@ -40,7 +41,7 @@ interface TimelineCanvasProps {
   minDay: number
   maxDay: number
   maxWY: number
-  baseYear: number
+  cal: CampaignCalendar
   pxPerDay: number
   arcSpans: ArcSpan[]
   arcMap: Record<number, { color: string; name?: string }>
@@ -70,7 +71,7 @@ function clusterByPixel(items: ClusterItem[], dx: (d: number) => number): { px: 
 }
 
 export default function TimelineCanvas({
-  zoom, geo, layout, width, padL, padR, minDay, maxDay, maxWY, baseYear, pxPerDay,
+  zoom, geo, layout, width, padL, padR, minDay, maxDay, maxWY, cal, pxPerDay,
   arcSpans, arcMap, clusterItems, bins, eras, showEras, lifespans, showLifespans, compact,
   onItemClick, onClusterClick, onItemHover, onLeave, onBinClick, onBinHover,
 }: TimelineCanvasProps) {
@@ -78,9 +79,10 @@ export default function TimelineCanvas({
   const { axisY, arcY, arcH, sessionDotY, eventY, deathY, totalH } = layout
   const yearMode = isYearMode(zoom)
   const axisRight = width - padR
+  const baseYear = cal.start.year
 
   // ── Era bands (background; behind everything) ───────────────────────────────
-  const eraX = (wy: number) => yearMode ? worldYearToX(wy) : dx(worldYearToDay(wy, baseYear))
+  const eraX = (wy: number) => yearMode ? worldYearToX(wy) : dx(worldYearToDay(wy, cal))
   const eraBands = (showEras && eras ? eras : []).map(era => {
     const x1 = eraX(era.startYear)
     const x2 = eraX(era.endYear)
@@ -181,6 +183,7 @@ export default function TimelineCanvas({
 
   // ── Day-mode pieces ──────────────────────────────────────────────────────────
   const dayTicks: React.ReactNode[] = []
+  const spanMarks: React.ReactNode[] = []
   if (!yearMode) {
     const step = pxPerDay <= 6 ? 20 : pxPerDay <= 10 ? 10 : pxPerDay <= 18 ? 5 : 1
     for (let d = Math.ceil(minDay / step) * step; d <= maxDay; d += step) {
@@ -191,6 +194,22 @@ export default function TimelineCanvas({
           <text x={x} y={axisY + 18} textAnchor="middle" fill={d <= 0 ? '#6b5040' : '#4a4840'} fontSize="9" fontFamily="sans-serif">{`D${d}`}</text>
         </g>
       )
+    }
+    // Calendar span boundaries — vertical guides with the span name at the top;
+    // the first span of each year carries the year label and a stronger line.
+    if (!isPlainCalendar(cal)) {
+      for (const s of spanStartsBetween(minDay, maxDay, cal)) {
+        const x = dx(s.day)
+        const isYearStart = s.span === 0
+        spanMarks.push(
+          <g key={`span-${s.day}`} pointerEvents="none">
+            <line x1={x} y1={0} x2={x} y2={axisY} stroke={isYearStart ? '#c8a84b40' : '#c8a84b1c'} strokeWidth={isYearStart ? 1.5 : 1} />
+            <text x={x + 4} y={12} fill={isYearStart ? '#c8a84b88' : '#c8a84b50'} fontSize={compact ? 7 : 8} fontFamily="sans-serif" fontWeight="600">
+              {spanLabel(cal, s.span)}{isYearStart ? ` · ${s.year}` : ''}
+            </text>
+          </g>
+        )
+      }
     }
   }
 
@@ -284,6 +303,7 @@ export default function TimelineCanvas({
         <>
           {eraBands}
           {lifespanBands}
+          {spanMarks}
           {axis}
           {dayTicks}
           {arcTubes}

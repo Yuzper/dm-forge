@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('api', {
   getArticleBacklinks: (title: string, campaignId: number) =>
                          ipcRenderer.invoke('articles:get-backlinks', title, campaignId),
   getArticlesHealth:   (campaignId: number) => ipcRenderer.invoke('articles:health', campaignId),
+  getArticleLinkGraph: (campaignId: number) => ipcRenderer.invoke('articles:link-graph', campaignId),
   globalSearch:        (campaignId: number, query: string) => ipcRenderer.invoke('search:global', campaignId, query),
   findInPage:          (text: string, opts?: { forward?: boolean; findNext?: boolean }) => ipcRenderer.invoke('find:in-page', text, opts),
   stopFindInPage:      () => ipcRenderer.invoke('find:stop'),

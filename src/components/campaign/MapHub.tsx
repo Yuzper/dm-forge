@@ -6,12 +6,12 @@ import { useState } from 'react'
 import { useStore } from '../../store/store'
 import {
   ChevronDown, ChevronUp, X, Clock, LayoutGrid,
-  Scroll, BookOpen, Sparkles, ShoppingBag, Network, Music2,
+  Scroll, BookOpen, Sparkles, ShoppingBag, Network, Music2, Info,
 } from 'lucide-react'
 import HubWorldMap from './HubWorldMap'
 import TimelineEmbed from '../TimelineEmbed'
 import {
-  type HubPanelKey, HubSettingsMenu,
+  type HubPanelKey, HubSettingsMenu, HEALTH_INFO,
   ActiveQuestsPanel, WikiHealthPanel, RecentlyUpdatedPanel, ArticlesByTypePanel,
 } from './HubPanels'
 
@@ -40,11 +40,12 @@ const glassStyle: React.CSSProperties = {
 
 // ── Floating Panel ─────────────────────────────────────────────────────────────
 
-function FloatingPanel({ title, open, onToggle, width = 280, children }: {
+function FloatingPanel({ title, open, onToggle, width = 280, info, children }: {
   title: string
   open: boolean
   onToggle: () => void
   width?: number
+  info?: string   // optional help text shown via an Info icon in the header
   children: React.ReactNode
 }) {
   if (!open) {
@@ -77,7 +78,18 @@ function FloatingPanel({ title, open, onToggle, width = 280, children }: {
           fontFamily: 'var(--font-ui)', fontWeight: 600,
         }}
       >
-        {title}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          {title}
+          {info && (
+            <span
+              title={info}
+              onClick={e => e.stopPropagation()}
+              style={{ display: 'inline-flex', cursor: 'help', color: 'var(--text-muted)' }}
+            >
+              <Info size={12} />
+            </span>
+          )}
+        </span>
         <ChevronUp size={12} style={{ color: 'var(--text-muted)' }} />
       </button>
       <div style={{ padding: '0 12px 10px', maxHeight: 320, overflowY: 'auto' }}>
@@ -273,7 +285,7 @@ export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, onS
       {/* Right overlay stack */}
       <div style={{ position: 'absolute', right: 16, top: 92, zIndex: 15, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
         {panels.wikiHealth && (
-          <FloatingPanel title="Needs attention" open={overlays.wikiHealth} onToggle={() => toggleOverlay('wikiHealth')}>
+          <FloatingPanel title="Needs attention" info={HEALTH_INFO} open={overlays.wikiHealth} onToggle={() => toggleOverlay('wikiHealth')}>
             <WikiHealthPanel bare />
           </FloatingPanel>
         )}

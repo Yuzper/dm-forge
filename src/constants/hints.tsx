@@ -61,8 +61,8 @@ export const HINTS: Record<string, Hint> = {
     items: [
       <>Articles open read-only — click <strong>Edit</strong> (top right) to make changes.</>,
       <>Changes save on their own when you hit Save or leave the article.</>,
-      <>Fill in <strong>tracks</strong> (Vitality, Attitude…) to set the status shown on relation nodes and the timeline.</>,
-      <>Press <Kbd>Ctrl+F</Kbd> to highlight a word in a long article; <Kbd>Ctrl+S</Kbd> searches the whole campaign.</>,
+      <>Press <Kbd>Ctrl+F</Kbd> to highlight a word on a page.</>,
+      <>Press <Kbd>Ctrl+S</Kbd> to search the whole campaign.</>,
     ],
   },
 
@@ -72,7 +72,35 @@ export const HINTS: Record<string, Hint> = {
       <>Type <Kbd>[[</Kbd> to link a wiki article</>,
       <>Type <Kbd>@@</Kbd> to link a spell</>,
       <>Type <Kbd>\\</Kbd> to link a session</>,
-      <>Relationships drawn in <strong>Relations</strong> show up here on their own.</>,
+      <>
+        The sections under the article text depend on its type:
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
+          <span style={{ lineHeight: 1.4 }}><span style={{ color: 'var(--gold)', opacity: 0.5 }}>· </span>Characters — stat block, loot table</span>
+          <span style={{ lineHeight: 1.4 }}><span style={{ color: 'var(--gold)', opacity: 0.5 }}>· </span>Creatures — stat block, variants (goblin, sorcerer goblin, archer goblin…), loot table</span>
+          <span style={{ lineHeight: 1.4 }}><span style={{ color: 'var(--gold)', opacity: 0.5 }}>· </span>Locations — can hold multiple maps</span>
+          <span style={{ lineHeight: 1.4 }}><span style={{ color: 'var(--gold)', opacity: 0.5 }}>· </span>Items — item stat block</span>
+          <span style={{ lineHeight: 1.4 }}><span style={{ color: 'var(--gold)', opacity: 0.5 }}>· </span>Quests — objectives and rewards</span>
+        </span>
+      </>,
+      <>The column to the right shows the article's overview <strong>Details, Timeline, Webs, Relations, Linked From, Tags</strong> etc.</>,
+      <><Kbd>Details:</Kbd> (Vitality, Attitude…). Set their statuses for the given article, when setting a track value it will be added as a tag for that article.</>,
+      <><Kbd>Timeline:</Kbd> (Birth, Events, Dates, Deaths, Destructions etc) You can add whatever events relevant for this article on the timeline from here and define what they are.</>,
+      <><Kbd>Webs:</Kbd> Create a web related to this article. Example uses are a faction or religion article and you want to create a web for its hierachy.</>,
+      <><Kbd>Relations:</Kbd> These are webs an article are part of. Think family trees, organizational charts, ally webs etc. These are updated automatically when added in the <strong>Relations</strong> tab.</>,
+      <><Kbd>Linked From:</Kbd> This shows articles that link to the current article.</>,
+      <><Kbd>Tags:</Kbd> The tags are used to categorize and filter articles in search. Custom tags can also be added at the bottom of the tracks menu.</>,
+    ],
+  },
+
+  'wiki-graph': {
+    title: 'Reading the graph',
+    items: [
+      <>Click a node to open its article; dashed nodes are broken <Kbd>[[links]]</Kbd> — click one to create that article.</>,
+      <>Double-click a node to focus its neighborhood; use the depth stepper to widen it, or press <Kbd>Esc</Kbd> to clear.</>,
+      <>Hover a node to trace every connection it has, including broken links and suggestions.</>,
+      <>Turn on <strong>Recency</strong> to color nodes by how long since they were last edited — handy for finding stale corners.</>,
+      <><strong>Suggestions</strong> surfaces article titles mentioned in prose but not yet linked. </>,
+      <><strong>Hide types</strong> drops whole categories from the layout.</>,
     ],
   },
 

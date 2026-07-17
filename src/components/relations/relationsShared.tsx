@@ -114,6 +114,13 @@ export interface DBRelationEdge {
   to_handle?: string | null
 }
 
+// Color-by-track: tint every node by the value of one chosen track (e.g. each
+// Species its own color in a family tree, or State in the territory web).
+export interface ColorByConfig {
+  track: string
+  colors: Record<string, string>   // track value → hex color
+}
+
 // trackFilters: { [articleType]: string[] } — which track keys to display per type
 export interface NodeData {
   dbId: number
@@ -128,6 +135,7 @@ export interface NodeData {
   trackFilters: Record<string, string[]>
   rankName: string | null
   rankColor: string | null
+  trackColor: string | null
   onCreateArticle: () => void
 }
 
@@ -229,12 +237,14 @@ export function dbNodeToRF(
   onCreateArticle: (nodeId: number) => void,
   trackFilters: Record<string, string[]>,
   ranksById: Record<string, Rank> = {},
+  colorBy?: ColorByConfig,
 ): RFNode<NodeData> {
   let parsedTracks: Record<string, string> = {}
   if (node.tracks) {
     try { parsedTracks = JSON.parse(node.tracks) } catch {}
   }
   const rank = node.rank_id ? ranksById[node.rank_id] : undefined
+  const colorValue = colorBy ? parsedTracks[colorBy.track] : undefined
   return {
     id: String(node.id),
     position: { x: node.pos_x, y: node.pos_y },
@@ -255,6 +265,7 @@ export function dbNodeToRF(
       trackFilters,
       rankName: rank?.name ?? null,
       rankColor: rank?.color ?? null,
+      trackColor: colorValue ? colorBy!.colors[colorValue] ?? null : null,
       onCreateArticle: () => onCreateArticle(node.id),
     },
   }
@@ -335,9 +346,13 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
   return (
     <div
       style={{
-        background: data.linked ? 'var(--bg-surface)' : 'transparent',
+        background: data.trackColor
+          ? `color-mix(in srgb, ${data.trackColor} 16%, var(--bg-surface))`
+          : data.linked ? 'var(--bg-surface)' : 'transparent',
         border: selected
           ? '1.5px solid #7F77DD'
+          : data.trackColor
+          ? `1.5px solid color-mix(in srgb, ${data.trackColor} 65%, transparent)`
           : data.linked
           ? '0.5px solid var(--border)'
           : '1.5px dashed var(--border-light)',
@@ -345,9 +360,9 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
         padding: '8px 10px',
         display: 'flex',
         alignItems: 'flex-start',
-        gap: 7,
+        gap: 8,
         minWidth: 140,
-        maxWidth: 180,
+        maxWidth: data.portrait ? 210 : 180,
         position: 'relative',
         fontFamily: 'var(--font-ui)',
         cursor: 'grab',
@@ -366,8 +381,8 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
           alt=""
           draggable={false}
           style={{
-            width: 32, height: 32, borderRadius: '50%', objectFit: 'cover',
-            border: '1px solid var(--border-light)', flexShrink: 0,
+            width: 52, height: 52, borderRadius: '50%', objectFit: 'cover',
+            border: `1.5px solid ${data.trackColor ?? 'var(--border-light)'}`, flexShrink: 0,
             userSelect: 'none', pointerEvents: 'none',
           }}
         />

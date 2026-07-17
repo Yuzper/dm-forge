@@ -2,17 +2,19 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useStore } from '../store/store'
 import {
-  BookOpen, Plus, Search, Tag, X, Calendar, ArrowLeft,
+  BookOpen, Plus, Search, Tag, X, Calendar, ArrowLeft, Network,
 } from 'lucide-react'
 import type { ArticleSummary, ArticleType } from '../types'
 import { ARTICLE_TYPES, ALL_FILTERS, parseTags } from '../components/wiki/wikiConstants'
 import { ArticleEditor } from '../components/wiki/ArticleEditor'
+import WikiGraphView from '../components/wiki/WikiGraphView'
+import { useExcludedTypes, TypeVisibilityMenu } from '../components/wiki/TypeVisibilityMenu'
 
 // ─── Create Modal ──────────────────────────────────────────────────────────────
 
-function CreateArticleModal({ onClose, initialType }: { onClose: () => void; initialType?: ArticleType }) {
+function CreateArticleModal({ onClose, initialType, initialTitle }: { onClose: () => void; initialType?: ArticleType; initialTitle?: string }) {
   const { createArticle } = useStore()
-  const [title, setTitle] = useState('')
+  const [title, setTitle] = useState(initialTitle ?? '')
   const [type, setType] = useState<ArticleType>(initialType || 'location')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -119,22 +121,30 @@ function ArticleCard({ article, onOpen }: { article: ArticleSummary; onOpen: () 
 }
 // ─── Article List View ─────────────────────────────────────────────────────────
 
-function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
+function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSummary) => void; onSwitchToGraph: () => void }) {
   const {
     articles, currentCampaign, wikiFilter, wikiSearch, wikiTagFilter, wikiSearchFields, wikiShowTags, setWikiShowTags,
     loadArticles, setWikiFilter, setWikiSearch, setWikiTagFilter, setWikiSearchFields,
     setView, setCampaignSubView,
   } = useStore()
   const [showCreate, setShowCreate] = useState(false)
+  // Hide whole article types from the list (shared control; nothing hidden by default).
+  const { excluded, toggle: toggleExcluded, clear: clearExcluded } = useExcludedTypes('wiki-list-excluded-types', () => new Set())
 
   useEffect(() => { loadArticles() }, [currentCampaign?.id])
+  // A hidden type can't remain the active filter.
+  useEffect(() => {
+    if (wikiFilter !== 'all' && excluded.has(wikiFilter)) setWikiFilter('all')
+  }, [excluded, wikiFilter])
+
+  const visibleArticles = useMemo(() => articles.filter(a => !excluded.has(a.article_type)), [articles, excluded])
 
   const allTags = useMemo(() => {
     const tagSet = new Set<string>()
-    articles.forEach(a => { parseTags(a.tags).forEach(t => tagSet.add(t)) })
+    visibleArticles.forEach(a => { parseTags(a.tags).forEach(t => tagSet.add(t)) })
     if (wikiTagFilter) tagSet.add(wikiTagFilter)
     return [...tagSet].sort()
-  }, [articles, wikiTagFilter])
+  }, [visibleArticles, wikiTagFilter])
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -149,9 +159,21 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
             </button>
             <BookOpen size={22} color="var(--gold)" />
             <h1 style={{ fontSize: 22, letterSpacing: '0.05em' }}>Campaign Wiki</h1>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{articles.length} article{articles.length !== 1 ? 's' : ''}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {visibleArticles.length} article{visibleArticles.length !== 1 ? 's' : ''}
+              {excluded.size > 0 && articles.length > visibleArticles.length ? ` · ${articles.length - visibleArticles.length} hidden` : ''}
+            </span>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> New Article</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={onSwitchToGraph}
+              title="See every article and its [[links]] as a network"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', transition: 'all 120ms' }}
+              className="hover-gold-border">
+              <Network size={13} /> Graph view
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> New Article</button>
+          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, paddingBottom: 14 }}>
@@ -184,7 +206,7 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
           </div>
           <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border-light)', flexShrink: 0 }} />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {ALL_FILTERS.map(f => {
+            {ALL_FILTERS.filter(f => !excluded.has(f.value)).map(f => {
               const Icon = f.icon; const active = wikiFilter === f.value
               return (
                 <button key={f.value} onClick={() => setWikiFilter(f.value as any)} style={{
@@ -198,6 +220,9 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
                 </button>
               )
             })}
+          </div>
+          <div style={{ marginLeft: 'auto', alignSelf: 'center' }}>
+            <TypeVisibilityMenu excluded={excluded} onToggle={toggleExcluded} onClear={clearExcluded} />
           </div>
         </div>
 
@@ -232,22 +257,24 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
-        {articles.length === 0 ? (
+        {visibleArticles.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 300, gap: 12, color: 'var(--text-muted)' }}>
             <BookOpen size={40} strokeWidth={1} color="var(--border-light)" />
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 16, fontFamily: 'var(--font-display)', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                {wikiSearch ? 'No articles match your search' : 'No articles yet'}
+                {articles.length > 0 && excluded.size > 0 ? 'All matching articles are hidden'
+                  : wikiSearch ? 'No articles match your search' : 'No articles yet'}
               </div>
               <div style={{ fontSize: 13 }}>
-                {wikiSearch ? 'Try a different search term or filter' : 'Create your first article to start building your wiki'}
+                {articles.length > 0 && excluded.size > 0 ? 'Adjust “Hide types” to show them again'
+                  : wikiSearch ? 'Try a different search term or filter' : 'Create your first article to start building your wiki'}
               </div>
             </div>
-            {!wikiSearch && <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={14} /> Create Article</button>}
+            {!wikiSearch && articles.length === 0 && <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={14} /> Create Article</button>}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14, alignContent: 'start' }}>
-            {articles.map(a => <ArticleCard key={a.id} article={a} onOpen={() => onOpen(a)} />)}
+            {visibleArticles.map(a => <ArticleCard key={a.id} article={a} onOpen={() => onOpen(a)} />)}
           </div>
         )}
       </div>
@@ -266,6 +293,15 @@ function ArticleListView({ onOpen }: { onOpen: (a: ArticleSummary) => void }) {
 
 export default function WikiPage() {
   const { currentArticle, currentCampaign, selectArticle, openArticle } = useStore()
+  const [mode, setMode] = useState<'list' | 'graph'>(() =>
+    localStorage.getItem('wiki-view-mode') === 'graph' ? 'graph' : 'list'
+  )
+  // Title to pre-fill when a broken-link (ghost) node is clicked in the graph.
+  const [ghostCreateTitle, setGhostCreateTitle] = useState<string | null>(null)
+  const switchMode = (m: 'list' | 'graph') => {
+    localStorage.setItem('wiki-view-mode', m)
+    setMode(m)
+  }
 
   if (!currentCampaign) {
     return (
@@ -280,8 +316,29 @@ export default function WikiPage() {
   }
 
   if (currentArticle) {
-    return <ArticleEditor key={currentArticle.id} article={currentArticle} onBack={() => selectArticle(null)} />
+    return (
+      <ArticleEditor
+        key={currentArticle.id}
+        article={currentArticle}
+        backLabel={mode === 'graph' ? 'Back to Graph' : 'Back to Wiki'}
+        onBack={() => selectArticle(null)}
+      />
+    )
   }
 
-  return <ArticleListView onOpen={(a) => openArticle(a.id)} />
+  if (mode === 'graph') {
+    return (
+      <>
+        <WikiGraphView
+          onSwitchToList={() => switchMode('list')}
+          onCreateArticle={(title) => setGhostCreateTitle(title)}
+        />
+        {ghostCreateTitle !== null && (
+          <CreateArticleModal initialTitle={ghostCreateTitle} onClose={() => setGhostCreateTitle(null)} />
+        )}
+      </>
+    )
+  }
+
+  return <ArticleListView onOpen={(a) => openArticle(a.id)} onSwitchToGraph={() => switchMode('graph')} />
 }

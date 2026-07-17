@@ -1,7 +1,7 @@
 // path: src/components/campaign/HubPanels.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../../store/store'
-import { Eye } from 'lucide-react'
+import { Eye, Info } from 'lucide-react'
 import type { WikiHealth } from '../../types'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
@@ -233,6 +233,19 @@ export function ActiveQuestsPanel({ bare = false }: { bare?: boolean } = {}) {
 
 // ── Wiki Health Panel ──────────────────────────────────────────────────────────
 
+// Explains how each list is derived — kept in sync with the `articles:health`
+// backend rules (electron/main/ipc/articles.ts). The 100-char figure is that
+// handler's stub threshold; "No connections" mirrors the wiki graph's "unlinked".
+export const HEALTH_INFO = [
+  'How this list is built:',
+  '',
+  '• Empty or short — under 100 characters of text and no structured content (statblock, quest steps, item details, etc.).',
+  '',
+  "• No connections — no [[links]] or track references to or from another article. Creatures are excluded, since bestiary entries usually aren't linked in a wiki.",
+  '',
+  "• Broken links — [[links]] pointing to an article that doesn't exist yet.",
+].join('\n')
+
 export function WikiHealthPanel({ bare = false }: { bare?: boolean } = {}) {
   const { currentCampaign, openArticle, setView } = useStore()
   const [health, setHealth] = useState<WikiHealth | null>(null)
@@ -288,7 +301,12 @@ export function WikiHealthPanel({ bare = false }: { bare?: boolean } = {}) {
     <div style={bare ? undefined : panelCardStyle}>
       {!bare && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Needs attention</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Needs attention</div>
+            <span title={HEALTH_INFO} style={{ display: 'inline-flex', cursor: 'help', color: 'var(--text-muted)' }} className="hover-text">
+              <Info size={12} />
+            </span>
+          </div>
           {total > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{total}</div>}
         </div>
       )}
