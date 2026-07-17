@@ -16,6 +16,7 @@ import { registerRelationIPC } from './ipc/relations'
 import { registerSoundIPC } from './ipc/sounds'
 import { registerSearchIPC } from './ipc/search'
 import { registerBackupIPC } from './ipc/backup'
+import { registerClockIPC } from './ipc/clocks'
 
 function registerIPC(imagesPath: string) {
   registerCampaignIPC()
@@ -30,6 +31,7 @@ function registerIPC(imagesPath: string) {
   registerSoundIPC()
   registerSearchIPC()
   registerBackupIPC()
+  registerClockIPC()
 }
 
 app.whenReady().then(() => {

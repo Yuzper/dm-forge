@@ -12,15 +12,15 @@ import HubWorldMap from './HubWorldMap'
 import TimelineEmbed from '../TimelineEmbed'
 import {
   type HubPanelKey, HubSettingsMenu, HEALTH_INFO,
-  ActiveQuestsPanel, WikiHealthPanel, RecentlyUpdatedPanel, ArticlesByTypePanel,
+  ActiveQuestsPanel, WikiHealthPanel, RecentlyUpdatedPanel, ArticlesByTypePanel, ClocksPanel,
 } from './HubPanels'
 
 // ── Overlay open/collapsed persistence ─────────────────────────────────────────
 
-type OverlayKey = 'activeQuests' | 'wikiHealth' | 'recentlyUpdated' | 'articlesByType' | 'timeline'
+type OverlayKey = 'activeQuests' | 'wikiHealth' | 'recentlyUpdated' | 'articlesByType' | 'timeline' | 'clocks'
 
 const OVERLAY_DEFAULTS: Record<OverlayKey, boolean> = {
-  activeQuests: true, wikiHealth: true, recentlyUpdated: false, articlesByType: false, timeline: false,
+  activeQuests: true, wikiHealth: true, recentlyUpdated: false, articlesByType: false, timeline: false, clocks: true,
 }
 
 function loadOverlayState(campaignId: number): Record<OverlayKey, boolean> {
@@ -284,6 +284,15 @@ export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, onS
 
       {/* Right overlay stack */}
       <div style={{ position: 'absolute', right: 16, top: 92, zIndex: 15, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+        {panels.clocks && (
+          <FloatingPanel
+            title="Ticking clocks"
+            info={'Progress clocks: segmented dials for threats and plans advancing off-screen. Click segments to tick. Attach clocks to an article from its editor sidebar, or add campaign-level ones here.'}
+            open={overlays.clocks} onToggle={() => toggleOverlay('clocks')}
+          >
+            <ClocksPanel bare />
+          </FloatingPanel>
+        )}
         {panels.wikiHealth && (
           <FloatingPanel title="Needs attention" info={HEALTH_INFO} open={overlays.wikiHealth} onToggle={() => toggleOverlay('wikiHealth')}>
             <WikiHealthPanel bare />

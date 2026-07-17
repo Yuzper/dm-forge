@@ -123,6 +123,24 @@ export interface WikiHealth {
   broken:  { title: string; sources: { id: number; title: string }[] }[]
 }
 
+// Progress clock (Blades in the Dark style): a segmented dial tracking an
+// off-screen threat or plan. Optionally attached to an article; unattached
+// clocks are campaign-level fronts.
+export interface Clock {
+  id: number
+  campaign_id: number
+  article_id: number | null
+  name: string
+  segments: number
+  filled: number
+  status: 'active' | 'completed' | 'paused'
+  created_at: string
+  updated_at: string
+  // Joined for display (clocks:get-all only)
+  article_title?: string | null
+  article_type?: string | null
+}
+
 // Whole-campaign wiki link graph (articles + [[link]]/track references).
 export interface LinkGraph {
   nodes: { id: number; title: string; article_type: string; updated_at: string }[]
@@ -559,6 +577,13 @@ export interface ElectronAPI {
   deleteLootTable:     (id: number) => Promise<{ success: boolean; affected: number }>
   rollLootTable:       (tableId: number, extraItemsJson: string) => Promise<LootItem[]>
   resetDefaultTables:  (campaignId: number) => Promise<MasterLootTable[]>
+
+  // Progress clocks
+  getClocks:           (campaignId: number) => Promise<Clock[]>
+  getArticleClocks:    (articleId: number) => Promise<Clock[]>
+  createClock:         (data: { campaign_id: number; article_id?: number | null; name?: string; segments?: number }) => Promise<Clock>
+  updateClock:         (id: number, data: Partial<Pick<Clock, 'name' | 'segments' | 'filled' | 'status' | 'article_id'>>) => Promise<Clock>
+  deleteClock:         (id: number) => Promise<{ success: boolean }>
 
   // Relations
   getRelationWebs:        (campaignId: number) => Promise<any[]>

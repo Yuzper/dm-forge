@@ -28,6 +28,39 @@ function snippetFor(text: string, q: string, radius = 44): string | null {
   return (start > 0 ? '…' : '') + text.slice(start, end).trim() + (end < text.length ? '…' : '')
 }
 
+// Subsequence fuzzy score for titles: every query char must appear in order
+// ("blkgt" matches "Black Gate"). Lower is better — tight spans and early
+// starts win. Returns null when the query isn't a subsequence at all.
+function fuzzyScore(text: string, q: string): number | null {
+  const t = text.toLowerCase()
+  let start = -1, last = -1, i = 0
+  for (let ti = 0; ti < t.length && i < q.length; ti++) {
+    if (t[ti] === q[i]) {
+      if (i === 0) start = ti
+      last = ti
+      i++
+    }
+  }
+  if (i < q.length) return null
+  return (last - start + 1) - q.length + start * 0.1
+}
+
+// Fill a result group's remaining slots with fuzzy title matches, skipping
+// rows the LIKE pass already returned.
+function fuzzyFill<T extends { id: number }>(
+  existing: { id: number }[], candidates: T[], title: (r: T) => string, q: string, limit: number,
+): T[] {
+  if (existing.length >= limit) return []
+  const seen = new Set(existing.map(r => r.id))
+  return candidates
+    .filter(r => !seen.has(r.id))
+    .map(r => ({ r, score: fuzzyScore(title(r), q) }))
+    .filter((x): x is { r: T; score: number } => x.score !== null)
+    .sort((a, b) => a.score - b.score)
+    .slice(0, limit - existing.length)
+    .map(x => x.r)
+}
+
 const GROUP_LIMIT = 8
 
 export function registerSearchIPC() {
@@ -69,6 +102,13 @@ export function registerSearchIPC() {
       articles.push({ id: r.id, title: r.title, article_type: r.article_type, snippet })
       if (articles.length >= GROUP_LIMIT) break
     }
+    // Fuzzy title pass fills leftover slots ("blkgt" → "Black Gate").
+    const allArticleTitles = db.prepare(
+      'SELECT id, title, article_type FROM articles WHERE campaign_id = ?'
+    ).all(campaignId) as any[]
+    for (const r of fuzzyFill(articles, allArticleTitles, r => r.title, q, GROUP_LIMIT)) {
+      articles.push({ id: r.id, title: r.title, article_type: r.article_type, snippet: null })
+    }
 
     // ── Sessions ────────────────────────────────────────────────────────────
     const sessions: any[] = []
@@ -87,6 +127,15 @@ export function registerSearchIPC() {
       })
       if (sessions.length >= GROUP_LIMIT) break
     }
+    const allSessionNames = db.prepare(
+      'SELECT id, name, session_number, session_sub, is_draft FROM sessions WHERE campaign_id = ?'
+    ).all(campaignId) as any[]
+    for (const r of fuzzyFill(sessions, allSessionNames, r => r.name, q, GROUP_LIMIT)) {
+      sessions.push({
+        id: r.id, name: r.name, session_number: r.session_number,
+        session_sub: r.session_sub, is_draft: r.is_draft === 1, snippet: null,
+      })
+    }
 
     // ── DM notes ────────────────────────────────────────────────────────────
     // Session-linked pages mirror session notes (already covered above), so
@@ -103,6 +152,12 @@ export function registerSearchIPC() {
       if (!titleHit && !snippet) continue
       notes.push({ id: r.id, title: r.title, snippet })
       if (notes.length >= GROUP_LIMIT) break
+    }
+    const allNoteTitles = db.prepare(
+      'SELECT id, title FROM dm_notes_pages WHERE campaign_id = ? AND session_id IS NULL'
+    ).all(campaignId) as any[]
+    for (const r of fuzzyFill(notes, allNoteTitles, r => r.title, q, GROUP_LIMIT)) {
+      notes.push({ id: r.id, title: r.title, snippet: null })
     }
 
     // ── POIs (session maps, article maps, and campaign hub maps) ────────────

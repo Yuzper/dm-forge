@@ -452,6 +452,20 @@ function importOneCampaign(
           db.prepare('INSERT OR IGNORE INTO relation_web_articles (web_id, article_id) VALUES (?, ?)').run(webId, artId)
         }
       }
+
+      // Progress clocks — attached ones follow their remapped article; a clock
+      // whose article didn't import becomes campaign-level rather than vanishing.
+      // Older backups predate the table, so probe before querying.
+      const srcHasClocks = src.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'clocks'`).get() != null
+      if (srcHasClocks) {
+        for (const r of mine('clocks')) {
+          insertRow('clocks', {
+            ...r,
+            campaign_id: campaignId,
+            article_id: r.article_id != null ? articleMap.get(r.article_id) ?? null : null,
+          })
+        }
+      }
     })
     run()
 

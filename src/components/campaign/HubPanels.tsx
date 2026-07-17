@@ -2,9 +2,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../../store/store'
 import { Eye, Info } from 'lucide-react'
-import type { WikiHealth } from '../../types'
+import type { WikiHealth, Clock } from '../../types'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
+import { ClockList } from '../clocks/ClockWidget'
 
 // Card chrome for the classic hub grid; `bare` panels are wrapped by the
 // map hub's floating overlay shell instead and skip background + title.
@@ -18,11 +19,11 @@ const bareEmptyStyle: React.CSSProperties = {
 
 // ── Hub Settings ──────────────────────────────────────────────────────────────
 
-export type HubPanelKey = 'worldMap' | 'recentlyUpdated' | 'articlesByType' | 'sessionTimeline' | 'activeQuests' | 'wikiHealth'
+export type HubPanelKey = 'worldMap' | 'recentlyUpdated' | 'articlesByType' | 'sessionTimeline' | 'activeQuests' | 'wikiHealth' | 'clocks'
 
 
 export const HUB_PANEL_DEFAULTS: Record<HubPanelKey, boolean> = {
-  worldMap: true, recentlyUpdated: true, articlesByType: true, sessionTimeline: true, activeQuests: true, wikiHealth: true,
+  worldMap: true, recentlyUpdated: true, articlesByType: true, sessionTimeline: true, activeQuests: true, wikiHealth: true, clocks: true,
 }
 
 export function loadHubPanels(campaignId: number): Record<HubPanelKey, boolean> {
@@ -44,6 +45,7 @@ const PANEL_LABELS: Record<HubPanelKey, string> = {
   sessionTimeline: 'Session timeline',
   activeQuests: 'Active quests',
   wikiHealth: 'Needs attention',
+  clocks: 'Ticking clocks',
 }
 
 export function HubSettingsMenu({ panels, onChange }: {
@@ -350,6 +352,81 @@ export function WikiHealthPanel({ bare = false }: { bare?: boolean } = {}) {
           })))}
         </>
       )}
+    </div>
+  )
+}
+
+// ── Ticking Clocks Panel ───────────────────────────────────────────────────────
+// Campaign-wide progress clocks (Blades-style fronts): what's advancing
+// off-screen. Active clocks sorted closest-to-completion first (backend order);
+// tickable directly from the hub. Completed clocks collapse behind a toggle.
+
+export function ClocksPanel({ bare = false }: { bare?: boolean } = {}) {
+  const { currentCampaign, openArticle, setView } = useStore()
+  const [clocks, setClocks] = useState<Clock[]>([])
+  const [showDone, setShowDone] = useState(false)
+
+  const reload = () => {
+    if (currentCampaign) window.api.getClocks(currentCampaign.id).then(setClocks)
+  }
+  useEffect(reload, [currentCampaign?.id])
+
+  if (!currentCampaign) return null
+  const active = clocks.filter(c => c.status !== 'completed')
+  const done = clocks.filter(c => c.status === 'completed')
+
+  const articleChip = (c: Clock) => c.article_title ? (
+    <button
+      onClick={() => { openArticle(c.article_id!); setView('wiki') }}
+      title={`Go to ${c.article_title}`}
+      style={{
+        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+        fontSize: 10.5, color: ARTICLE_TYPE_COLORS[c.article_type ?? ''] ?? 'var(--text-muted)',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130,
+      }}
+    >
+      · {c.article_title}
+    </button>
+  ) : null
+
+  const list = (items: Clock[]) => (
+    <ClockList
+      clocks={items}
+      renderMeta={articleChip}
+      onTick={(c, filled) => window.api.updateClock(c.id, { filled }).then(reload)}
+      onRename={(c, name) => window.api.updateClock(c.id, { name }).then(reload)}
+      onDelete={c => window.api.deleteClock(c.id).then(reload)}
+      onCreate={(name, segments) =>
+        window.api.createClock({ campaign_id: currentCampaign.id, name, segments }).then(reload)}
+    />
+  )
+
+  const body = (
+    <>
+      {list(active)}
+      {done.length > 0 && (
+        <>
+          <button
+            onClick={() => setShowDone(v => !v)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10.5, color: 'var(--text-muted)', padding: '6px 0 0', textAlign: 'left' }}
+          >
+            {showDone ? '▾' : '▸'} {done.length} completed
+          </button>
+          {showDone && <div style={{ marginTop: 6, opacity: 0.65 }}>{list(done)}</div>}
+        </>
+      )}
+    </>
+  )
+
+  if (bare) return body
+
+  return (
+    <div style={panelCardStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Ticking clocks</div>
+        {active.length > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{active.length}</div>}
+      </div>
+      {body}
     </div>
   )
 }

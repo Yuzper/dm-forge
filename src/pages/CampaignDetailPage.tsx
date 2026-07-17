@@ -10,7 +10,7 @@ import MapHubView from '../components/campaign/MapHub'
 import SessionsView from '../components/campaign/SessionsView'
 import {
   type HubPanelKey, HUB_PANEL_DEFAULTS, loadHubPanels, saveHubPanels,
-  HubSettingsMenu, RecentlyUpdatedPanel, ActiveQuestsPanel, WikiHealthPanel, ArticlesByTypePanel,
+  HubSettingsMenu, RecentlyUpdatedPanel, ActiveQuestsPanel, WikiHealthPanel, ArticlesByTypePanel, ClocksPanel,
 } from '../components/campaign/HubPanels'
 
 // ── Nav Dock Card ─────────────────────────────────────────────────────────────
@@ -156,7 +156,7 @@ export default function CampaignDetailPage() {
     )
   }
 
-  const showRightPanels = hubPanels.recentlyUpdated || hubPanels.activeQuests || hubPanels.articlesByType || hubPanels.wikiHealth
+  const showRightPanels = hubPanels.recentlyUpdated || hubPanels.activeQuests || hubPanels.articlesByType || hubPanels.wikiHealth || hubPanels.clocks
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
@@ -204,6 +204,7 @@ export default function CampaignDetailPage() {
               paddingRight: 2,
             }}>
               {hubPanels.activeQuests && <ActiveQuestsPanel />}
+              {hubPanels.clocks && <ClocksPanel />}
               {hubPanels.wikiHealth && <WikiHealthPanel />}
               {hubPanels.recentlyUpdated && <RecentlyUpdatedPanel />}
               {hubPanels.articlesByType && <ArticlesByTypePanel />}

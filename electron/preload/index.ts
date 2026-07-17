@@ -140,6 +140,13 @@ contextBridge.exposeInMainWorld('api', {
   resetDefaultTables: (campaignId: number) =>
                         ipcRenderer.invoke('loot-tables:reset-defaults', campaignId),
 
+  // Progress clocks
+  getClocks:           (campaignId: number) => ipcRenderer.invoke('clocks:get-all', campaignId),
+  getArticleClocks:    (articleId: number) => ipcRenderer.invoke('clocks:get-for-article', articleId),
+  createClock:         (data: any) => ipcRenderer.invoke('clocks:create', data),
+  updateClock:         (id: number, data: any) => ipcRenderer.invoke('clocks:update', id, data),
+  deleteClock:         (id: number) => ipcRenderer.invoke('clocks:delete', id),
+
   // Relation Webs
   getRelationWebs:     (...args) => ipcRenderer.invoke('relation-webs:get-all', ...args),
   createRelationWeb:   (...args) => ipcRenderer.invoke('relation-webs:create', ...args),

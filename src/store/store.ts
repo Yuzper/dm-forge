@@ -165,6 +165,11 @@ interface AppStore {
   // Deep-link hand-off: global search asks DMNotesPage to open a specific page.
   dmNotesOpenPageId: number | null
   setDMNotesOpenPageId: (id: number | null) => void
+
+  // Deep-link hand-off: global search (Ctrl+Enter) asks WikiPage to open the
+  // graph view focused on a specific article. Cleared once consumed.
+  wikiGraphFocusId: number | null
+  setWikiGraphFocusId: (id: number | null) => void
 }
 
 function pushEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
@@ -239,6 +244,9 @@ export const useStore = create<AppStore>((set, get) => ({
 
   dmNotesOpenPageId: null,
   setDMNotesOpenPageId: (dmNotesOpenPageId) => set({ dmNotesOpenPageId }),
+
+  wikiGraphFocusId: null,
+  setWikiGraphFocusId: (wikiGraphFocusId) => set({ wikiGraphFocusId }),
 
   view: 'campaigns',
   setView: (view) => set(s => {

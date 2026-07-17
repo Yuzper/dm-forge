@@ -21,7 +21,7 @@ const GROUPS: { kind: FlatItem['kind']; label: string; icon: React.ReactNode; ac
 ]
 
 export default function GlobalSearch() {
-  const { currentCampaign, openArticle, setView, setCampaignSubView, navigateToSessionById, setDMNotesOpenPageId } = useStore()
+  const { currentCampaign, openArticle, setView, setCampaignSubView, navigateToSessionById, setDMNotesOpenPageId, setWikiGraphFocusId } = useStore()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<GlobalSearchResults>(EMPTY)
@@ -29,10 +29,10 @@ export default function GlobalSearch() {
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  // Ctrl+S / Cmd+S toggles; Esc closes.
+  // Ctrl+K (standard command-palette key) or Ctrl+S toggles; Esc closes.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      if ((e.ctrlKey || e.metaKey) && ['k', 's'].includes(e.key.toLowerCase())) {
         e.preventDefault()
         if (useStore.getState().currentCampaign) setOpen(o => !o)
       } else if (e.key === 'Escape') {
@@ -89,6 +89,15 @@ export default function GlobalSearch() {
     }
   }
 
+  // Ctrl+Enter on an article: open the wiki graph focused on it instead of the
+  // editor — "show me this thing in context".
+  const goGraphFocus = (entry: FlatItem) => {
+    if (entry.kind !== 'article') return go(entry)
+    setOpen(false)
+    setWikiGraphFocusId(entry.item.id)
+    setView('wiki')
+  }
+
   const onInputKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -97,7 +106,8 @@ export default function GlobalSearch() {
       e.preventDefault()
       setActiveIdx(i => Math.max(i - 1, 0))
     } else if (e.key === 'Enter' && flat[activeIdx]) {
-      go(flat[activeIdx])
+      if (e.ctrlKey || e.metaKey) goGraphFocus(flat[activeIdx])
+      else go(flat[activeIdx])
     }
   }
 
@@ -195,7 +205,9 @@ export default function GlobalSearch() {
         {/* Footer */}
         {flat.length > 0 && (
           <div style={{ borderTop: '1px solid var(--border)', padding: '6px 16px', display: 'flex', gap: 14, fontSize: 10, color: 'var(--text-muted)' }}>
-            <span>↑↓ navigate</span><span>↵ open</span><span>esc close</span>
+            <span>↑↓ navigate</span><span>↵ open</span>
+            {flat[activeIdx]?.kind === 'article' && <span>ctrl+↵ view in graph</span>}
+            <span>esc close</span>
           </div>
         )}
       </div>

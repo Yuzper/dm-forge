@@ -222,6 +222,18 @@ export function initDatabase() {
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT    NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS clocks (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      article_id  INTEGER          REFERENCES articles(id)  ON DELETE CASCADE,
+      name        TEXT    NOT NULL DEFAULT 'New clock',
+      segments    INTEGER NOT NULL DEFAULT 6,
+      filled      INTEGER NOT NULL DEFAULT 0,
+      status      TEXT    NOT NULL DEFAULT 'active',
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
   `)
 
   // ── Migrations for existing databases ────────────────────────────────────────

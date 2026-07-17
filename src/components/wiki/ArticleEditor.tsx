@@ -32,6 +32,7 @@ import {
   getTrackTags, parseTags, formatTrackName, sidebarSectionLabel, imgBtnStyle, addBannerStyle,
 } from './wikiConstants'
 import { ArticleRelationsPanel, RelationWebsSection, MemberCountSection, AffiliationsSection, GeographySection } from './ArticleRelationsPanel'
+import { ClocksSection } from '../clocks/ClocksSection'
 
 // ─── Track Row ─────────────────────────────────────────────────────────────────
 
@@ -993,6 +994,10 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
               readMode={readMode}
               baseYear={(currentCampaign as any)?.timeline_base_year ?? 1507}
             />
+
+            {currentCampaign && (
+              <ClocksSection articleId={article.id} campaignId={currentCampaign.id} readMode={readMode} />
+            )}
 
             {['faction', 'organization', 'religion'].includes(articleType) && (
               <MemberCountSection articleId={article.id} followerEstimate={tracks.Follower_Count} />

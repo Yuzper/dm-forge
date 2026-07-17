@@ -237,9 +237,10 @@ function ForcePanel({ force, setForce }: {
 
 // ── Main view ──────────────────────────────────────────────────────────────────
 
-export default function WikiGraphView({ onSwitchToList, onCreateArticle }: {
+export default function WikiGraphView({ onSwitchToList, onCreateArticle, initialFocusId = null }: {
   onSwitchToList: () => void
   onCreateArticle: (title: string) => void
+  initialFocusId?: number | null   // deep-link: focus this article once loaded
 }) {
   const { currentCampaign, openArticle, setView, setCampaignSubView, setHintContext } = useStore()
   useEffect(() => { setHintContext('wiki-graph'); return () => setHintContext(null) }, [setHintContext])
@@ -398,6 +399,16 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle }: {
     }
     return seen
   }, [focusId, focusDepth, neighbors])
+
+  // Deep-link focus (from global search): apply once the layout contains the
+  // node. Skipped silently if the article's type is excluded from the graph.
+  useEffect(() => {
+    if (initialFocusId == null || !loaded) return
+    if (layout.some(n => n.id === initialFocusId)) {
+      setFocusDepth(1)
+      setFocusId(initialFocusId)
+    }
+  }, [initialFocusId, loaded])
 
   // Drop focus if its node leaves the layout (e.g. its type gets hidden).
   useEffect(() => {

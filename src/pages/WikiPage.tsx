@@ -292,7 +292,7 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
 // ─── Wiki Page ─────────────────────────────────────────────────────────────────
 
 export default function WikiPage() {
-  const { currentArticle, currentCampaign, selectArticle, openArticle } = useStore()
+  const { currentArticle, currentCampaign, selectArticle, openArticle, wikiGraphFocusId, setWikiGraphFocusId } = useStore()
   const [mode, setMode] = useState<'list' | 'graph'>(() =>
     localStorage.getItem('wiki-view-mode') === 'graph' ? 'graph' : 'list'
   )
@@ -302,6 +302,17 @@ export default function WikiPage() {
     localStorage.setItem('wiki-view-mode', m)
     setMode(m)
   }
+
+  // Global search hand-off (Ctrl+Enter): jump to the graph focused on an
+  // article. Doesn't persist the mode switch — it's a jump, not a preference.
+  const [graphFocus, setGraphFocus] = useState<number | null>(null)
+  useEffect(() => {
+    if (wikiGraphFocusId == null) return
+    setGraphFocus(wikiGraphFocusId)
+    setWikiGraphFocusId(null)
+    selectArticle(null)
+    setMode('graph')
+  }, [wikiGraphFocusId, setWikiGraphFocusId, selectArticle])
 
   if (!currentCampaign) {
     return (
@@ -332,6 +343,7 @@ export default function WikiPage() {
         <WikiGraphView
           onSwitchToList={() => switchMode('list')}
           onCreateArticle={(title) => setGhostCreateTitle(title)}
+          initialFocusId={graphFocus}
         />
         {ghostCreateTitle !== null && (
           <CreateArticleModal initialTitle={ghostCreateTitle} onClose={() => setGhostCreateTitle(null)} />
