@@ -29,10 +29,10 @@ export default function GlobalSearch() {
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  // Ctrl+K (standard command-palette key) or Ctrl+S toggles; Esc closes.
+  // Ctrl+S / Cmd+S toggles; Esc closes.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && ['k', 's'].includes(e.key.toLowerCase())) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
         if (useStore.getState().currentCampaign) setOpen(o => !o)
       } else if (e.key === 'Escape') {
