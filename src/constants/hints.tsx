@@ -39,6 +39,7 @@ export const HINTS: Record<string, Hint> = {
     title: 'Maps, pins & encounters',
     items: [
       <>Import one or multiple session map to get started.</>,
+      <>No map needed? Hit <strong>New Scene</strong> for a mapless text page — a tab that's just a rich-text editor. Handy for read-aloud boxed text, social/roleplay encounters, puzzles, or handouts. Scenes reorder, rename, move between sessions and delete just like maps.</>,
       <>Enter <strong>Edit</strong> to add Points of Interest (POIs) to the map.</>,
       <>Drag map tabs to reorder them; click a POI to open its location panel. Within these POI's you can link to articles, sessions or spells if needed.</>,
       <>Changing the POI type to <strong>Combat</strong> will add a <strong>Combatant</strong>tab where you can manage a combat encounter.</>,
