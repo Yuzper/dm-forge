@@ -39,7 +39,8 @@ export interface GameMap {
   session_id: number | null   // null when owned by an article
   article_id: number | null   // null when owned by a session
   name: string
-  image_path: string
+  image_path: string          // '' for a mapless scene (a plain rich-text page)
+  content?: string            // scene body (TipTap JSON); unused for image maps
   sort_order: number
   created_at: string
   poi_count?: number

@@ -261,6 +261,13 @@ export function initDatabase() {
   }
 
 
+  // Mapless "scenes" are map rows with an empty image_path; this column holds
+  // their rich-text body (unused/empty for image maps).
+  const mapContentCols = db.pragma('table_info(maps)') as { name: string }[]
+  if (!mapContentCols.some(c => c.name === 'content')) {
+    db.exec(`ALTER TABLE maps ADD COLUMN content TEXT NOT NULL DEFAULT '{"type":"doc","content":[]}'`)
+  }
+
   const poiCols = db.pragma('table_info(pois)') as { name: string }[]
   if (!poiCols.some(c => c.name === 'loot_table')) {
     db.exec(`ALTER TABLE pois ADD COLUMN loot_table TEXT NOT NULL DEFAULT '{"name":"Loot","items":[]}'`)

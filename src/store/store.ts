@@ -90,8 +90,9 @@ interface AppStore {
   loadMaps: (sessionId: number) => Promise<void>
   selectMap: (m: GameMap) => void
   importMap: (sessionId: number) => Promise<void>
+  createScene: (sessionId: number) => Promise<void>
   deleteMap: (id: number) => Promise<void>
-  updateMap: (id: number, data: { name: string }) => Promise<void>
+  updateMap: (id: number, data: { name?: string; content?: string }) => Promise<void>
   reorderMaps: (orders: { id: number; sort_order: number }[]) => Promise<void>
   moveMapToSession: (mapId: number, sessionId: number) => Promise<void>
 
@@ -679,6 +680,15 @@ export const useStore = create<AppStore>((set, get) => ({
     const result = await window.api.importMapImage(sessionId)
     if (!result) return
     const map = await window.api.createMap({ session_id: sessionId, name: result.name, image_path: result.path })
+    set(s => ({ maps: [...s.maps, map] }))
+    get().selectMap(map)
+    const { currentCampaign } = get()
+    if (currentCampaign) get().loadSessions(currentCampaign.id)
+  },
+
+  // A mapless scene: a tab with no image, just a rich-text page (image_path '').
+  createScene: async (sessionId) => {
+    const map = await window.api.createMap({ session_id: sessionId, name: 'New Scene', image_path: '' })
     set(s => ({ maps: [...s.maps, map] }))
     get().selectMap(map)
     const { currentCampaign } = get()

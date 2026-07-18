@@ -54,7 +54,10 @@ function collectCampaignMedia(src: InstanceType<typeof Database>, userDataPath: 
     if (!isBundledCreatureImage(base) && fs.existsSync(abs)) images.add(abs)
   }
 
-  for (const r of src.prepare('SELECT image_path FROM maps').all() as any[]) addImage(r.image_path)
+  for (const r of src.prepare('SELECT image_path, content FROM maps').all() as any[]) {
+    addImage(r.image_path)
+    inlineImagePaths(r.content || '', imagesDir).forEach(addImage)   // scene bodies
+  }
   for (const r of src.prepare('SELECT content, cover_image, portrait_image FROM articles').all() as any[]) {
     addImage(r.cover_image)
     addImage(r.portrait_image)

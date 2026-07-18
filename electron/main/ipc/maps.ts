@@ -101,10 +101,12 @@ export function registerMapIPC(imagesPath: string) {
 
   ipcMain.handle('maps:delete', (_e, id: number) => {
     const userDataPath = app.getPath('userData')
-    const map = db.prepare('SELECT image_path FROM maps WHERE id = ?').get(id) as { image_path: string } | undefined
+    const map = db.prepare('SELECT image_path, content FROM maps WHERE id = ?').get(id) as { image_path: string; content?: string } | undefined
     const pois = db.prepare('SELECT content FROM pois WHERE map_id = ?').all(id) as { content: string }[]
     db.prepare('DELETE FROM maps WHERE id = ?').run(id)
     for (const p of pois) extractInlineImagePaths(p.content, userDataPath).forEach(safeUnlink)
+    // Scene bodies can hold inline images too — clean those up.
+    if (map?.content) extractInlineImagePaths(map.content, userDataPath).forEach(safeUnlink)
     if (map?.image_path) {
       // The image may be shared with another map (picker reuse) — ref-count first.
       const { c } = db.prepare('SELECT COUNT(*) AS c FROM maps WHERE image_path = ?').get(map.image_path) as { c: number }

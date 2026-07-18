@@ -1,7 +1,7 @@
 // path: src/pages/SessionPage.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
-import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft, FileText, FilePlus } from 'lucide-react'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
 import RichEditor from '../components/RichEditor'
@@ -151,14 +151,17 @@ function MapTabMenu({ map, onEdit, onReplace, onMove }: { map: GameMap; onEdit: 
           }}
         >
           <button onClick={() => { selectMap(map); setOpen(false) }} className="menu-item">
-            <Map size={13} /> Select
+            {map.image_path ? <Map size={13} /> : <FileText size={13} />} Select
           </button>
           <button onClick={() => { onEdit(); setOpen(false) }} className="menu-item">
             <Pencil size={13} /> Rename
           </button>
-          <button onClick={() => { onReplace(); setOpen(false) }} className="menu-item">
-            <ImageIcon size={13} /> Replace image
-          </button>
+          {/* Replacing an image only applies to image maps, not text scenes. */}
+          {map.image_path && (
+            <button onClick={() => { onReplace(); setOpen(false) }} className="menu-item">
+              <ImageIcon size={13} /> Replace image
+            </button>
+          )}
           <button onClick={() => { onMove(); setOpen(false) }} className="menu-item">
             <ArrowRightLeft size={13} /> Move to session…
           </button>
@@ -168,6 +171,40 @@ function MapTabMenu({ map, onEdit, onReplace, onMove }: { map: GameMap; onEdit: 
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Mapless scene (plain text page) ───────────────────────────────────────────
+
+function SceneView({ map, readMode }: { map: GameMap; readMode: boolean }) {
+  const updateMap = useStore(s => s.updateMap)
+  const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingRef = useRef<string | null>(null)
+
+  // Debounced autosave; a pending write is flushed on unmount (tab switch /
+  // leaving the session) so the last edits aren't lost.
+  const flush = () => {
+    if (saveRef.current) { clearTimeout(saveRef.current); saveRef.current = null }
+    if (pendingRef.current !== null) { updateMap(map.id, { content: pendingRef.current }); pendingRef.current = null }
+  }
+  const onChange = (json: string) => {
+    pendingRef.current = json
+    if (saveRef.current) clearTimeout(saveRef.current)
+    saveRef.current = setTimeout(flush, 500)
+  }
+  useEffect(() => () => flush(), [])
+
+  return (
+    <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg-base)' }}>
+      <div style={{ maxWidth: 820, margin: '0 auto', padding: '28px 32px 60px' }}>
+        <RichEditor
+          content={map.content || '{"type":"doc","content":[]}'}
+          onChange={onChange}
+          readOnly={readMode}
+          placeholder="Describe this scene — read-aloud text, an encounter, a handout…"
+        />
+      </div>
     </div>
   )
 }
@@ -390,7 +427,7 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
 export default function SessionPage() {
   const {
     currentSession, currentCampaign, setView, setCampaignSubView,
-    maps, currentMap, selectMap, importMap, reorderMaps, sessionReadMode, setSessionReadMode,
+    maps, currentMap, selectMap, importMap, createScene, reorderMaps, sessionReadMode, setSessionReadMode,
     setHintContext,
   } = useStore()
 
@@ -422,6 +459,11 @@ export default function SessionPage() {
     setImporting(true)
     await importMap(currentSession.id)
     setImporting(false)
+  }
+
+  const handleNewScene = async () => {
+    if (!currentSession) return
+    await createScene(currentSession.id)
   }
 
   const handleReplaceMapImage = async (map: GameMap) => {
@@ -509,7 +551,7 @@ export default function SessionPage() {
               }}
               className={(currentMap?.id !== map.id) ? 'hover-bg' : ''}
             >
-              <Map size={12} />
+              {map.image_path ? <Map size={12} /> : <FileText size={12} />}
               <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{map.name}</span>
               {!sessionReadMode && (
                 <MapTabMenu
@@ -541,6 +583,25 @@ export default function SessionPage() {
             >
               <Upload size={12} />
               {importing ? 'Importing…' : 'Import Map'}
+            </button>
+          )}
+
+          {/* New mapless scene — a plain text page tab (no image import) */}
+          {!sessionReadMode && (
+            <button
+              onClick={handleNewScene}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '0 14px',
+                background: 'transparent', border: 'none',
+                borderRight: '1px solid var(--border)',
+                color: 'var(--text-muted)', fontSize: 12,
+                cursor: 'pointer', transition: 'color var(--transition)',
+                whiteSpace: 'nowrap',
+              }}
+              className="hover-gold"
+            >
+              <FilePlus size={12} /> New Scene
             </button>
           )}
         </div>
@@ -576,15 +637,22 @@ export default function SessionPage() {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, color: 'var(--text-muted)' }}>
             <Map size={52} strokeWidth={1} color="var(--border-light)" />
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 18, fontFamily: 'var(--font-display)', color: 'var(--text-secondary)', marginBottom: 6 }}>No maps yet</div>
-              <div style={{ fontSize: 13 }}>Import a PNG or JPEG map image to get started</div>
+              <div style={{ fontSize: 18, fontFamily: 'var(--font-display)', color: 'var(--text-secondary)', marginBottom: 6 }}>Nothing here yet</div>
+              <div style={{ fontSize: 13 }}>Import a map image, or add a mapless scene — a plain text page</div>
             </div>
             {!sessionReadMode && (
-              <button className="btn btn-primary" onClick={handleImportMap} disabled={importing}>
-                <Upload size={14} /> {importing ? 'Importing…' : 'Import Map Image'}
-              </button>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="btn btn-primary" onClick={handleImportMap} disabled={importing}>
+                  <Upload size={14} /> {importing ? 'Importing…' : 'Import Map Image'}
+                </button>
+                <button className="btn" onClick={handleNewScene}>
+                  <FilePlus size={14} /> New Scene
+                </button>
+              </div>
             )}
           </div>
+        ) : currentMap && !currentMap.image_path ? (
+          <SceneView key={currentMap.id} map={currentMap} readMode={sessionReadMode} />
         ) : (
           <StoreMapProvider>
             <MapCanvas readMode={sessionReadMode} />
