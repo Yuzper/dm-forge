@@ -6,8 +6,11 @@ import { extractInlineImagePaths, safeUnlink, safeUnlinkRelative } from '../help
 export function registerSessionIPC() {
 
   ipcMain.handle('sessions:get-all', (_e, campaignId: number) => {
+    // Split the tab count into image maps vs mapless scenes (empty image_path).
     return db.prepare(`
-      SELECT s.*, COUNT(m.id) as map_count
+      SELECT s.*,
+        COUNT(CASE WHEN m.image_path <> '' THEN 1 END) as map_count,
+        COUNT(CASE WHEN m.image_path =  '' THEN 1 END) as scene_count
       FROM sessions s
       LEFT JOIN maps m ON m.session_id = s.id
       WHERE s.campaign_id = ?

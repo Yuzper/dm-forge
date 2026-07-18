@@ -18,6 +18,17 @@ import { InWorldDatePicker } from '../InWorldDatePicker'
 // Extend Session with in_world_day / in_world_day_end which exist in DB but not the shared type yet
 type SessionExt = Session & { in_world_day?: number | null; in_world_day_end?: number | null }
 
+// Tab-count label: image maps and mapless scenes counted separately, e.g.
+// "2 maps · 1 scene", "1 map", "3 scenes", or "No maps" when empty.
+function mapCountLabel(session: any): string {
+  const maps = session.map_count ?? 0
+  const scenes = session.scene_count ?? 0
+  const parts: string[] = []
+  if (maps > 0) parts.push(`${maps} map${maps !== 1 ? 's' : ''}`)
+  if (scenes > 0) parts.push(`${scenes} scene${scenes !== 1 ? 's' : ''}`)
+  return parts.length > 0 ? parts.join(' · ') : 'No maps'
+}
+
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const ARC_COLORS = [
@@ -251,7 +262,7 @@ function SessionRow({ session, arc }: { session: Session; arc: Arc }) {
             </div>
           )}
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)' }}>
-            <Map size={10} /> {(session as any).map_count ?? 0} maps
+            <Map size={10} /> {mapCountLabel(session)}
           </span>
         </div>
 
@@ -511,7 +522,7 @@ function DraftRow({ session, index, dragId, dropIndex, onDragStart, onDragOver, 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.name}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)', fontSize: 11, marginTop: 1 }}>
-            <Map size={10} /> {(session as any).map_count ?? 0} maps
+            <Map size={10} /> {mapCountLabel(session)}
             {arc && <span style={{ color }}>· {arc.name}</span>}
           </div>
         </div>

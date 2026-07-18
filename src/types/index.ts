@@ -25,7 +25,8 @@ export interface Session {
   date: string | null
   notes: string
   created_at: string
-  map_count?: number
+  map_count?: number       // image maps only
+  scene_count?: number     // mapless text scenes
   in_world_day?: number | null
   in_world_day_end?: number | null
   is_draft?: number
