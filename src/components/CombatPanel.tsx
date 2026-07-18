@@ -2,16 +2,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useStore } from '../store/store'
 import { useMapContext } from '../context/MapContext'
-import { X, Plus, Search, Save, Dices } from 'lucide-react'
+import { X, Plus, Search, Save, Dices, Swords, ScrollText, ChevronDown, Scale } from 'lucide-react'
 import RichEditor from './RichEditor'
 import CombatantRow from './CombatantRow'
-import EncounterBalance from './EncounterBalance'
+import EncounterBalance, { type EncounterSummary } from './EncounterBalance'
 import type { CombatEncounter, CombatCreature, LootItem } from '../types'
 import { parseStatBlock, calcHpAverage, rollHp } from '../types'
 import { parseCreatureVariants } from '../utils/creatureVariants'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
-type Tab = 'general' | 'combatants' | 'balance'
+// The panel has two modes: the live encounter (tracker + a foldout difficulty
+// readout) and the scenario notes. Balance is no longer a separate destination.
+type Tab = 'encounter' | 'notes'
 
 export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   // Map state + actions come from context
@@ -30,17 +32,21 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
 
   // ── Combat state ───────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<Tab>('general')
+  const [activeTab, setActiveTab] = useState<Tab>('encounter')
   const [encounter, setEncounter] = useState<CombatEncounter | null>(null)
   const [creatures, setCreatures] = useState<CombatCreature[]>([])
   const [creaturesDirty, setCreaturesDirty] = useState(false)
+  // Difficulty foldout: collapsed shows a one-line strip; expanded reveals the
+  // full balance breakdown. Summary is reported up from EncounterBalance.
+  const [balanceOpen, setBalanceOpen] = useState(false)
+  const [balanceSummary, setBalanceSummary] = useState<EncounterSummary | null>(null)
   // Ally selection — combat-creature ids that fight for the party. Shared between
   // the Balance tab and the combatant rows (persisted per-encounter).
   const [allyIds, setAllyIds] = useState<Set<number>>(new Set())
 
   // Swap the floating hint to combat guidance while running an encounter
   useEffect(() => {
-    if (!readMode && activeTab === 'combatants') {
+    if (!readMode && activeTab === 'encounter') {
       setHintContext('combat-tracker')
       return () => setHintContext('session')
     }
@@ -68,12 +74,13 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
     setContent(selectedPOI.content)
     setDirty(false)
     setCreaturesDirty(false)
-    setActiveTab('general')
+    setActiveTab('encounter')
+    setBalanceOpen(false)
   }, [selectedPOI?.id])
 
-  // ── Load encounter + creatures when tab opens ──────────────────────────────
+  // ── Load encounter + creatures when the encounter view is open ─────────────
   useEffect(() => {
-    if (!selectedPOI || (activeTab !== 'combatants' && activeTab !== 'balance')) return
+    if (!selectedPOI || activeTab !== 'encounter') return
     ;(async () => {
       const enc = await window.api.getCombatEncounter(selectedPOI.id)
       setEncounter(enc)
@@ -289,7 +296,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
     setCreatures(prev => [...prev, newCreature])
     setShowPicker(false)
     setPickerSearch('')
-    setActiveTab('combatants')
+    setActiveTab('encounter')
   }
 
   // ── Open stat block overlay ────────────────────────────────────────────────
@@ -395,64 +402,89 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
         </div>
       </div>
 
-      {/* ── Tab bar ── */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        {(['general', 'combatants', 'balance'] as Tab[]).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              flex: 1, padding: '8px 0', background: 'none', border: 'none',
-              borderBottom: activeTab === tab ? '2px solid var(--gold)' : '2px solid transparent',
-              color: activeTab === tab ? 'var(--gold)' : 'var(--text-muted)',
-              fontSize: 12, fontWeight: activeTab === tab ? 600 : 400,
-              cursor: 'pointer', transition: 'all 120ms ease',
-              textTransform: 'capitalize', fontFamily: 'var(--font-ui)',
-            }}
-          >
-            {tab}
-            {tab === 'combatants' && creatures.length > 0 && (
-              <span style={{
-                marginLeft: 6, fontSize: 10, fontWeight: 700,
-                background: 'var(--gold-glow)', color: 'var(--gold)',
-                padding: '1px 5px', borderRadius: 99,
-                border: '1px solid var(--border-gold)',
+      {/* ── Mode toggle (segmented) ── */}
+      <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 3, background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: 3, border: '1px solid var(--border)' }}>
+          {([['encounter', 'Encounter', Swords], ['notes', 'Notes', ScrollText]] as const).map(([id, lbl, Icon]) => {
+            const active = activeTab === id
+            return (
+              <button key={id} onClick={() => setActiveTab(id)} style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                padding: '6px 0', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
+                background: active ? 'var(--bg-surface)' : 'transparent',
+                color: active ? 'var(--gold)' : 'var(--text-muted)',
+                boxShadow: active ? '0 1px 3px rgba(0,0,0,0.28)' : 'none',
+                fontSize: 12, fontWeight: active ? 600 : 500, fontFamily: 'var(--font-ui)',
+                transition: 'all 120ms ease',
               }}>
-                {creatures.length}
-              </span>
-            )}
-          </button>
-        ))}
+                <Icon size={13} /> {lbl}
+                {id === 'encounter' && creatures.length > 0 && (
+                  <span style={{ fontSize: 10, fontWeight: 700, background: 'var(--gold-glow)', color: 'var(--gold)', padding: '0 5px', borderRadius: 99, border: '1px solid var(--border-gold)' }}>
+                    {creatures.length}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      {/* ── General tab ── */}
-      {activeTab === 'general' && (
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <RichEditor
-            key={selectedPOI.id}
-            content={selectedPOI.content}
-            onChange={v => { setContent(v); setDirty(true) }}
-            placeholder="Describe the combat scenario… location details, ambush conditions, terrain…"
-            readOnly={readMode}
-          />
-        </div>
-      )}
-
-      {/* ── Combatants tab ── */}
-      {activeTab === 'combatants' && (
+      {/* ── Encounter: difficulty strip + tracker ── */}
+      {activeTab === 'encounter' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+          {/* Live difficulty strip — click to unfold the full balance breakdown */}
+          <button
+            onClick={() => setBalanceOpen(o => !o)}
+            title={balanceOpen ? 'Hide difficulty details' : 'Show party & difficulty details'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+              padding: '8px 12px', background: balanceOpen ? 'var(--bg-active)' : 'var(--bg-elevated)',
+              border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', flexShrink: 0,
+              transition: 'background 120ms ease',
+            }}
+          >
+            <Scale size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            {balanceSummary && balanceSummary.party > 0 && !balanceSummary.noXp ? (
+              <>
+                <span style={{
+                  fontSize: 11.5, fontWeight: 700, padding: '1px 8px', borderRadius: 99,
+                  color: balanceSummary.color, background: `${balanceSummary.color}1e`, border: `1px solid ${balanceSummary.color}55`,
+                }}>
+                  {balanceSummary.incomplete ? `≥ ${balanceSummary.classification}` : balanceSummary.classification}
+                </span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{balanceSummary.xp.toLocaleString()} XP</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>· {balanceSummary.monsters} monster{balanceSummary.monsters !== 1 ? 's' : ''}</span>
+              </>
+            ) : (
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                Difficulty — {creatures.length ? 'select your party' : 'add combatants first'}
+              </span>
+            )}
+            <ChevronDown size={14} style={{ marginLeft: 'auto', color: 'var(--text-muted)', flexShrink: 0, transform: balanceOpen ? 'rotate(180deg)' : 'none', transition: 'transform 150ms ease' }} />
+          </button>
+
+          {/* Balance breakdown — kept mounted (hidden when collapsed) so the strip
+              stays live; scrolls within a bounded height above the tracker. */}
+          {encounter && currentCampaign && (
+            <div style={{ display: balanceOpen ? 'flex' : 'none', flexDirection: 'column', minHeight: 0, maxHeight: '55%', borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+              <EncounterBalance
+                encounterId={encounter.id} creatures={creatures} campaign={currentCampaign}
+                allyIds={allyIds} onToggleAlly={toggleAlly} onSummary={setBalanceSummary}
+              />
+            </div>
+          )}
+
+          {/* Add combatant */}
           {!readMode && (
             <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <button
-                className="btn btn-sm"
-                onClick={() => setShowPicker(true)}
-                style={{ width: '100%', justifyContent: 'center' }}
-              >
+              <button className="btn btn-sm" onClick={() => setShowPicker(true)} style={{ width: '100%', justifyContent: 'center' }}>
                 <Plus size={13} /> Add Combatant
               </button>
             </div>
           )}
 
+          {/* Tracker */}
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
             {sortedCreatures.length === 0 ? (
               <div style={{
@@ -490,15 +522,17 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
         </div>
       )}
 
-      {/* ── Balance tab ── */}
-      {activeTab === 'balance' && (
-        encounter && currentCampaign ? (
-          <EncounterBalance encounterId={encounter.id} creatures={creatures} campaign={currentCampaign} allyIds={allyIds} onToggleAlly={toggleAlly} />
-        ) : (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-            Loading…
-          </div>
-        )
+      {/* ── Notes ── */}
+      {activeTab === 'notes' && (
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <RichEditor
+            key={selectedPOI.id}
+            content={selectedPOI.content}
+            onChange={v => { setContent(v); setDirty(true) }}
+            placeholder="Describe the combat scenario… location details, ambush conditions, terrain…"
+            readOnly={readMode}
+          />
+        </div>
       )}
 
       {/* ── Combatant picker modal ── */}

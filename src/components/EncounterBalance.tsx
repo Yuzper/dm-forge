@@ -32,6 +32,18 @@ interface MonsterInfo {
   kind: 'creature' | 'character'
 }
 
+// Compact difficulty readout reported up to the combat panel so the encounter
+// view can show a live summary strip without duplicating the eval logic.
+export interface EncounterSummary {
+  classification: string
+  color: string
+  xp: number
+  monsters: number
+  party: number
+  incomplete: boolean
+  noXp: boolean
+}
+
 const partyKey = (encounterId: number) => `dmforge:party:${encounterId}`
 
 function loadIds(key: string): number[] {
@@ -43,13 +55,14 @@ function loadIds(key: string): number[] {
 }
 
 export default function EncounterBalance({
-  encounterId, creatures, campaign, allyIds, onToggleAlly,
+  encounterId, creatures, campaign, allyIds, onToggleAlly, onSummary,
 }: {
   encounterId: number
   creatures: CombatCreature[]
   campaign: Campaign
   allyIds: Set<number>                 // lifted to CombatPanel (shared with rows)
   onToggleAlly: (id: number) => void
+  onSummary?: (s: EncounterSummary) => void   // live difficulty readout for the strip
 }) {
   const [party, setParty] = useState<PartyMember[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set(loadIds(partyKey(encounterId))))
@@ -201,6 +214,19 @@ export default function EncounterBalance({
   const netPct = Math.round(adjust.net * 100)
   const maxTier = evalResult.tiers[evalResult.tiers.length - 1]?.value || 1
   const barMax = Math.max(maxTier, evalResult.monsterXpAdjusted) * 1.05
+
+  // Report a compact readout up so the encounter view can show a live strip.
+  useEffect(() => {
+    onSummary?.({
+      classification: shownClass,
+      color: badgeColor,
+      xp: evalResult.monsterXpAdjusted,
+      monsters: monsters.length,
+      party: selectedParty.length,
+      incomplete: incomplete && !noXp,
+      noXp,
+    })
+  }, [onSummary, shownClass, badgeColor, evalResult.monsterXpAdjusted, monsters.length, selectedParty.length, incomplete, noXp])
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
