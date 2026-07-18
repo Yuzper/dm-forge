@@ -8,6 +8,7 @@ import CombatantRow from './CombatantRow'
 import EncounterBalance, { type EncounterSummary } from './EncounterBalance'
 import type { CombatEncounter, CombatCreature, LootItem } from '../types'
 import { parseStatBlock, calcHpAverage, rollHp } from '../types'
+import { crToXp } from '../utils/encounterBudget'
 import { parseCreatureVariants } from '../utils/creatureVariants'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 
@@ -285,13 +286,17 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
       cr = sb.cr ?? null
     }
 
+    // Store only a real CR — never the "—" placeholder or blank — so the
+    // balancer can cleanly fall back to the article when it's genuinely unset.
+    const crClean = (cr != null && crToXp(cr) !== null) ? cr : null
+
     const maxHp = useRoll ? rollHp(sb.hpDice) : calcHpAverage(sb.hpDice)
     const newCreature = await (window.api as any).addCombatCreature(encounter.id, entry.articleId, maxHp, {
       variant_name: entry.variantIndex !== null ? entry.displayName : null,
       variant_statblock: entry.variantIndex !== null ? JSON.stringify(sb) : null,
       variant_loot_table_id: variantLootTableId,
       variant_loot_table: variantLootTable,
-      cr,
+      cr: crClean,
     })
     setCreatures(prev => [...prev, newCreature])
     setShowPicker(false)

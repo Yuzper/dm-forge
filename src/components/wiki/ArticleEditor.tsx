@@ -127,7 +127,9 @@ function parseCreatureVariants(raw: string): CreatureVariant[] {
       return parsed.map(v => ({
         id: v.id || `v_${Math.random().toString(36).slice(2)}`,
         name: v.name || 'Variant',
-        cr: v.cr || '—',
+        // Keep unset CR as '' in data — '—' is only a display placeholder. Storing
+        // '—' leaks a non-CR string that breaks the encounter balancer downstream.
+        cr: v.cr || '',
         statblock: parseStatBlock(typeof v.statblock === 'string' ? v.statblock : JSON.stringify(v.statblock)),
         loot_table_id: v.loot_table_id ?? null,
         loot_table: v.loot_table || '{"name":"Loot","items":[]}',
@@ -137,7 +139,7 @@ function parseCreatureVariants(raw: string): CreatureVariant[] {
   // Legacy: single statblock object → wrap as one variant
   const sb = parseStatBlock(raw)
   if (sb.hp > 0 || sb.ac > 0 || sb.actions.length > 0) {
-    return [{ id: 'v_legacy', name: 'Standard', cr: '—', statblock: sb, loot_table_id: null, loot_table: '{"name":"Loot","items":[]}' }]
+    return [{ id: 'v_legacy', name: 'Standard', cr: '', statblock: sb, loot_table_id: null, loot_table: '{"name":"Loot","items":[]}' }]
   }
   return []
 }

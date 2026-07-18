@@ -138,9 +138,11 @@ export default function EncounterBalance({
       const meta = creatureMeta.get(c.article_id)
       if (!meta || meta.kind === 'other') continue   // exclude PCs added as combatants
       const name = (c as any).display_name ?? (c as any).variant_name ?? c.title
-      // Prefer the CR captured at add-time; fall back to re-deriving for old rows.
+      // Prefer the CR captured at add-time — but only if it's a real CR. Older
+      // rows sometimes stored the "—" placeholder (or blank); treat anything that
+      // doesn't map to XP as unset and re-derive from the article's current CR.
       const storedCr = (c as any).cr
-      const cr = (storedCr != null && storedCr !== '')
+      const cr = (storedCr != null && crToXp(storedCr) !== null)
         ? storedCr
         : (meta.kind === 'creature' ? (meta.crByName.get(name) ?? '') : meta.cr)
       out.push({
