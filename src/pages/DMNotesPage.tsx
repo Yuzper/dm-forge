@@ -350,10 +350,10 @@ function PageItem({ page, isActive, groups, isFirst, isLast, dnd, index, contain
         style={{ flexShrink: 0, opacity: 0.45, cursor: 'grab' }}
         aria-label="Drag to reorder"
       />}
-      <FileText size={11} color={isActive ? '#9b7de8' : 'var(--text-muted)'} style={{ flexShrink: 0 }} />
+      <FileText size={11} color={'var(--text-muted)'} style={{ flexShrink: 0 }} />
       <span style={{
         flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        color: isActive ? '#9b7de8' : 'var(--text-secondary)',
+        color: 'var(--text-secondary)',
         fontFamily: 'var(--font-ui)',
       }}>
         {page.title || 'Untitled'}
@@ -667,7 +667,7 @@ function PageEditor({ page, onDeleted, onTitleChange }: {
           key={page.id}
           content={content}
           onChange={v => { setContent(v); setDirty(true) }}
-          placeholder="Start a DM note… Use [[ to link wiki articles, @@ for spells, \\\\ for sessions."
+          placeholder="Start a DM note… Use [[ to link wiki articles, @@ for spells, \\ for sessions."
           onWikiLinkClick={navigateToArticleByTitle}
           expandable
         />

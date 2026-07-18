@@ -12,6 +12,39 @@ import {
 } from '../utils/encounterBudget'
 import { adjustEncounter } from '../utils/encounterAdjust'
 import { creatureFlags, encounterFlags, partyClassFlags, type EncounterFlag } from '../utils/encounterFlags'
+import { InfoHint } from './InfoHint'
+
+// Explains how the difficulty tier is derived — shown on the (i) next to the
+// "Difficulty" heading. Ruleset-specific because 2024 drops the multiplier.
+function classifyInfo(ruleset: string): string {
+  const common = [
+    '',
+    'Allies count as extra bodies but add no XP budget of their own. Monsters with no CR aren’t counted, so a tier shown with “≥” is a floor — the real fight is harder.',
+    '',
+    '“Plays like” is a separate, bounded nudge from the tactical flags — never the baseline tier.',
+    '',
+    'This classifies the fight; it never predicts the outcome. Dice introduce real swing, so a fight may run easier or harder than the tier suggests.',
+  ]
+  if (ruleset === '2024') {
+    return [
+      'How the tier is set (D&D 2024):',
+      '',
+      '1. Add up each monster’s XP (from its CR).',
+      '2. Sum your party’s budget — each PC’s Low / Moderate / High XP budget for its level.',
+      '3. The tier is the highest budget the monster XP reaches. (2024 uses no encounter multiplier.)',
+      ...common,
+    ].join('\n')
+  }
+  return [
+    'How the tier is set (D&D 2014):',
+    '',
+    '1. Add up each monster’s XP (from its CR).',
+    '2. Multiply by the encounter multiplier — more monsters relative to party size inflates the effective XP.',
+    '3. Sum your party’s thresholds — each PC’s Easy / Medium / Hard / Deadly value for its level.',
+    '4. The tier is the highest threshold the adjusted XP reaches.',
+    ...common,
+  ].join('\n')
+}
 
 interface PartyMember {
   id: number
@@ -307,7 +340,10 @@ export default function EncounterBalance({
 
       {/* ── Difficulty readout ── */}
       <section>
-        <div style={sectionLabel}>Difficulty (XP baseline)</div>
+        <div style={{ ...sectionLabel, display: 'flex', alignItems: 'center', gap: 5 }}>
+          Difficulty (XP baseline)
+          <InfoHint text={classifyInfo(evalResult.ruleset)} size={11} />
+        </div>
         {selectedParty.length === 0 ? (
           <div style={emptyNote}>Select the PCs above to set the budget.</div>
         ) : (

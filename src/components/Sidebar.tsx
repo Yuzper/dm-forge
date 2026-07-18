@@ -116,7 +116,7 @@ export default function Sidebar() {
               onClick={() => { setView('campaign'); setCampaignSubView('sessions') }} />
             <RailIcon icon={<BookOpen size={16} />} title="Wiki" accent="#5b9fe8"
               active={view === 'wiki'} onClick={() => setView('wiki')} />
-            <RailIcon icon={<Sparkles size={16} />} title="DM Notes" accent="#9b7de8"
+            <RailIcon icon={<Sparkles size={16} />} title="DM Notes" accent="#fe6565"
               active={view === 'dm-notes'} onClick={() => setView('dm-notes')} />
             <RailIcon icon={<ShoppingBag size={16} />} title="Loot Tables" accent="#49c185"
               active={view === 'loot-tables'} onClick={() => setView('loot-tables')} />
@@ -272,7 +272,7 @@ export default function Sidebar() {
                 className="btn btn-ghost btn-sm"
                 style={{
                   width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
-                  color: view === 'dm-notes' ? '#9b7de8' : 'var(--text-secondary)',
+                  color: view === 'dm-notes' ? "#fe6565" : 'var(--text-secondary)',
                 }}
                 onClick={() => setView('dm-notes')}
               >

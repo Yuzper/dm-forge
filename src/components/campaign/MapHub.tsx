@@ -141,7 +141,7 @@ function NavDock({ stats }: { stats: MapHubStats }) {
       <DockItem icon={<BookOpen size={15} />} label="Wiki" accent="#5b9fe8"
         stat={stats.articleCount > 0 ? plural(stats.articleCount, 'article') : undefined}
         onClick={() => setView('wiki')} />
-      <DockItem icon={<Sparkles size={15} />} label="Notes" accent="#9b7de8"
+      <DockItem icon={<Sparkles size={15} />} label="Notes" accent="#fe6565"
         stat={stats.noteCount > 0 ? plural(stats.noteCount, 'note') : undefined}
         onClick={() => setView('dm-notes')} />
       <DockItem icon={<ShoppingBag size={15} />} label="Loot" accent="#49c185"

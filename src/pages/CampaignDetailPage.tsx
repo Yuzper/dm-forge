@@ -235,7 +235,7 @@ export default function CampaignDetailPage() {
         <NavDockCard
           icon={<Sparkles size={16} />} title="DM Notes"
           stat={noteCount > 0 ? `${noteCount} note${noteCount !== 1 ? 's' : ''}` : undefined}
-          onClick={() => setView('dm-notes')} accent="#9b7de8"
+          onClick={() => setView('dm-notes')} accent="#fe6565"
         />
         <NavDockCard
           icon={<ShoppingBag size={16} />} title="Loot Tables"
@@ -249,7 +249,7 @@ export default function CampaignDetailPage() {
         />
         <NavDockCard
           icon={<Clock size={16} />} title="Timeline"
-          onClick={() => setView('timeline')} accent="#5bbfb0"
+          onClick={() => setView('timeline')} accent="#e88c3a"
         />
         <NavDockCard
           icon={<Music2 size={16} />} title="Soundboard"
