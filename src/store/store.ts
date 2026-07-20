@@ -94,7 +94,19 @@ interface AppStore {
   deleteMap: (id: number) => Promise<void>
   updateMap: (id: number, data: { name?: string; content?: string }) => Promise<void>
   reorderMaps: (orders: { id: number; sort_order: number }[]) => Promise<void>
+  // Persist the full session tab order (owned + attached maps interleaved).
+  reorderSessionTabs: (orderedMaps: GameMap[]) => Promise<void>
   moveMapToSession: (mapId: number, sessionId: number) => Promise<void>
+  // Visit layers: attach an article map to the current session (layerId null =
+  // start a new visit), detach it again, and toggle ghosted extra layers.
+  attachMapToSession: (mapId: number, layerId: number | null) => Promise<void>
+  detachMapFromSession: (mapId: number) => Promise<void>
+  ghostLayerIds: number[]
+  toggleGhostLayer: (layerId: number) => void
+  // On attached maps the place's base POIs start hidden — tonight's view stays
+  // clean; the Layers control toggles them in.
+  showBaseLayer: boolean
+  toggleBaseLayer: () => void
 
   // POI state
   pois: POI[]
@@ -672,7 +684,7 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   selectMap: (map) => {
-    set({ currentMap: map, pois: [], selectedPOI: null, poiPanelOpen: false })
+    set({ currentMap: map, pois: [], selectedPOI: null, poiPanelOpen: false, ghostLayerIds: [], showBaseLayer: false })
     get().loadPOIs(map.id)
   },
 
@@ -716,6 +728,18 @@ export const useStore = create<AppStore>((set, get) => ({
     await window.api.reorderMaps(orders)
   },
 
+  reorderSessionTabs: async (orderedMaps) => {
+    const { currentSession } = get()
+    if (!currentSession) return
+    // Optimistic: adopt the given order (with fresh unified indices) so tabs
+    // don't jump back before the write lands.
+    set({ maps: orderedMaps.map((m, i) => ({ ...m, sort_order: i })) })
+    await window.api.reorderSessionTabs(
+      currentSession.id,
+      orderedMaps.map((m, i) => ({ map_id: m.id, attached: !!m.attached, sort_order: i })),
+    )
+  },
+
   moveMapToSession: async (mapId, sessionId) => {
     await window.api.updateMap(mapId, { session_id: sessionId })
     // Map (and its POIs) now belong to another session: drop it from the
@@ -731,6 +755,51 @@ export const useStore = create<AppStore>((set, get) => ({
     await window.api.deleteMap(id)
     const { currentSession, currentCampaign } = get()
     if (currentSession) await get().loadMaps(currentSession.id)
+    if (get().maps.length === 0) set({ currentMap: null, pois: [], selectedPOI: null, poiPanelOpen: false })
+    if (currentCampaign) get().loadSessions(currentCampaign.id)
+  },
+
+  // ── Visit layers ────────────────────────────────────────────────────────────
+
+  ghostLayerIds: [],
+  showBaseLayer: false,
+
+  toggleGhostLayer: (layerId) => set(s => ({
+    ghostLayerIds: s.ghostLayerIds.includes(layerId)
+      ? s.ghostLayerIds.filter(id => id !== layerId)
+      : [...s.ghostLayerIds, layerId],
+  })),
+
+  toggleBaseLayer: () => set(s => {
+    const showing = !s.showBaseLayer
+    // Hiding the base layer while one of its POIs is open would leave the
+    // panel editing an invisible pin — deselect instead.
+    const hidingSelected = !showing && s.selectedPOI?.layer_id == null && s.currentMap?.attached
+    return {
+      showBaseLayer: showing,
+      ...(hidingSelected ? { selectedPOI: null, poiPanelOpen: false } : {}),
+    }
+  }),
+
+  attachMapToSession: async (mapId, layerId) => {
+    const { currentSession, currentCampaign } = get()
+    if (!currentSession) return
+    const map = await window.api.attachMapToSession(currentSession.id, mapId, layerId)
+    // Replace if re-attaching an already-attached map (layer switch), else append.
+    set(s => ({
+      maps: s.maps.some(m => m.id === map.id && m.attached)
+        ? s.maps.map(m => (m.id === map.id && m.attached ? map : m))
+        : [...s.maps, map],
+    }))
+    get().selectMap(map)
+    if (currentCampaign) get().loadSessions(currentCampaign.id)
+  },
+
+  detachMapFromSession: async (mapId) => {
+    const { currentSession, currentCampaign } = get()
+    if (!currentSession) return
+    await window.api.detachMapFromSession(currentSession.id, mapId)
+    await get().loadMaps(currentSession.id)
     if (get().maps.length === 0) set({ currentMap: null, pois: [], selectedPOI: null, poiPanelOpen: false })
     if (currentCampaign) get().loadSessions(currentCampaign.id)
   },
@@ -753,7 +822,10 @@ export const useStore = create<AppStore>((set, get) => ({
   createPOI: async (x, y) => {
     const { currentMap } = get()
     if (!currentMap) return
-    const poi = await window.api.createPOI({ map_id: currentMap.id, label: 'New Point of Interest', x, y })
+    // On an attached article map, new POIs belong to this session's visit
+    // layer; on session-owned maps layer_id stays null.
+    const layer_id = currentMap.attached ? currentMap.layer_id ?? null : null
+    const poi = await window.api.createPOI({ map_id: currentMap.id, label: 'New Point of Interest', x, y, layer_id })
     set(s => ({ pois: [...s.pois, poi], selectedPOI: poi, poiPanelOpen: true }))
   },
 

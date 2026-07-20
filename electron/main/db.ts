@@ -80,6 +80,28 @@ export function initDatabase() {
       created_at TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- POI visit-layers on a map. POIs with layer_id NULL form the "base layer"
+    -- (the place's own features, edited from its location article); each visit
+    -- to the location gets its own layer holding that visit's POIs.
+    CREATE TABLE IF NOT EXISTS map_layers (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      map_id     INTEGER NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+      name       TEXT    NOT NULL DEFAULT '',
+      created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- A session "runs" an article-owned map on a specific layer. Several
+    -- sessions may share one layer (a visit spanning multiple sessions);
+    -- a later revisit links the same map with a fresh layer.
+    CREATE TABLE IF NOT EXISTS session_maps (
+      session_id INTEGER NOT NULL REFERENCES sessions(id)   ON DELETE CASCADE,
+      map_id     INTEGER NOT NULL REFERENCES maps(id)       ON DELETE CASCADE,
+      layer_id   INTEGER NOT NULL REFERENCES map_layers(id) ON DELETE CASCADE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (session_id, map_id)
+    );
+
     CREATE TABLE IF NOT EXISTS articles (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
       campaign_id      INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
@@ -283,6 +305,10 @@ export function initDatabase() {
   }
   if (!poiCols.some(c => c.name === 'hub_opacity')) {
     db.exec(`ALTER TABLE pois ADD COLUMN hub_opacity REAL NOT NULL DEFAULT 1`)
+  }
+  // NULL = base layer (place features); set = belongs to that visit layer.
+  if (!poiCols.some(c => c.name === 'layer_id')) {
+    db.exec(`ALTER TABLE pois ADD COLUMN layer_id INTEGER REFERENCES map_layers(id) ON DELETE CASCADE`)
   }
 
   const creatureCols = db.pragma('table_info(combat_creatures)') as { name: string }[]

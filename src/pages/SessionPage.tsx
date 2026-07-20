@@ -1,17 +1,22 @@
 // path: src/pages/SessionPage.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
-import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft, FileText, FilePlus } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft, FileText, FilePlus, BookOpen, Link2, Layers, Plus, Search, Unlink, Eye, EyeOff } from 'lucide-react'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
 import RichEditor from '../components/RichEditor'
 import { StoreMapProvider } from '../context/MapContext'
 import { InWorldDatePicker } from '../components/InWorldDatePicker'
-import type { GameMap, Session } from '../types'
+import type { AttachableMap, GameMap, MapLayer, Session } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 import { useMenuClose } from '../hooks/useMenuClose'
 import { parseDay } from '../utils/dates'
+import { layerLabel } from '../utils/visitLayers'
 import Modal from '../components/Modal'
+import { SECTION_ACCENTS } from '../constants/sections'
+
+// The in-world date chip is timeline-flavoured, so it borrows that accent.
+const TIMELINE_ACCENT = SECTION_ACCENTS['timeline']
 
 function EditMapModal({ map, onClose }: { map: GameMap; onClose: () => void }) {
   const { updateMap } = useStore()
@@ -100,8 +105,245 @@ function MoveMapModal({ map, onClose }: { map: GameMap; onClose: () => void }) {
   )
 }
 
+// ── Attach-from-wiki modal ────────────────────────────────────────────────────
+// Lists article-owned maps; each can continue an existing visit layer or start
+// a fresh one.
+
+function AttachMapModal({ onClose }: { onClose: () => void }) {
+  const { currentCampaign, currentSession, sessions, maps, attachMapToSession } = useStore()
+  const [attachable, setAttachable] = useState<AttachableMap[] | null>(null)
+  const [search, setSearch] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (currentCampaign) window.api.getAttachableMaps(currentCampaign.id).then(setAttachable)
+  }, [currentCampaign])
+
+  const attachedIds = new Set(maps.filter(m => m.attached).map(m => m.id))
+  const q = search.trim().toLowerCase()
+  const list = (attachable ?? []).filter(m =>
+    !attachedIds.has(m.id) &&
+    (!q || `${m.article_title} ${m.name}`.toLowerCase().includes(q)))
+
+  // "Continuing from last time" heuristic: the visit layer that the previous
+  // session (highest number below this one; any for drafts) ran on this map.
+  const curNum = currentSession && !(currentSession as any).is_draft ? currentSession.session_number : Infinity
+  const prevNum = sessions
+    .filter(s => !(s as any).is_draft && s.session_number < curNum)
+    .reduce((m, s) => Math.max(m, s.session_number), -Infinity)
+  const suggestedLayer = (m: AttachableMap): MapLayer | undefined =>
+    prevNum === -Infinity
+      ? undefined
+      : m.layers.find(l => (l.sessions ?? []).some(s => !s.is_draft && s.session_number === prevNum))
+
+  const doAttach = async (mapId: number, layerId: number | null) => {
+    if (busy) return
+    setBusy(true)
+    await attachMapToSession(mapId, layerId)
+    onClose()
+  }
+
+  // Multi-floor locations: attach every map, continuing where the previous
+  // session left off and starting fresh where it didn't reach.
+  const doAttachAll = async (groupMaps: AttachableMap[]) => {
+    if (busy) return
+    setBusy(true)
+    for (const m of groupMaps) await attachMapToSession(m.id, suggestedLayer(m)?.id ?? null)
+    onClose()
+  }
+
+  // Group by owning article so multi-floor dungeons read as one location.
+  const groups: { title: string; maps: AttachableMap[] }[] = []
+  for (const m of list) {
+    const g = groups.find(x => x.title === m.article_title)
+    if (g) g.maps.push(m)
+    else groups.push({ title: m.article_title, maps: [m] })
+  }
+
+  return (
+    <Modal title="Attach map from wiki" onClose={onClose} style={{ maxWidth: 520 }}>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
+        Run a location's map in this session. Continue an earlier visit to keep its POIs, or start a new visit with a fresh layer — the place's own POIs can be toggled in from the Layers control.
+      </div>
+      <div style={{ position: 'relative', marginBottom: 10 }}>
+        <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+        <input className="input" style={{ paddingLeft: 30 }} placeholder="Search locations & maps…"
+          value={search} onChange={e => setSearch(e.target.value)} autoFocus />
+      </div>
+
+      <div style={{ maxHeight: '48vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {attachable === null ? (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '16px 0', textAlign: 'center' }}>Loading…</div>
+        ) : groups.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '16px 8px', textAlign: 'center', lineHeight: 1.6 }}>
+            {attachable.length === 0
+              ? <>No wiki maps yet. Import a map on a location article first — it can then be attached to any session.</>
+              : 'No maps match.'}
+          </div>
+        ) : (
+          groups.map(group => (
+            <div key={group.title} style={{ border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                <BookOpen size={12} style={{ color: SECTION_ACCENTS['wiki'], flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  {group.title}
+                </span>
+                {group.maps.length > 1 && (
+                  <button className="btn btn-sm" disabled={busy} onClick={() => doAttachAll(group.maps)}
+                    title="Attach every map of this location — continuing visits where the previous session left off">
+                    <Layers size={11} /> Attach all {group.maps.length}
+                  </button>
+                )}
+              </div>
+              {group.maps.map(m => {
+                const suggested = suggestedLayer(m)
+                const layers = [...m.layers].reverse().filter(l => l.id !== suggested?.id)
+                return (
+                  <div key={m.id} style={{ padding: '9px 12px', borderTop: group.maps.indexOf(m) > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                      <Map size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
+                        {m.poi_count ?? 0} place POI{(m.poi_count ?? 0) !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {suggested && (
+                        <button className="btn btn-sm btn-primary" disabled={busy}
+                          title={`Continuing from last time — ${suggested.poi_count ?? 0} POI${(suggested.poi_count ?? 0) !== 1 ? 's' : ''}`}
+                          onClick={() => doAttach(m.id, suggested.id)}>
+                          <Layers size={11} /> Continue {layerLabel(suggested)}
+                        </button>
+                      )}
+                      <button className={`btn btn-sm${suggested ? ' btn-ghost' : ''}`} disabled={busy}
+                        style={suggested ? { border: '1px solid var(--border-light)' } : undefined}
+                        onClick={() => doAttach(m.id, null)}>
+                        <Plus size={11} /> New visit
+                      </button>
+                      {layers.map(l => (
+                        <button key={l.id} className="btn btn-sm btn-ghost" disabled={busy}
+                          title={`Continue this visit — ${l.poi_count ?? 0} POI${(l.poi_count ?? 0) !== 1 ? 's' : ''}`}
+                          onClick={() => doAttach(m.id, l.id)}
+                          style={{ border: '1px solid var(--border-light)' }}>
+                          <Layers size={11} /> Continue {layerLabel(l)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ))
+        )}
+      </div>
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Layers control ────────────────────────────────────────────────────────────
+// Floats over an attached map: shows base + all visit layers, current one
+// pinned on, others toggleable as ghosts. Available in read mode too.
+
+function LayersControl({ map }: { map: GameMap }) {
+  const { ghostLayerIds, toggleGhostLayer, showBaseLayer, toggleBaseLayer } = useStore()
+  const [open, setOpen] = useState(false)
+  const [layers, setLayers] = useState<MapLayer[] | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  useMenuClose(open, ref, setOpen)
+
+  useEffect(() => {
+    if (open) window.api.getMapLayers(map.id).then(setLayers)
+  }, [open, map.id])
+
+  const others = (layers ?? []).filter(l => l.id !== map.layer_id)
+
+  return (
+    <div ref={ref} style={{ position: 'absolute', top: 12, left: 12, zIndex: 30 }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        title="Map layers"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+          background: 'rgba(21,18,14,0.85)', border: `1px solid ${open ? 'var(--border-gold)' : 'var(--border-light)'}`,
+          borderRadius: 4, backdropFilter: 'blur(8px)', cursor: 'pointer',
+          color: open || showBaseLayer || ghostLayerIds.length > 0 ? 'var(--gold)' : 'var(--text-secondary)',
+          fontSize: 11, transition: 'all var(--transition)',
+        }}
+        className={open ? '' : 'hover-gold'}
+      >
+        <Layers size={12} /> Layers{(() => {
+          const extra = ghostLayerIds.length + (showBaseLayer ? 1 : 0)
+          return extra > 0 ? ` +${extra}` : ''
+        })()}
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0, minWidth: 210,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+          borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', padding: '6px 0',
+        }}>
+          <div style={{ padding: '4px 12px 6px', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            {map.article_title ?? 'Map'} — layers
+          </div>
+          {/* The place's own POIs — hidden by default so tonight's view starts clean */}
+          <button
+            onClick={toggleBaseLayer}
+            title={showBaseLayer ? "Hide the place's POIs" : "Show the place's POIs"}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px',
+              background: 'none', border: 'none', cursor: 'pointer', fontSize: 12,
+              color: showBaseLayer ? 'var(--text-primary)' : 'var(--text-muted)', textAlign: 'left',
+            }}
+            className="hover-bg"
+          >
+            {showBaseLayer
+              ? <Eye size={12} style={{ color: 'var(--gold-dim)', flexShrink: 0 }} />
+              : <EyeOff size={12} style={{ flexShrink: 0 }} />}
+            Place (base)
+          </button>
+          {map.layer_id != null && layers && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', fontSize: 12, color: 'var(--text-secondary)' }}>
+              <Eye size={12} style={{ color: 'var(--gold)', flexShrink: 0 }} />
+              {layerLabel(layers.find(l => l.id === map.layer_id) ?? { id: 0, map_id: map.id, name: 'This visit', created_at: '' })}
+              <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--gold-dim)' }}>current</span>
+            </div>
+          )}
+          {layers === null ? (
+            <div style={{ padding: '5px 12px', fontSize: 11, color: 'var(--text-muted)' }}>Loading…</div>
+          ) : others.length === 0 ? (
+            <div style={{ padding: '5px 12px 7px', fontSize: 11, color: 'var(--text-muted)' }}>No other visits yet</div>
+          ) : (
+            others.map(l => {
+              const on = ghostLayerIds.includes(l.id)
+              return (
+                <button key={l.id} onClick={() => toggleGhostLayer(l.id)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px',
+                    background: 'none', border: 'none', cursor: 'pointer', fontSize: 12,
+                    color: on ? 'var(--text-primary)' : 'var(--text-muted)', textAlign: 'left',
+                  }}
+                  className="hover-bg"
+                  title={on ? 'Hide this visit' : 'Show this visit (ghosted)'}
+                >
+                  {on ? <Eye size={12} style={{ flexShrink: 0 }} /> : <EyeOff size={12} style={{ flexShrink: 0 }} />}
+                  {layerLabel(l)}
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)' }}>{l.poi_count ?? 0}</span>
+                </button>
+              )
+            })
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MapTabMenu({ map, onEdit, onReplace, onMove }: { map: GameMap; onEdit: () => void; onReplace: () => void; onMove: () => void }) {
-  const { deleteMap, selectMap } = useStore()
+  const { deleteMap, selectMap, detachMapFromSession } = useStore()
   const [open, setOpen] = useState(false)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
@@ -153,22 +395,32 @@ function MapTabMenu({ map, onEdit, onReplace, onMove }: { map: GameMap; onEdit: 
           <button onClick={() => { selectMap(map); setOpen(false) }} className="menu-item">
             {map.image_path ? <Map size={13} /> : <FileText size={13} />} Select
           </button>
-          <button onClick={() => { onEdit(); setOpen(false) }} className="menu-item">
-            <Pencil size={13} /> Rename
-          </button>
-          {/* Replacing an image only applies to image maps, not text scenes. */}
-          {map.image_path && (
-            <button onClick={() => { onReplace(); setOpen(false) }} className="menu-item">
-              <ImageIcon size={13} /> Replace image
+          {map.attached ? (
+            /* Attached wiki maps are managed from their article — the session
+               only holds a link, so the sole destructive action is detaching. */
+            <button onClick={() => { detachMapFromSession(map.id); setOpen(false) }} className="menu-item">
+              <Unlink size={13} /> Detach from session
             </button>
+          ) : (
+            <>
+              <button onClick={() => { onEdit(); setOpen(false) }} className="menu-item">
+                <Pencil size={13} /> Rename
+              </button>
+              {/* Replacing an image only applies to image maps, not text scenes. */}
+              {map.image_path && (
+                <button onClick={() => { onReplace(); setOpen(false) }} className="menu-item">
+                  <ImageIcon size={13} /> Replace image
+                </button>
+              )}
+              <button onClick={() => { onMove(); setOpen(false) }} className="menu-item">
+                <ArrowRightLeft size={13} /> Move to session…
+              </button>
+              <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+              <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteMap(map.id); setOpen(false) }) }} className={`menu-item menu-item-danger${confirmDelete ? '' : ''}`} style={confirmDelete ? { color: 'var(--danger-hover)' } : undefined}>
+                <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
+              </button>
+            </>
           )}
-          <button onClick={() => { onMove(); setOpen(false) }} className="menu-item">
-            <ArrowRightLeft size={13} /> Move to session…
-          </button>
-          <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-          <button onClick={e => { e.stopPropagation(); triggerDelete(() => { deleteMap(map.id); setOpen(false) }) }} className={`menu-item menu-item-danger${confirmDelete ? '' : ''}`} style={confirmDelete ? { color: 'var(--danger-hover)' } : undefined}>
-            <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
-          </button>
         </div>
       )}
     </div>
@@ -283,8 +535,8 @@ function InWorldDateHeader({ session, readMode }: { session: Session; readMode: 
         padding: '0 14px', borderRight: '1px solid var(--border)',
         whiteSpace: 'nowrap', flexShrink: 0,
       }}>
-        <Clock size={11} color="#e88c3a" />
-        <span style={{ fontSize: 11, color: '#e88c3a', fontFamily: 'var(--font-ui)' }}>{dateLabel}</span>
+        <Clock size={11} color={TIMELINE_ACCENT} />
+        <span style={{ fontSize: 11, color: TIMELINE_ACCENT, fontFamily: 'var(--font-ui)' }}>{dateLabel}</span>
       </div>
     )
   }
@@ -298,11 +550,11 @@ function InWorldDateHeader({ session, readMode }: { session: Session; readMode: 
           display: 'flex', alignItems: 'center', gap: 6,
           padding: '0 14px', background: open ? 'var(--bg-active)' : 'transparent',
           border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 12,
-          color: dateLabel ? '#e88c3a' : 'var(--text-muted)',
+          color: dateLabel ? TIMELINE_ACCENT : 'var(--text-muted)',
           transition: 'all var(--transition)',
         }}
-        onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.color = '#e88c3a' }}
-        onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.color = dateLabel ? '#e88c3a' : 'var(--text-muted)' }}
+        onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.color = TIMELINE_ACCENT }}
+        onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.color = dateLabel ? TIMELINE_ACCENT : 'var(--text-muted)' }}
       >
         <Clock size={12} />
         {dateLabel ?? 'Set in-world date'}
@@ -427,7 +679,7 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
 export default function SessionPage() {
   const {
     currentSession, currentCampaign, setView, setCampaignSubView,
-    maps, currentMap, selectMap, importMap, createScene, reorderMaps, sessionReadMode, setSessionReadMode,
+    maps, currentMap, selectMap, importMap, createScene, reorderSessionTabs, sessionReadMode, setSessionReadMode,
     setHintContext,
   } = useStore()
 
@@ -436,6 +688,7 @@ export default function SessionPage() {
   const [importing, setImporting] = useState(false)
   const [editingMap, setEditingMap] = useState<GameMap | null>(null)
   const [movingMap, setMovingMap] = useState<GameMap | null>(null)
+  const [attachOpen, setAttachOpen] = useState(false)
   const [showNotes, setShowNotes] = useState(false)
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
@@ -449,7 +702,8 @@ export default function SessionPage() {
     const next = [...maps]
     const [moved] = next.splice(from, 1)
     next.splice(targetIndex, 0, moved)
-    reorderMaps(next.map((m, i) => ({ id: m.id, sort_order: i })))
+    // Owned and attached tabs share one order — persist the whole list.
+    reorderSessionTabs(next)
   }
 
   if (!currentSession) return null
@@ -533,6 +787,7 @@ export default function SessionPage() {
               onDragOver={e => { if (dragId === null) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropIndex(index) }}
               onDrop={e => { e.preventDefault(); handleTabDrop(index) }}
               onDragEnd={() => { setDragId(null); setDropIndex(null) }}
+              title={map.attached && map.article_title ? `${map.article_title} — attached from wiki` : undefined}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '0 10px 0 14px',
@@ -553,6 +808,7 @@ export default function SessionPage() {
             >
               {map.image_path ? <Map size={12} /> : <FileText size={12} />}
               <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{map.name}</span>
+              {!!map.attached && <Link2 size={10} style={{ color: SECTION_ACCENTS['wiki'], flexShrink: 0 }} />}
               {!sessionReadMode && (
                 <MapTabMenu
                   map={map}
@@ -583,6 +839,26 @@ export default function SessionPage() {
             >
               <Upload size={12} />
               {importing ? 'Importing…' : 'Import Map'}
+            </button>
+          )}
+
+          {/* Attach an article map for this session's visit */}
+          {!sessionReadMode && (
+            <button
+              onClick={() => setAttachOpen(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '0 14px',
+                background: 'transparent', border: 'none',
+                borderRight: '1px solid var(--border)',
+                color: 'var(--text-muted)', fontSize: 12,
+                cursor: 'pointer', transition: 'color var(--transition)',
+                whiteSpace: 'nowrap',
+                '--hover-accent': SECTION_ACCENTS['wiki'],
+              } as React.CSSProperties}
+              className="hover-accent"
+            >
+              <BookOpen size={12} /> From Wiki
             </button>
           )}
 
@@ -655,7 +931,10 @@ export default function SessionPage() {
           <SceneView key={currentMap.id} map={currentMap} readMode={sessionReadMode} />
         ) : (
           <StoreMapProvider>
-            <MapCanvas readMode={sessionReadMode} />
+            <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
+              <MapCanvas readMode={sessionReadMode} />
+              {currentMap?.attached ? <LayersControl map={currentMap} /> : null}
+            </div>
             <POIPanel readMode={sessionReadMode} />
           </StoreMapProvider>
         )}
@@ -663,6 +942,7 @@ export default function SessionPage() {
 
       {editingMap && <EditMapModal map={editingMap} onClose={() => setEditingMap(null)} />}
       {movingMap && <MoveMapModal map={movingMap} onClose={() => setMovingMap(null)} />}
+      {attachOpen && <AttachMapModal onClose={() => setAttachOpen(false)} />}
       {showNotes && currentSession && (
         <SessionNotesPanel session={currentSession} onClose={() => setShowNotes(false)} />
       )}

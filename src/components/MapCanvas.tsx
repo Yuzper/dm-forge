@@ -9,9 +9,12 @@ const MIN_SCALE = 0.2
 const MAX_SCALE = 8
 const ZOOM_SPEED = 0.001
 
-function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef }: {
+function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef, ghost }: {
   poi: POI; onSelect: (p: POI) => void; isSelected: boolean; editMode: boolean; scale: number
   imgBoundsRef: React.RefObject<{ left: number; top: number; w: number; h: number } | null>
+  // Ghost markers come from another visit layer: shown dimmed for reference,
+  // hoverable for the label but not selectable or draggable.
+  ghost?: boolean
 }) {
   const { updatePOI, optimisticMovePOI } = useMapContext()
   const [showLabel, setShowLabel] = useState(false)
@@ -33,7 +36,7 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef }:
   const color = getPoiColor(poi.poi_type)
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!editMode) return
+    if (!editMode || ghost) return
     e.stopPropagation()
     e.preventDefault()
 
@@ -85,6 +88,7 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef }:
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (ghost) return
     if (!hasDragged.current) onSelect(poi)
     hasDragged.current = false
   }
@@ -101,8 +105,9 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef }:
         left: `${poi.x}%`,
         top: `${poi.y}%`,
         transform: `translate(-50%, -50%) scale(${1 / scale})`,
-        zIndex: isSelected ? 20 : 10,
-        cursor: editMode ? 'grab' : 'pointer',
+        zIndex: ghost ? 5 : isSelected ? 20 : 10,
+        cursor: ghost ? 'default' : editMode ? 'grab' : 'pointer',
+        opacity: ghost ? 0.45 : 1,
       }}
     >
       <div style={{
@@ -144,8 +149,17 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef }:
 }
 
 export default function MapCanvas({ readMode }: { readMode?: boolean }) {
-  const { currentMap, pois, selectedPOI, selectPOI, createPOI } = useMapContext()
+  const { currentMap, pois, selectedPOI, selectPOI, createPOI, activeLayerId, ghostLayerIds, showBaseLayer } = useMapContext()
   const editMode = !readMode
+
+  // Visit-layer visibility: the active layer is live; base POIs (layer_id
+  // null) are live only while the base layer is shown (hidden by default on
+  // attached maps); toggled layers render as ghosts; the rest stay hidden.
+  const active = activeLayerId ?? null
+  const ghosts = ghostLayerIds ?? []
+  const showBase = showBaseLayer ?? true
+  const livePois = pois.filter(p => p.layer_id == null ? showBase : p.layer_id === active)
+  const ghostPois = pois.filter(p => p.layer_id != null && p.layer_id !== active && ghosts.includes(p.layer_id))
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imageLoaded, setImageLoaded] = useState(false)
 
@@ -393,7 +407,19 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
 
           {imageLoaded && imgBounds && (
             <div style={{ position: 'absolute', left: imgBounds.left, top: imgBounds.top, width: imgBounds.w, height: imgBounds.h }}>
-              {pois.map(poi => (
+              {ghostPois.map(poi => (
+                <POIMarker
+                  key={poi.id}
+                  poi={poi}
+                  onSelect={selectPOI}
+                  isSelected={false}
+                  editMode={false}
+                  scale={scale}
+                  imgBoundsRef={imgBoundsRef}
+                  ghost
+                />
+              ))}
+              {livePois.map(poi => (
                 <POIMarker
                   key={poi.id}
                   poi={poi}

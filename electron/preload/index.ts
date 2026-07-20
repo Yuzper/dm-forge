@@ -31,12 +31,24 @@ contextBridge.exposeInMainWorld('api', {
   createMap:          (data: any)          => ipcRenderer.invoke('maps:create', data),
   updateMap:          (id: number, data: any) => ipcRenderer.invoke('maps:update', id, data),
   reorderMaps:        (orders: { id: number; sort_order: number }[]) => ipcRenderer.invoke('maps:reorder', orders),
+  reorderSessionTabs: (sessionId: number, items: { map_id: number; attached: boolean; sort_order: number }[]) =>
+                        ipcRenderer.invoke('maps:reorder-tabs', sessionId, items),
   deleteMap:          (id: number)         => ipcRenderer.invoke('maps:delete', id),
   importMapImage:     (sessionId: number)  => ipcRenderer.invoke('maps:import-image', sessionId),
   replaceMapImage:    (...args)            => ipcRenderer.invoke('maps:replace-image', ...args),
   importMapForArticle:(articleId: number)  => ipcRenderer.invoke('maps:import-for-article', articleId),
   getMapsForCampaign:   (campaignId: number) => ipcRenderer.invoke('maps:get-by-campaign', campaignId),
   importMapForCampaign: (campaignId: number) => ipcRenderer.invoke('maps:import-for-campaign', campaignId),
+
+  // Visit layers & session attachments (article maps used in sessions)
+  getAttachableMaps:   (campaignId: number) => ipcRenderer.invoke('maps:get-attachable', campaignId),
+  getMapLayers:        (mapId: number)      => ipcRenderer.invoke('maps:get-layers', mapId),
+  attachMapToSession:  (sessionId: number, mapId: number, layerId: number | null) =>
+                         ipcRenderer.invoke('maps:attach-to-session', sessionId, mapId, layerId),
+  detachMapFromSession:(sessionId: number, mapId: number) =>
+                         ipcRenderer.invoke('maps:detach-from-session', sessionId, mapId),
+  updateMapLayer:      (layerId: number, data: { name?: string }) => ipcRenderer.invoke('maps:update-layer', layerId, data),
+  deleteMapLayer:      (layerId: number)    => ipcRenderer.invoke('maps:delete-layer', layerId),
 
   // POIs
   getPOIs:         (mapId: number) => ipcRenderer.invoke('pois:get-all', mapId),

@@ -1,19 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Map, Upload, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Pencil, Trash2, History, Eye, EyeOff } from 'lucide-react'
 import { MapContext } from '../context/MapContext'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
-import type { GameMap, POI } from '../types'
+import type { GameMap, MapLayer, POI } from '../types'
 import type { MapContextValue } from '../context/MapContext'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
+import { useMenuClose } from '../hooks/useMenuClose'
+import { layerLabel } from '../utils/visitLayers'
+import Modal from './Modal'
 
 // ── Small inline rename modal (mirrors MapTabMenu in SessionPage) ─────────────
 function RenameMapModal({ map, onSave, onClose }: { map: GameMap; onSave: (name: string) => void; onClose: () => void }) {
   const [name, setName] = useState(map.name)
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Rename Map</div>
+    <Modal title="Rename Map" onClose={onClose}>
         <div className="input-group">
           <label className="input-label">Map Name</label>
           <input className="input" value={name} onChange={e => setName(e.target.value)}
@@ -23,8 +24,7 @@ function RenameMapModal({ map, onSave, onClose }: { map: GameMap; onSave: (name:
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={() => onSave(name.trim())} disabled={!name.trim()}>Save</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -99,6 +99,22 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
   const [poiPanelOpen, setPoiPanelOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [renamingMap, setRenamingMap] = useState<GameMap | null>(null)
+  // Visit history: session layers on this map, shown ghosted when toggled on.
+  // The article itself always edits the base layer.
+  const [layers, setLayers] = useState<MapLayer[]>([])
+  const [ghostLayerIds, setGhostLayerIds] = useState<number[]>([])
+  const [visitsOpen, setVisitsOpen] = useState(false)
+  const [renamingLayer, setRenamingLayer] = useState<{ id: number; draft: string } | null>(null)
+  const visitsRef = useRef<HTMLDivElement>(null)
+  useMenuClose(visitsOpen, visitsRef, setVisitsOpen)
+
+  const saveLayerName = async () => {
+    if (!renamingLayer) return
+    const name = renamingLayer.draft.trim()
+    await window.api.updateMapLayer(renamingLayer.id, { name })
+    setLayers(prev => prev.map(l => l.id === renamingLayer.id ? { ...l, name } : l))
+    setRenamingLayer(null)
+  }
 
   const editMode = !readMode
 
@@ -106,6 +122,8 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
   const loadPOIs = useCallback(async (mapId: number) => {
     const p = await window.api.getPOIs(mapId)
     setPois(p)
+    setGhostLayerIds([])
+    window.api.getMapLayers(mapId).then(setLayers)
   }, [])
 
   useEffect(() => {
@@ -204,6 +222,7 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
   // ── Build context value ────────────────────────────────────────────────────
   const ctxValue: MapContextValue = {
     currentMap, pois, selectedPOI, poiPanelOpen, editMode,
+    activeLayerId: null, ghostLayerIds,
     selectPOI, createPOI, updatePOI, deletePOI, optimisticMovePOI,
   }
 
@@ -280,6 +299,87 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
             <Upload size={11} />
             {importing ? 'Importing…' : maps.length === 0 ? 'Import Map Image' : 'Add Map'}
           </button>
+        )}
+
+        {/* Visit history — sessions that ran this map; toggle their POI layers */}
+        {currentMap && layers.length > 0 && (
+          <div ref={visitsRef} style={{ position: 'relative', marginLeft: 'auto', display: 'flex' }}>
+            <button
+              onClick={() => setVisitsOpen(v => !v)}
+              title="Session visits to this map"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '0 12px', background: 'transparent', border: 'none',
+                borderLeft: '1px solid var(--border)', height: 36,
+                color: visitsOpen || ghostLayerIds.length > 0 ? 'var(--gold)' : 'var(--text-muted)',
+                fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+                transition: 'color var(--transition)',
+              }}
+              className={visitsOpen ? '' : 'hover-gold'}
+            >
+              <History size={12} /> Visits ({layers.length})
+            </button>
+            {visitsOpen && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 4px)', right: 0, minWidth: 210,
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+                borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)',
+                padding: '6px 0', zIndex: 60,
+              }}>
+                <div style={{ padding: '2px 12px 6px', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Show visit POIs (ghosted)
+                </div>
+                {layers.map(l => {
+                  const on = ghostLayerIds.includes(l.id)
+                  if (renamingLayer?.id === l.id) {
+                    return (
+                      <div key={l.id} style={{ padding: '3px 12px' }}>
+                        <input
+                          className="input" autoFocus value={renamingLayer.draft}
+                          placeholder={layerLabel({ ...l, name: '' })}
+                          onChange={e => setRenamingLayer({ id: l.id, draft: e.target.value })}
+                          onBlur={saveLayerName}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') saveLayerName()
+                            if (e.key === 'Escape') setRenamingLayer(null)
+                          }}
+                          style={{ fontSize: 12, padding: '3px 8px' }}
+                        />
+                      </div>
+                    )
+                  }
+                  return (
+                    <div key={l.id} style={{ display: 'flex', alignItems: 'center' }}>
+                      <button
+                        onClick={() => setGhostLayerIds(ids => on ? ids.filter(id => id !== l.id) : [...ids, l.id])}
+                        style={{
+                          flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0 5px 12px',
+                          background: 'none', border: 'none', cursor: 'pointer', fontSize: 12,
+                          color: on ? 'var(--text-primary)' : 'var(--text-muted)', textAlign: 'left', minWidth: 0,
+                        }}
+                        className="hover-bg"
+                      >
+                        {on ? <Eye size={12} style={{ flexShrink: 0 }} /> : <EyeOff size={12} style={{ flexShrink: 0 }} />}
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{layerLabel(l)}</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{l.poi_count ?? 0}</span>
+                      </button>
+                      <button
+                        onClick={() => setRenamingLayer({ id: l.id, draft: l.name })}
+                        title="Rename visit"
+                        style={{
+                          background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)',
+                          display: 'flex', padding: '5px 12px 5px 6px', flexShrink: 0, transition: 'color var(--transition)',
+                        }}
+                        className="hover-text"
+                      >
+                        <Pencil size={11} />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )}
       </div>
 

@@ -10,7 +10,8 @@ export function registerSessionIPC() {
     return db.prepare(`
       SELECT s.*,
         COUNT(CASE WHEN m.image_path <> '' THEN 1 END) as map_count,
-        COUNT(CASE WHEN m.image_path =  '' THEN 1 END) as scene_count
+        COUNT(CASE WHEN m.image_path =  '' THEN 1 END) as scene_count,
+        (SELECT COUNT(*) FROM session_maps sm WHERE sm.session_id = s.id) as attached_count
       FROM sessions s
       LEFT JOIN maps m ON m.session_id = s.id
       WHERE s.campaign_id = ?

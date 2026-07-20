@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../store/store'
 import { useMapContext } from '../context/MapContext'
-import { X, PackageOpen, BookOpen, Plus } from 'lucide-react'
+import { X, PackageOpen, BookOpen, Plus, Landmark, Pin } from 'lucide-react'
 import LootTableView from './LootTableView'
 import { POI_TYPE_LIST } from '../constants/POITypes'
 import RichEditor from './RichEditor'
@@ -23,7 +23,7 @@ const POI_TO_ARTICLE_TYPE: Partial<Record<string, string>> = {
 }
 
 export default function POIPanel({ readMode }: { readMode?: boolean }) {
-  const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI } = useMapContext()
+  const { selectedPOI, poiPanelOpen, selectPOI, updatePOI, deletePOI, currentMap } = useMapContext()
   const { articles, navigateToArticleByTitle, currentCampaign } = useStore()
 
   const [label, setLabel] = useState('')
@@ -194,6 +194,46 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
           </div>
         </div>
       )}
+
+      {/* Layer badge — only meaningful on attached wiki maps */}
+      {currentMap?.attached ? (
+        <div style={{
+          padding: '7px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0,
+          display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, color: 'var(--text-muted)',
+        }}>
+          {selectedPOI.layer_id == null ? (
+            <>
+              <Landmark size={11} style={{ color: 'var(--gold-dim)', flexShrink: 0 }} />
+              <span>Place POI — part of {currentMap.article_title ?? 'the location'}, shown on every visit</span>
+            </>
+          ) : (
+            <>
+              <Pin size={11} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>This visit's POI</span>
+              {!readMode && (
+                <button
+                  onClick={() => {
+                    updatePOI(selectedPOI.id, { layer_id: null })
+                    // Reveal the base layer so the freshly pinned POI doesn't vanish.
+                    const s = useStore.getState()
+                    if (!s.showBaseLayer) s.toggleBaseLayer()
+                  }}
+                  title="Move to the place's base layer so it shows on every visit"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4, background: 'none',
+                    border: '1px solid var(--border-light)', borderRadius: 99,
+                    padding: '2px 9px', fontSize: 10, color: 'var(--text-muted)',
+                    cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0,
+                  }}
+                  className="hover-gold-border"
+                >
+                  <Landmark size={10} /> Pin to place
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      ) : null}
 
       {/* Scrollable content area */}
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>

@@ -45,11 +45,35 @@ export interface GameMap {
   sort_order: number
   created_at: string
   poi_count?: number
+  // Present when the map is an article map attached to a session: the visit
+  // layer this session runs, and the owning article's title for the tab badge.
+  attached?: number           // 1 when attached (vs owned) in a session listing
+  layer_id?: number | null
+  article_title?: string | null
+}
+
+// A visit layer on a map: the POIs made for one visit to the location (which
+// may span several sessions). POIs with layer_id NULL form the base layer.
+export interface MapLayer {
+  id: number
+  map_id: number
+  name: string
+  created_at: string
+  poi_count?: number
+  sessions?: { session_id: number; session_number: number; session_sub: string; name: string; is_draft: number }[]
+}
+
+// Attachable article map in the "attach from wiki" picker.
+export interface AttachableMap extends GameMap {
+  article_title: string
+  layers: MapLayer[]
 }
 
 export interface POI {
   id: number
   map_id: number
+  layer_id: number | null  // null = base layer (place feature); set = visit layer
+
   hub_links: string   // JSON: HubLink[]
   hub_size: number    // marker diameter in px on the hub map
   hub_opacity: number // marker opacity 0–1 on the hub map
@@ -438,6 +462,7 @@ export interface CreateMapInput {
 
 export interface CreatePOIInput {
   map_id: number
+  layer_id?: number | null
   label: string
   x: number
   y: number
@@ -508,11 +533,19 @@ export interface ElectronAPI {
   createMap:          (data: CreateMapInput)       => Promise<GameMap>
   updateMap:          (id: number, data: Partial<CreateMapInput>) => Promise<GameMap>
   reorderMaps:        (orders: { id: number; sort_order: number }[]) => Promise<void>
+  reorderSessionTabs: (sessionId: number, items: { map_id: number; attached: boolean; sort_order: number }[]) => Promise<void>
   deleteMap:          (id: number)                 => Promise<void>
   importMapImage:     (sessionId: number)          => Promise<{ path: string; name: string } | null>
   importMapForArticle:(articleId: number)          => Promise<{ path: string; name: string } | null>
   getMapsForCampaign:   (campaignId: number) => Promise<GameMap[]>
   importMapForCampaign: (campaignId: number) => Promise<{ path: string; name: string } | null>
+
+  getAttachableMaps:    (campaignId: number) => Promise<AttachableMap[]>
+  getMapLayers:         (mapId: number)      => Promise<MapLayer[]>
+  attachMapToSession:   (sessionId: number, mapId: number, layerId: number | null) => Promise<GameMap>
+  detachMapFromSession: (sessionId: number, mapId: number) => Promise<void>
+  updateMapLayer:       (layerId: number, data: { name?: string }) => Promise<MapLayer>
+  deleteMapLayer:       (layerId: number)    => Promise<void>
 
   getPOIs:         (mapId: number)                 => Promise<POI[]>
   createPOI:       (data: CreatePOIInput)          => Promise<POI>

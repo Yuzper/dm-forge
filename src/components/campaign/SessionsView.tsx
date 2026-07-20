@@ -10,55 +10,40 @@ import {
 import type { Session, Arc } from '../../types'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import { useMenuClose } from '../../hooks/useMenuClose'
-import { parseDay } from '../../utils/dates'
+import { parseDay, todayISO } from '../../utils/dates'
+import { richTextToPlain } from '../../utils/richText'
 import Modal from '../Modal'
 import EmptyState from '../EmptyState'
 import { InWorldDatePicker } from '../InWorldDatePicker'
+import SwatchPicker from '../SwatchPicker'
+import { STANDARD_PALETTE } from '../../constants/palettes'
 
 // Extend Session with in_world_day / in_world_day_end which exist in DB but not the shared type yet
 type SessionExt = Session & { in_world_day?: number | null; in_world_day_end?: number | null }
 
-// Tab-count label: image maps and mapless scenes counted separately, e.g.
-// "2 maps · 1 scene", "1 map", "3 scenes", or "No maps" when empty.
+// Tab-count label: image maps, mapless scenes and wiki-attached maps counted
+// separately, e.g. "2 maps · 1 scene · 1 linked", or "No maps" when empty.
 function mapCountLabel(session: any): string {
   const maps = session.map_count ?? 0
   const scenes = session.scene_count ?? 0
+  const attached = session.attached_count ?? 0
   const parts: string[] = []
   if (maps > 0) parts.push(`${maps} map${maps !== 1 ? 's' : ''}`)
   if (scenes > 0) parts.push(`${scenes} scene${scenes !== 1 ? 's' : ''}`)
+  if (attached > 0) parts.push(`${attached} linked`)
   return parts.length > 0 ? parts.join(' · ') : 'No maps'
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const ARC_COLORS = [
-  '#c8a84b', '#7aeada', '#2eb370', '#5b9fe8', '#1323cf', '#ce21dd',
-  '#f41111', '#e88c3a', '#8a2e2e', '#8a8a8a', '#6013be', '#e0e0e0',
-]
-function extractAllText(json: string): string {
-  try {
-    const walk = (node: any): string => node.type === 'text' ? (node.text ?? '') : (node.content ?? []).map(walk).join(' ')
-    return walk(JSON.parse(json)).replace(/\s+/g, ' ').trim().toLowerCase()
-  } catch { return '' }
-}
-// ── ColorPicker ────────────────────────────────────────────────────────────────
-
-function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
-  return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-      {ARC_COLORS.map(c => (
-        <button key={c} onClick={() => onChange(c)} style={{ width: 22, height: 22, borderRadius: '50%', background: c, padding: 0, border: `2px solid ${value === c ? 'var(--text-primary)' : 'transparent'}`, cursor: 'pointer', transition: 'border 120ms ease' }} />
-      ))}
-    </div>
-  )
-}
+const extractAllText = (json: string) => richTextToPlain(json).toLowerCase()
 
 // ── Arc Modals ─────────────────────────────────────────────────────────────────
 
 function CreateArcModal({ onClose }: { onClose: () => void }) {
   const { createArc } = useStore()
   const [name, setName] = useState('')
-  const [color, setColor] = useState(ARC_COLORS[0])
+  const [color, setColor] = useState(STANDARD_PALETTE[2])
   const [saving, setSaving] = useState(false)
   const handleSubmit = async () => {
     if (!name.trim()) return; setSaving(true)
@@ -74,7 +59,7 @@ function CreateArcModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="input-group">
           <label className="input-label">Colour</label>
-          <ColorPicker value={color} onChange={setColor} />
+          <SwatchPicker value={color} onChange={setColor} />
         </div>
       </div>
       <div className="modal-actions">
@@ -105,7 +90,7 @@ function EditArcModal({ arc, onClose }: { arc: Arc; onClose: () => void }) {
         </div>
         <div className="input-group">
           <label className="input-label">Colour</label>
-          <ColorPicker value={color} onChange={setColor} />
+          <SwatchPicker value={color} onChange={setColor} />
         </div>
       </div>
       <div className="modal-actions">
@@ -238,9 +223,8 @@ function SessionRow({ session, arc }: { session: Session; arc: Arc }) {
     <>
       <div
         onClick={() => selectSession(session)}
-        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', cursor: 'pointer', transition: 'all 120ms ease', position: 'relative' }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = arc.color; (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)' }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', cursor: 'pointer', transition: 'all 120ms ease', position: 'relative', '--hover-accent': arc.color } as React.CSSProperties}
+        className="hover-border-accent hover-bg-elevated"
       >
         <div style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', background: `${arc.color}18`, border: `1px solid ${arc.color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <Scroll size={13} color={arc.color} />
@@ -380,9 +364,8 @@ function ArcSection({ arc, sessions, sortAsc, onAddSession, dragEnabled = false,
             </div>
           ) : sorted.map(s => <SessionRow key={s.id} session={s} arc={arc} />)}
           <button onClick={() => onAddSession(arc.id)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'none', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', transition: 'all 120ms ease' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = arc.color; (e.currentTarget as HTMLElement).style.color = arc.color }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'none', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', transition: 'all 120ms ease', '--hover-accent': arc.color } as React.CSSProperties}
+            className="hover-accent-border">
             <Plus size={11} /> Add session to {arc.name}
           </button>
         </div>
@@ -408,7 +391,8 @@ function CreateSessionModal({ defaultArcId, onClose, draft = false }: { defaultA
     if (lastArc && arcs.some(a => a.id === lastArc)) return lastArc
     return arcs.find(a => a.is_default)?.id ?? arcs[0]?.id ?? null
   })
-  const [date, setDate] = useState('')
+  // Defaults to today — sessions are usually created the day they're played.
+  const [date, setDate] = useState(todayISO)
   const [saving, setSaving] = useState(false)
 
   const handleSubmit = async () => {
@@ -513,9 +497,9 @@ function DraftRow({ session, index, dragId, dropIndex, onDragStart, onDragOver, 
           borderTop: isDropTarget ? '2px solid var(--gold)' : '1px solid var(--border)',
           borderRadius: 'var(--radius)', cursor: 'grab', position: 'relative',
           opacity: dragId === session.id ? 0.4 : 1, transition: 'opacity 120ms ease, border-color 120ms ease',
-        }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = color }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)' }}
+          '--hover-accent': color,
+        } as React.CSSProperties}
+        className="hover-border-accent"
       >
         <GripVertical size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />

@@ -373,6 +373,12 @@ function importOneCampaign(
         }))
       }
 
+      const layerMap = new Map<number, number>()
+      for (const r of all('map_layers')) {
+        const mapId = mapMap.get(r.map_id)
+        if (mapId != null) layerMap.set(r.id, insertRow('map_layers', { ...r, map_id: mapId }))
+      }
+
       const remapHubLinks = (raw: string): string => {
         try {
           const links = JSON.parse(raw || '[]')
@@ -391,10 +397,21 @@ function importOneCampaign(
         poiMap.set(r.id, insertRow('pois', {
           ...r,
           map_id: mapId,
+          layer_id: r.layer_id != null ? layerMap.get(r.layer_id) ?? null : null,
           loot_table_id: remapLoot(r.loot_table_id),
           hub_links: remapHubLinks(r.hub_links),
           content: rewriteDocImagePaths(r.content, imagesDir),
         }))
+      }
+
+      // Session↔map visit links — all three ends must have remapped.
+      for (const r of all('session_maps')) {
+        const sid = sessionMap.get(r.session_id)
+        const mid = mapMap.get(r.map_id)
+        const lid = layerMap.get(r.layer_id)
+        if (sid != null && mid != null && lid != null) {
+          insertRow('session_maps', { ...r, session_id: sid, map_id: mid, layer_id: lid })
+        }
       }
 
       const encMap = new Map<number, number>()

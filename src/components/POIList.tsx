@@ -42,16 +42,64 @@ function POIListItem({ poi, isSelected }: { poi: POI; isSelected: boolean }) {
   )
 }
 
+// The type-grouped list body, reused for the base-layer and visit sections.
+function TypeGroups({ pois, selectedPOI }: { pois: POI[]; selectedPOI: POI | null }) {
+  return (
+    <>
+      {TYPE_ORDER.map(type => {
+        const group = pois.filter(p => p.poi_type === type)
+        if (group.length === 0) return null
+        const color = getPoiColor(type)
+        const Icon = getPoiIcon(type)
+        return (
+          <div key={type}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '8px 12px 4px',
+              fontSize: 10, fontWeight: 700, color: 'var(--text-muted)',
+              textTransform: 'uppercase', letterSpacing: '0.1em',
+            }}>
+              <Icon size={9} color={color} />
+              <span style={{ color }}>{type}</span>
+              <span style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>{group.length}</span>
+            </div>
+            {group.map(poi => (
+              <POIListItem key={poi.id} poi={poi} isSelected={selectedPOI?.id === poi.id} />
+            ))}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+function SectionLabel({ children, first }: { children: React.ReactNode; first?: boolean }) {
+  return (
+    <div style={{
+      padding: '9px 12px 3px', fontSize: 10, fontWeight: 700,
+      color: 'var(--gold-dim)', textTransform: 'uppercase', letterSpacing: '0.1em',
+      borderTop: first ? 'none' : '1px solid var(--border)',
+      marginTop: first ? 0 : 4,
+    }}>
+      {children}
+    </div>
+  )
+}
+
 export default function POIList() {
-  const { pois, selectedPOI, editMode } = useMapContext()
+  const { pois, selectedPOI, editMode, currentMap, activeLayerId, showBaseLayer } = useMapContext()
 
-  const grouped = TYPE_ORDER.reduce<Record<string, POI[]>>((acc, type) => {
-    const group = pois.filter(p => p.poi_type === type)
-    if (group.length > 0) acc[type] = group
-    return acc
-  }, {})
+  // On an attached article map, split the sidebar into the place's permanent
+  // POIs (base layer, only while shown) and this visit's POIs. Hidden layers
+  // don't show here.
+  const active = activeLayerId ?? null
+  const attached = !!currentMap?.attached
+  const showBase = showBaseLayer ?? true
+  const visible = pois.filter(p => p.layer_id == null ? showBase : p.layer_id === active)
+  const basePois = visible.filter(p => p.layer_id == null)
+  const visitPois = visible.filter(p => p.layer_id != null)
 
-  const hasGroups = Object.keys(grouped).length > 0
+  const hasGroups = visible.length > 0
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
@@ -66,13 +114,13 @@ export default function POIList() {
         </span>
         <span style={{
           fontSize: 11,
-          color: pois.length > 0 ? 'var(--gold-dim)' : 'var(--text-muted)',
+          color: visible.length > 0 ? 'var(--gold-dim)' : 'var(--text-muted)',
           fontWeight: 600,
-          background: pois.length > 0 ? 'var(--gold-glow)' : 'transparent',
+          background: visible.length > 0 ? 'var(--gold-glow)' : 'transparent',
           padding: '1px 6px', borderRadius: 99,
-          border: pois.length > 0 ? '1px solid var(--border-gold)' : 'none',
+          border: visible.length > 0 ? '1px solid var(--border-gold)' : 'none',
         }}>
-          {pois.length}
+          {visible.length}
         </span>
       </div>
 
@@ -97,30 +145,21 @@ export default function POIList() {
               </>
             )}
           </div>
+        ) : attached ? (
+          <>
+            {basePois.length > 0 && (
+              <>
+                <SectionLabel first>Place</SectionLabel>
+                <TypeGroups pois={basePois} selectedPOI={selectedPOI} />
+              </>
+            )}
+            <SectionLabel first={basePois.length === 0}>This visit</SectionLabel>
+            {visitPois.length > 0
+              ? <TypeGroups pois={visitPois} selectedPOI={selectedPOI} />
+              : <div style={{ padding: '6px 12px 10px', fontSize: 11, color: 'var(--text-muted)' }}>No POIs this visit yet</div>}
+          </>
         ) : (
-          TYPE_ORDER.map(type => {
-            const group = grouped[type]
-            if (!group) return null
-            const color = getPoiColor(type)
-            const Icon = getPoiIcon(type)
-            return (
-              <div key={type}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '8px 12px 4px',
-                  fontSize: 10, fontWeight: 700, color: 'var(--text-muted)',
-                  textTransform: 'uppercase', letterSpacing: '0.1em',
-                }}>
-                  <Icon size={9} color={color} />
-                  <span style={{ color }}>{type}</span>
-                  <span style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>{group.length}</span>
-                </div>
-                {group.map(poi => (
-                  <POIListItem key={poi.id} poi={poi} isSelected={selectedPOI?.id === poi.id} />
-                ))}
-              </div>
-            )
-          })
+          <TypeGroups pois={visible} selectedPOI={selectedPOI} />
         )}
       </div>
 
