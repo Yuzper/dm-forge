@@ -74,9 +74,9 @@ export function RelationWebPreview({ webId, webName, onOpen }: {
         cursor: 'pointer', background: 'var(--bg-elevated)',
         height: PREVIEW_H,
         transition: 'border-color 120ms ease',
-      }}
-      onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#7F77DD88'}
-      onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'}
+        '--hover-accent': '#7F77DD88',
+      } as React.CSSProperties}
+      className="hover-border-accent"
     >
       {/* Label */}
       <div style={{

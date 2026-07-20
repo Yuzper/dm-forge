@@ -7,3 +7,6 @@ Needs: a small party-config (level/size) somewhere, the 5e XP-budget + multiplie
 Medium. Mostly additive, one new config concept.
 Needs a "Unaccounted for" list with creatures with no XP value. The config should be pr session since player amount can differ. Add a disclaimer something like "Remember the dice introduce randomness so an encounter might be more or less difficult than the expected classification."
 
+
+Remember for presentation:
+ - Article Locaitons Maps live here, origin of truth.

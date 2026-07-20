@@ -165,15 +165,13 @@ function DeleteCampaignModal({ campaign, onClose }: { campaign: Campaign; onClos
   }
 
   return (
-    <div className="modal-overlay">
-      <div className="modal">
-        <div className="modal-title" style={{ color: '#e05555' }}>Delete Campaign</div>
+    <Modal title="Delete Campaign" titleStyle={{ color: 'var(--danger)' }}>
         <p style={{ fontSize: 14, fontFamily: 'var(--font-ui)', color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.6 }}>
           This will permanently delete <strong style={{ color: 'var(--text-primary)' }}>{campaign.name}</strong> and all its sessions, maps, POIs and wiki articles. This cannot be undone.
         </p>
         <div className="input-group">
           <label className="input-label">
-            Type <strong style={{ color: '#e05555', letterSpacing: '0.05em' }}>{required}</strong> to confirm
+            Type <strong style={{ color: 'var(--danger)', letterSpacing: '0.05em' }}>{required}</strong> to confirm
           </label>
           <input
             className="input"
@@ -196,8 +194,7 @@ function DeleteCampaignModal({ campaign, onClose }: { campaign: Campaign; onClos
             {deleting ? 'Deleting…' : 'Delete Campaign'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

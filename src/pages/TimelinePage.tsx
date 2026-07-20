@@ -12,9 +12,17 @@ import {
   isYearMode, dayToWorldYear, worldYearToDay, computeBins,
   makePageAxisGeo,
   type CampaignCalendar, getCampaignCalendar,
-  yearLength, dayToCalendarDate, formatCalendarDay, spanLabel,
+  yearLength, dayToCalendarDate, formatCalendarDay,
   type TimelineEventItem, type ClusterItem, type SessionRenderItem, type BinChip, type Era,
 } from '../utils/timelineGeometry'
+
+import { SECTION_ACCENTS } from '../constants/sections'
+import { TimelineFilterPanel as FilterPanel, DEFAULT_TIMELINE_FILTERS as DEFAULT_FILTERS, type TimelineFilters } from '../components/TimelineFilterPanel'
+import Modal from '../components/Modal'
+import { ColorDotPicker } from '../components/SwatchPicker'
+
+// Section accent used for timeline UI chrome on this page.
+const ACCENT = SECTION_ACCENTS['timeline']
 
 // ── Layout constants ───────────────────────────────────────────────────────────
 
@@ -33,11 +41,6 @@ const DEFAULT_DAY_ZOOM = 4
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface TimelineFilters {
-  sessions: boolean; events: boolean; deaths: boolean
-  quests: boolean; articles: boolean; eras: boolean
-}
-const DEFAULT_FILTERS: TimelineFilters = { sessions: true, events: true, deaths: true, quests: true, articles: true, eras: true }
 
 function loadFilters(id: number): TimelineFilters {
   try { const s = localStorage.getItem(`timeline-filters-${id}`); if (s) return { ...DEFAULT_FILTERS, ...JSON.parse(s) } } catch {}
@@ -54,39 +57,7 @@ function parseEras(raw: any): Era[] {
 interface BinTooltip { label: string; syCount: number; evCount: number; items: { title: string; kind: string }[]; x: number; y: number; nextZoom: ZoomLevel }
 interface DayTooltip { items: ClusterItem[]; x: number; y: number }
 
-// ── Filter Panel ───────────────────────────────────────────────────────────────
-
-function FilterPanel({ filters, onChange, onClose }: {
-  filters: TimelineFilters; onChange: (f: TimelineFilters) => void; onClose: () => void
-}) {
-  const ROWS = [
-    { key: 'sessions' as const, label: 'Sessions', color: 'var(--gold)', icon: '○' },
-    { key: 'events'   as const, label: 'Events',   color: '#e05555',    icon: '◆' },
-    { key: 'deaths'   as const, label: 'Deaths',   color: '#9b7de8',    icon: '☠' },
-    { key: 'quests'   as const, label: 'Quests',   color: '#5b9fe8',    icon: '◆' },
-    { key: 'articles' as const, label: 'Other articles', color: '#8a8a8a', icon: '◆' },
-    { key: 'eras'     as const, label: 'Era bands', color: '#c8a84b',  icon: '▭' },
-  ]
-  return (
-    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 200, zIndex: 100, overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 6px', borderBottom: '1px solid var(--border)' }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Show on timeline</span>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}><X size={13} /></button>
-      </div>
-      {ROWS.map(row => (
-        <button key={row.key} onClick={() => onChange({ ...filters, [row.key]: !filters[row.key] })}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)', textAlign: 'left', transition: 'background 80ms' }}
-          className="hover-bg">
-          <div style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${filters[row.key] ? row.color : 'var(--border)'}`, background: filters[row.key] ? row.color : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 120ms' }}>
-            {filters[row.key] && <span style={{ fontSize: 9, color: '#000', fontWeight: 700 }}>✓</span>}
-          </div>
-          <span style={{ color: row.color, fontSize: 13, marginRight: 2 }}>{row.icon}</span>
-          {row.label}
-        </button>
-      ))}
-    </div>
-  )
-}
+// Filter panel shared with the hub embed — see components/TimelineFilterPanel.
 
 // ── Timeline Settings Modal (calendar + era bands) ───────────────────────────────
 
@@ -130,9 +101,7 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
   const removeEra = (id: string) => setList(l => l.filter(e => e.id !== id))
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 540, maxHeight: '86vh', overflowY: 'auto' }}>
-        <div className="modal-title">Timeline settings</div>
+    <Modal title="Timeline settings" onClose={onClose} style={{ maxWidth: 540, maxHeight: '86vh', overflowY: 'auto' }}>
 
         {/* ── Calendar ─────────────────────────────────────────────────────── */}
         <div className="input-group">
@@ -194,8 +163,7 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
             {list.map(era => (
               <div key={era.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <input type="color" value={era.color} onChange={e => updateEra(era.id, { color: e.target.value })}
-                  title="Band color" style={{ width: 28, height: 28, padding: 0, border: '1px solid var(--border-light)', borderRadius: 4, background: 'none', cursor: 'pointer', flexShrink: 0 }} />
+                <ColorDotPicker value={era.color} onChange={c => updateEra(era.id, { color: c })} size={24} title="Band colour" />
                 <input className="input" value={era.name} onChange={e => updateEra(era.id, { name: e.target.value })} placeholder="Era name" style={{ flex: 1, minWidth: 0 }} />
                 <input className="input" type="number" value={era.startYear} onChange={e => updateEra(era.id, { startYear: parseInt(e.target.value) || 0 })} title="Start year" style={{ width: 74, flexShrink: 0 }} />
                 <span style={{ color: 'var(--text-muted)' }}>–</span>
@@ -204,7 +172,7 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
               </div>
             ))}
           </div>
-          {list.some(e => e.endYear <= e.startYear) && <div style={{ fontSize: 11, color: '#e88c3a', marginTop: 6 }}>Eras with end ≤ start year will be skipped.</div>}
+          {list.some(e => e.endYear <= e.startYear) && <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 6 }}>Eras with end ≤ start year will be skipped.</div>}
         </div>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 18, cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)' }}>
@@ -217,8 +185,7 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={() => onSave(buildCalendar(), list.filter(e => e.endYear > e.startYear), lifespansOn)}>Save</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -242,9 +209,7 @@ function CreateEventModal({ onClose, onCreated, baseYear, initialDateRaw }: { on
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 420 }}>
-        <div className="modal-title">New timeline event</div>
+    <Modal title="New timeline event" onClose={onClose} style={{ maxWidth: 420 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="input-group">
             <label className="input-label">Title</label>
@@ -261,8 +226,7 @@ function CreateEventModal({ onClose, onCreated, baseYear, initialDateRaw }: { on
             {saving ? 'Creating…' : 'Create event'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -297,11 +261,11 @@ function UnplacedBanner({ undatedSessions, undatedEvents, baseYear, onSessionDat
   }
 
   return (
-    <div style={{ borderTop: '2px solid #e88c3a55', background: '#e88c3a08', flexShrink: 0 }}>
+    <div style={{ borderTop: `2px solid ${ACCENT}55`, background: `${ACCENT}08`, flexShrink: 0 }}>
       <div style={{ padding: '10px 32px', display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, paddingTop: 2 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#e88c3a', flexShrink: 0 }} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#e88c3a' }}>{total} item{total !== 1 ? 's' : ''} not yet placed on timeline</span>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: ACCENT, flexShrink: 0 }} />
+          <span style={{ fontSize: 12, fontWeight: 600, color: ACCENT }}>{total} item{total !== 1 ? 's' : ''} not yet placed on timeline</span>
         </div>
         {undatedSessions.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -627,7 +591,7 @@ export default function TimelinePage() {
               className="hover-text">
               <ArrowLeft size={14} /> Back
             </button>
-            <Clock size={20} color='#e88c3a' />
+            <Clock size={20} color={ACCENT} />
             <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, letterSpacing: '0.03em', color: 'var(--text-primary)', margin: 0 }}>Timeline</h1>
             <button onClick={() => setShowSettings(true)} title="Timeline settings (calendar, start date, era bands)"
               style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 11, color: 'var(--gold)', cursor: 'pointer' }}>
@@ -779,8 +743,8 @@ export default function TimelinePage() {
           </div>
         )}
         {!isYearMode(zoom) && minDay < 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#e88c3a88', marginLeft: 'auto' }}>
-            <div style={{ width: 12, height: 12, background: '#e88c3a22', border: '1px solid #e88c3a44', borderRadius: 2 }} /> Pre-campaign region
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: `${ACCENT}88`, marginLeft: 'auto' }}>
+            <div style={{ width: 12, height: 12, background: `${ACCENT}22`, border: `1px solid ${ACCENT}44`, borderRadius: 2 }} /> Pre-campaign region
           </div>
         )}
       </div>

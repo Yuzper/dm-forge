@@ -22,6 +22,7 @@ import {
   dbNodeToRF, dbEdgeToRF, NODE_TYPES, EDGE_TYPES,
 } from './relationsShared'
 import { TrackFilterPanel, RankPanel, ColorByPanel, LinkedArticlePill, ExportMenu } from './relationsPanels'
+import { SECTION_ACCENTS } from '../../constants/sections'
 import {
   AddNodeModal, EdgeLabelModal, EditEdgeModal,
   CreateArticleModal, LinkArticleModal, EditUnionModal,
@@ -532,9 +533,8 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
           )}
           {cfg.unionNodes && (
             <button onClick={addUnionNode}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: 'transparent', border: '1px solid #AFA9EC', borderRadius: 'var(--radius-sm)', color: '#7F77DD', transition: 'background var(--transition)' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#EEEDFE'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: 'transparent', border: '1px solid #AFA9EC', borderRadius: 'var(--radius-sm)', color: '#7F77DD', transition: 'background var(--transition)', '--hover-accent': '#EEEDFE' } as React.CSSProperties}
+              className="hover-accent-bg"
             >
               <GitMerge size={13} /> Add union
             </button>
@@ -692,7 +692,7 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
                   {selectedNode.article_id ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <button onClick={() => navigateToArticleByTitle(selectedNode.article_title || selectedNode.label)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: '#5b9fe8', fontSize: 11, padding: 0 }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: SECTION_ACCENTS['wiki'], fontSize: 11, padding: 0 }}>
                         <ExternalLink size={11} /> Open article
                       </button>
                       {!isTerritory && (
@@ -709,7 +709,7 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
                         <Plus size={11} /> Create article
                       </button>
                       <button onClick={() => setLinkingArticleFor(selectedNode)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: '#5b9fe8', fontSize: 11, padding: 0 }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: SECTION_ACCENTS['wiki'], fontSize: 11, padding: 0 }}>
                         <Link2 size={11} /> Link existing
                       </button>
                     </div>

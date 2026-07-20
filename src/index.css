@@ -268,6 +268,13 @@ input[type="number"].ghost-input { -moz-appearance: textfield; }
 .hover-gold-border-strong:hover { color: var(--gold) !important; border-color: var(--gold) !important; }
 .hover-danger-tint:hover        { color: #e05555 !important; background: #e0555514 !important; }
 .hover-bg-active:hover          { background: var(--bg-active) !important; color: var(--text-primary) !important; }
+/* Accent-coloured hovers: set `--hover-accent` in the element's inline style */
+.hover-accent:hover             { color: var(--hover-accent) !important; }
+.hover-accent-border:hover      { color: var(--hover-accent) !important; border-color: var(--hover-accent) !important; }
+.hover-border-accent:hover      { border-color: var(--hover-accent) !important; }
+.hover-accent-bg:hover          { background: var(--hover-accent) !important; }
+.hover-scale:hover              { transform: scale(1.2); }
+.hover-underline:hover          { text-decoration: underline; }
 
 @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -284,8 +291,10 @@ input[type="number"].ghost-input { -moz-appearance: textfield; }
 }
 .ProseMirror p { margin-bottom: 0.75em; }
 .ProseMirror h1 { font-size: 1.8em; color: var(--gold); margin: 1em 0 0.4em; border-bottom: 1px solid var(--border-gold); padding-bottom: 0.2em; }
-.ProseMirror h2 { font-size: 1.4em; color: var(--text-primary); margin: 0.8em 0 0.3em; }
-.ProseMirror h3 { font-size: 1.15em; color: var(--text-secondary); margin: 0.6em 0 0.2em; }
+/* Headings share the gold family, stepping down in prominence: h1 full gold,
+   h2 softened toward body text, h3 the dim gold. */
+.ProseMirror h2 { font-size: 1.4em; color: color-mix(in srgb, var(--gold) 78%, var(--text-secondary)); margin: 0.8em 0 0.3em; }
+.ProseMirror h3 { font-size: 1.15em; color: var(--gold-dim); margin: 0.6em 0 0.2em; }
 .ProseMirror ul, .ProseMirror ol { padding-left: 1.5em; margin-bottom: 0.75em; }
 .ProseMirror li { margin-bottom: 0.25em; }
 .ProseMirror blockquote { border-left: 3px solid var(--gold-dim); padding-left: 1em; color: var(--text-secondary); font-style: italic; margin: 1em 0; }

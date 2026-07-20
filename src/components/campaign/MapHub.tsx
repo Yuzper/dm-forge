@@ -16,6 +16,7 @@ import {
   type HubPanelKey, HubSettingsMenu, HEALTH_INFO,
   ActiveQuestsPanel, WikiHealthPanel, RecentlyUpdatedPanel, ArticlesByTypePanel, ClocksPanel,
 } from './HubPanels'
+import { SECTION_ACCENTS } from '../../constants/sections'
 
 // ── Overlay open/collapsed persistence ─────────────────────────────────────────
 
@@ -138,19 +139,19 @@ function NavDock({ stats }: { stats: MapHubStats }) {
       <DockItem icon={<Scroll size={15} />} label="Sessions" accent="var(--gold)"
         stat={sessions.length > 0 ? plural(sessions.length, 'session') : undefined}
         onClick={() => setCampaignSubView('sessions')} />
-      <DockItem icon={<BookOpen size={15} />} label="Wiki" accent="#5b9fe8"
+      <DockItem icon={<BookOpen size={15} />} label="Wiki" accent={SECTION_ACCENTS['wiki']}
         stat={stats.articleCount > 0 ? plural(stats.articleCount, 'article') : undefined}
         onClick={() => setView('wiki')} />
-      <DockItem icon={<Sparkles size={15} />} label="Notes" accent="#fe6565"
+      <DockItem icon={<Sparkles size={15} />} label="Notes" accent={SECTION_ACCENTS['dm-notes']}
         stat={stats.noteCount > 0 ? plural(stats.noteCount, 'note') : undefined}
         onClick={() => setView('dm-notes')} />
-      <DockItem icon={<ShoppingBag size={15} />} label="Loot" accent="#49c185"
+      <DockItem icon={<ShoppingBag size={15} />} label="Loot" accent={SECTION_ACCENTS['loot-tables']}
         stat={stats.lootCount > 0 ? plural(stats.lootCount, 'table') : undefined}
         onClick={() => setView('loot-tables')} />
-      <DockItem icon={<Network size={15} />} label="Relations" accent="#b07de8"
+      <DockItem icon={<Network size={15} />} label="Relations" accent={SECTION_ACCENTS['relations']}
         stat={stats.relationsCount > 0 ? plural(stats.relationsCount, 'web') : undefined}
         onClick={() => setView('relations')} />
-      <DockItem icon={<Music2 size={15} />} label="Sound" accent="#3b82f6"
+      <DockItem icon={<Music2 size={15} />} label="Sound" accent={SECTION_ACCENTS['soundboard']}
         stat={stats.soundboardCount > 0 ? plural(stats.soundboardCount, 'board') : undefined}
         onClick={() => setView('soundboard')} />
     </div>
@@ -179,7 +180,7 @@ function TimelineChip({ open, onToggle }: { open: boolean; onToggle: () => void 
         }}
         className="hover-gold"
       >
-        <Clock size={12} style={{ color: '#e88c3a', flexShrink: 0 }} />
+        <Clock size={12} style={{ color: SECTION_ACCENTS['timeline'], flexShrink: 0 }} />
         {latest ? (
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             <span style={{ color: 'var(--text-primary)' }}>Session {latest.session_number}{latest.session_sub}</span>

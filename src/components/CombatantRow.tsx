@@ -63,7 +63,7 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
   const displayAc = creature.ac_override !== null ? creature.ac_override : sb.ac
   const isDead = creature.is_dead
   const hpPercent = Math.max(0, Math.min(100, (creature.current_hp / creature.max_hp) * 100))
-  const hpColor = hpPercent > 50 ? '#3dbf7f' : hpPercent > 25 ? '#e88c3a' : '#e05555'
+  const hpColor = hpPercent > 50 ? 'var(--success)' : hpPercent > 25 ? 'var(--warning)' : 'var(--danger)'
 
   // Initialise loot state from persisted loot_result
   const [lootItems, setLootItems] = useState<LootItem[] | null>(() => {
@@ -180,9 +180,9 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
                   color: 'var(--text-muted)', background: 'none',
                   border: '1px solid var(--border-light)', borderRadius: 99, padding: '1px 4px',
                   cursor: 'pointer', transition: 'color 120ms ease',
-                }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#7bc96f'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+                  '--hover-accent': '#7bc96f',
+                } as React.CSSProperties}
+                className="hover-accent"
               >
                 <HeartHandshake size={9} />
               </button>
@@ -201,8 +201,7 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
               color: 'var(--text-muted)', fontSize: 11, flexShrink: 0,
               transition: 'all 120ms ease',
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--gold)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--gold-dim)' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)' }}
+            className="hover-gold-border"
           >
             <Swords size={11} /> Stats
           </button>
@@ -219,19 +218,9 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
                 padding: '3px 6px', display: 'flex', alignItems: 'center', gap: 4,
                 color: lootGenerated ? 'var(--gold)' : 'var(--text-muted)',
                 fontSize: 11, flexShrink: 0, transition: 'all 120ms ease',
-              }}
-              onMouseEnter={e => {
-                if (!lootGenerated) {
-                  (e.currentTarget as HTMLElement).style.color = '#e88c3a'
-                  ;(e.currentTarget as HTMLElement).style.borderColor = '#e88c3a66'
-                }
-              }}
-              onMouseLeave={e => {
-                if (!lootGenerated) {
-                  (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'
-                  ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'
-                }
-              }}
+                '--hover-accent': lootGenerated ? 'var(--gold)' : 'var(--warning)',
+              } as React.CSSProperties}
+              className="hover-accent-border"
             >
               <PackageOpen size={11} /> Loot
             </button>
@@ -247,11 +236,11 @@ export default function CombatantRow({ creature, onUpdate, onOpenStatBlock, onLo
                 border: `1px solid ${confirmDel ? 'var(--crimson)' : 'var(--border-light)'}`,
                 borderRadius: 'var(--radius-sm)', cursor: 'pointer',
                 padding: '3px 6px', display: 'flex', alignItems: 'center',
-                color: confirmDel ? '#e05555' : 'var(--text-muted)', fontSize: 11, flexShrink: 0,
+                color: confirmDel ? 'var(--danger)' : 'var(--text-muted)', fontSize: 11, flexShrink: 0,
                 transition: 'all 120ms ease',
-              }}
-              onMouseEnter={e => { if (!confirmDel) (e.currentTarget as HTMLElement).style.color = '#e05555' }}
-              onMouseLeave={e => { if (!confirmDel) (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+                '--hover-accent': 'var(--danger)',
+              } as React.CSSProperties}
+              className="hover-accent"
             >
               <Trash2 size={11} />
             </button>

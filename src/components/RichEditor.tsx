@@ -28,23 +28,19 @@ import {
   AlignLeft, AlignCenter, AlignRight,
   Image as ImageIcon, Highlighter, Link2,
   Undo, Redo, Minus, Table2, Palette,
+  Paintbrush, RemoveFormatting,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { InfoHint } from './InfoHint'
+import { richTextToPlain } from '../utils/richText'
+import SwatchPicker from './SwatchPicker'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const COLOR_PALETTE = [
-  { label: 'Red',    color: '#e05555' },
-  { label: 'Orange', color: '#e88c3a' },
-  { label: 'Gold',   color: '#c8a84b' },
-  { label: 'Green',  color: '#49c185' },
-  { label: 'Teal',   color: '#5bbfb0' },
-  { label: 'Blue',   color: '#4da6ff' },
-  { label: 'Purple', color: '#9b7de8' },
-  { label: 'Grey',   color: '#8a8a8a' },
-  { label: 'White',  color: '#e8e8e8' },
-]
+// Marks treated as pure styling by "clear formatting" and the format painter.
+// Link marks (wikiLink, sessionLink, spellLink) are deliberately absent — they
+// are content, and stripping them would silently break links.
+const FORMAT_MARKS = ['bold', 'italic', 'underline', 'strike', 'highlight', 'textStyle']
 
 
 // ── Spell types & data ─────────────────────────────────────────────────────────
@@ -62,14 +58,6 @@ type Spell = {
 }
 
 const spells: Spell[] = spellsData as Spell[]
-
-// Flatten a TipTap doc to readable plain text (case preserved, for previews).
-function richTextToPlain(json: string): string {
-  try {
-    const walk = (node: any): string => node.type === 'text' ? (node.text ?? '') : (node.content ?? []).map(walk).join(' ')
-    return walk(JSON.parse(json)).replace(/\s+/g, ' ').trim()
-  } catch { return '' }
-}
 
 
 // ── Custom Extensions ──────────────────────────────────────────────────────────
@@ -187,25 +175,7 @@ function ColorPalette({ onSelect, onClear, onClose, currentColor }: {
       padding: 10,
       display: 'flex', flexDirection: 'column', gap: 8,
     }}>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', width: 156 }}>
-        {COLOR_PALETTE.map(({ label, color }) => (
-          <button
-            key={color}
-            title={label}
-            onMouseDown={e => { e.preventDefault(); onSelect(color) }}
-            style={{
-              width: 22, height: 22, borderRadius: 4,
-              background: color, cursor: 'pointer',
-              border: currentColor === color
-                ? '2px solid var(--text-primary)'
-                : '2px solid transparent',
-              transition: 'transform 80ms ease',
-            }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.transform = 'scale(1.2)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.transform = 'scale(1)'}
-          />
-        ))}
-      </div>
+      <SwatchPicker value={currentColor} onChange={onSelect} keepFocus />
       <button
         onMouseDown={e => { e.preventDefault(); onClear() }}
         style={{
@@ -585,7 +555,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
   const [hoveredSpell, setHoveredSpell] = useState<{ spell: Spell; x: number; y: number } | null>(null)
   // Delayed-close timer lets the cursor travel from the link onto the card
   // (so the card stays open long enough to scroll its content).
-  const spellHoverTimer = useRef<ReturnType<typeof setTimeout>>()
+  const spellHoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const cancelSpellClose = () => { if (spellHoverTimer.current) clearTimeout(spellHoverTimer.current) }
   const scheduleSpellClose = () => { cancelSpellClose(); spellHoverTimer.current = setTimeout(() => setHoveredSpell(null), 150) }
 
@@ -594,7 +564,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
   // a quick item card. Summary fields render instantly; the description is
   // fetched lazily and filled in.
   const [hoveredItem, setHoveredItem] = useState<(ItemCardData & { x: number; y: number }) | null>(null)
-  const itemHoverTimer = useRef<ReturnType<typeof setTimeout>>()
+  const itemHoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const cancelItemClose = () => { if (itemHoverTimer.current) clearTimeout(itemHoverTimer.current) }
   const scheduleItemClose = () => { cancelItemClose(); itemHoverTimer.current = setTimeout(() => setHoveredItem(null), 150) }
   const showItemCard = (title: string, x: number, y: number) => {
@@ -644,6 +614,8 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
   }
   const [showToolbarPopover, setShowToolbarPopover] = useState(false)
   const [showColorPalette, setShowColorPalette] = useState(false)
+  // Marks held by the format painter between the copy click and the paint click.
+  const [copiedMarks, setCopiedMarks] = useState<{ type: string; attrs: Record<string, any> }[] | null>(null)
   const [displayFontSize, setDisplayFontSize] = useState<number | ''>('')
 
   const parsedContent = (() => {
@@ -825,6 +797,47 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     editor.chain().focus().setImage({ src: fullPath }).run()
   }
 
+  // ── Formatting tools ───────────────────────────────────────────────────────
+  // Only these marks count as "formatting" — wiki/session/spell links carry
+  // meaning, not style, so clearing or painting never strips them.
+
+  const stripFormatMarks = (chain: ReturnType<NonNullable<typeof editor>['chain']>) => {
+    for (const name of FORMAT_MARKS) {
+      if (editor?.schema.marks[name]) chain.unsetMark(name)
+    }
+    return chain
+  }
+
+  const clearFormatting = () => {
+    if (!editor) return
+    stripFormatMarks(editor.chain().focus()).unsetTextAlign().clearNodes().run()
+  }
+
+  // Format painter: first click copies the marks under the cursor, the next
+  // click paints them onto the current selection.
+  const toggleFormatPainter = () => {
+    if (!editor) return
+    if (copiedMarks) {
+      const chain = stripFormatMarks(editor.chain().focus())
+      for (const m of copiedMarks) chain.setMark(m.type, m.attrs)
+      chain.run()
+      setCopiedMarks(null)
+      return
+    }
+    const { state } = editor
+    const { from, to, empty } = state.selection
+    // For a selection, read the first selected character rather than the
+    // boundary — the boundary often sits just outside the formatting.
+    const marks = empty
+      ? (state.storedMarks ?? state.selection.$from.marks())
+      : state.doc.resolve(Math.min(from + 1, to)).marks()
+    setCopiedMarks(
+      marks
+        .filter(m => FORMAT_MARKS.includes(m.type.name))
+        .map(m => ({ type: m.type.name, attrs: { ...m.attrs } }))
+    )
+  }
+
   const insertWikiLinkInline = (title: string) => {
     if (!editor || !wikiSearch) return
     editor.chain().focus()
@@ -970,6 +983,20 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
                 />
               )}
             </div>
+
+            {/* Formatting tools */}
+            <ToolbarButton
+              onClick={toggleFormatPainter}
+              active={!!copiedMarks}
+              title={copiedMarks
+                ? 'Paint copied formatting onto the selection (click to apply)'
+                : 'Copy formatting from the cursor, then select text and click again'}
+            >
+              <Paintbrush size={13} />
+            </ToolbarButton>
+            <ToolbarButton onClick={clearFormatting} title="Clear formatting">
+              <RemoveFormatting size={13} />
+            </ToolbarButton>
             <ToolbarDivider />
 
             {/* Lists / blocks */}

@@ -580,9 +580,8 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
             <div style={{ padding: 8, borderTop: '1px solid var(--border)' }}>
               <button
                 onClick={() => { setDay(0); onChange(''); setOpen(false) }}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', background: '#e0555518', border: '1px solid #e0555555', borderRadius: 'var(--radius-sm)', color: 'var(--danger-soft)', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all var(--transition)' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#e0555530'; (e.currentTarget as HTMLElement).style.color = '#ff8888' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#e0555518'; (e.currentTarget as HTMLElement).style.color = 'var(--danger-soft)' }}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', background: '#e0555518', border: '1px solid #e0555555', borderRadius: 'var(--radius-sm)', color: 'var(--danger-soft)', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all var(--transition)', '--hover-accent': 'var(--danger-hover)' } as React.CSSProperties}
+                className="hover-accent"
               >
                 <Trash2 size={13} /> Clear date
               </button>

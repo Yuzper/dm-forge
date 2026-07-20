@@ -56,10 +56,9 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
             {webs.map(web => (
               <div key={web.id}
-                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '16px 18px', cursor: 'pointer', transition: 'border-color var(--transition)', position: 'relative' }}
+                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '16px 18px', cursor: 'pointer', transition: 'border-color var(--transition)', position: 'relative', '--hover-accent': 'var(--border-gold)' } as React.CSSProperties}
                 onClick={() => onOpenWeb(web)}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-gold)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'}
+                className="hover-border-accent"
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 8 }}>
                   <div style={{ width: 32, height: 32, background: 'var(--bg-elevated)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--gold)' }}>

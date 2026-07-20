@@ -2,6 +2,7 @@
 // Shared item preview card — the standard way an item article is shown on hover.
 // Mirrors SpellCard: header + meta grid + scrollable description, with the
 // rarity tinting the card's accent so value reads at a glance.
+import { RARITY_COLORS } from '../constants/loot'
 
 export type ItemCardData = {
   name: string
@@ -16,16 +17,6 @@ export type ItemCardData = {
 }
 
 const CARD_W = 320
-
-// Rarity → accent colour, matching the 5e value ladder.
-const RARITY_COLORS: Record<string, string> = {
-  Common: '#9aa0a6',
-  Uncommon: '#49c185',
-  Rare: '#4da6ff',
-  'Very Rare': '#b07de8',
-  Legendary: '#e8a23a',
-  Artifact: '#e05555',
-}
 
 export function ItemCard({ item, x, y, onMouseEnter, onMouseLeave }: {
   item: ItemCardData

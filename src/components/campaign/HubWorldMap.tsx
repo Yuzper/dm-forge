@@ -10,6 +10,11 @@ import {
 import type { Session, GameMap, POI } from '../../types'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import Modal from '../Modal'
+import { SECTION_ACCENTS } from '../../constants/sections'
+import SwatchPicker from '../SwatchPicker'
+
+// Article-link icons on map pins are wiki-flavoured, so they borrow that accent.
+const WIKI_ACCENT = SECTION_ACCENTS['wiki']
 import EmptyState from '../EmptyState'
 
 const MIN_SCALE = 0.2
@@ -125,7 +130,7 @@ function HubPOIPopup({
             <button key={i} onClick={() => onNavigateWiki(l.title!)}
               style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '4px 5px', margin: '0 -5px', background: 'none', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', textAlign: 'left', transition: 'background var(--transition)' }}
               className="hover-bg-active">
-              <BookOpen size={11} style={{ color: '#5b9fe8', flexShrink: 0 }} />
+              <BookOpen size={11} style={{ color: WIKI_ACCENT, flexShrink: 0 }} />
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</span>
               <ExternalLink size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
             </button>
@@ -210,9 +215,7 @@ function HubPOIEditModal({
   const removeLink = (i: number) => setEditLinks(prev => prev.filter((_, idx) => idx !== i))
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 440, width: '100%' }}>
-        <div className="modal-title">Edit location</div>
+    <Modal title="Edit location" onClose={onClose} style={{ maxWidth: 440, width: '100%' }}>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="input-group">
@@ -222,12 +225,7 @@ function HubPOIEditModal({
 
           <div className="input-group">
             <label className="input-label">Color</label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {['#c8a84b','#7aeada','#2eb370','#5b9fe8','#ce21dd','#f41111','#e88c3a','#8a2e2e','#8a8a8a','#e0e0e0'].map(c => (
-                <button key={c} type="button" onClick={() => setPoiColor(c)}
-                  style={{ width: 20, height: 20, borderRadius: '50%', background: c, padding: 0, border: `2px solid ${poiColor === c ? 'var(--text-primary)' : 'transparent'}`, cursor: 'pointer', flexShrink: 0 }} />
-              ))}
-            </div>
+            <SwatchPicker value={poiColor} onChange={setPoiColor} size={20} />
           </div>
 
           <div className="input-group">
@@ -269,7 +267,7 @@ function HubPOIEditModal({
                 {editLinks.map((l, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: 12 }}>
                     {l.type === 'wiki'
-                      ? <BookOpen size={11} style={{ color: '#5b9fe8', flexShrink: 0 }} />
+                      ? <BookOpen size={11} style={{ color: WIKI_ACCENT, flexShrink: 0 }} />
                       : <Scroll size={11} style={{ color: 'var(--gold)', flexShrink: 0 }} />}
                     <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
                       {l.type === 'wiki' ? l.title : `Session ${l.session_number}${l.session_sub}: ${l.name}`}
@@ -297,7 +295,7 @@ function HubPOIEditModal({
                   <button key={a.id} onClick={() => addWiki(a)}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 12, color: 'var(--text-primary)', textAlign: 'left' }}
                     className="hover-bg-elevated">
-                    <BookOpen size={11} style={{ color: '#5b9fe8' }} /> {a.title}
+                    <BookOpen size={11} style={{ color: WIKI_ACCENT }} /> {a.title}
                   </button>
                 ))}
               </div>
@@ -330,7 +328,7 @@ function HubPOIEditModal({
         <div className="modal-actions" style={{ justifyContent: 'space-between' }}>
           <button
             onClick={() => triggerDelete(onDelete)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: confirmingDelete ? 'var(--danger-hover)' : '#e05555', fontSize: 13, display: 'flex', alignItems: 'center', gap: 5, padding: '4px 2px' }}>
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: confirmingDelete ? 'var(--danger-hover)' : 'var(--danger)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 5, padding: '4px 2px' }}>
             <Trash2 size={13} /> {confirmingDelete ? 'Confirm' : 'Delete'}
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -340,8 +338,7 @@ function HubPOIEditModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -849,9 +846,8 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
           ))}
           {editMode && (
             <button onClick={e => { e.stopPropagation(); handleUploadNew() }} disabled={importing}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 12px', background: 'transparent', border: 'none', borderRight: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.3)', fontSize: 11, cursor: importing ? 'wait' : 'pointer', whiteSpace: 'nowrap', transition: 'color var(--transition)' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.65)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.3)'}>
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 12px', background: 'transparent', border: 'none', borderRight: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.3)', fontSize: 11, cursor: importing ? 'wait' : 'pointer', whiteSpace: 'nowrap', transition: 'color var(--transition)', '--hover-accent': 'rgba(255,255,255,0.65)' } as React.CSSProperties}
+              className="hover-accent">
               <Upload size={11} /> {importing ? 'Importing…' : 'Add map'}
             </button>
           )}

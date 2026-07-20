@@ -3,14 +3,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useStore } from '../store/store'
 import { Music2, X, Minus, ChevronDown, Volume2, SlidersHorizontal, Play, Square } from 'lucide-react'
 import type { SoundBoard, Sound, SoundCategory } from '../types'
+import { soundCategoryColor } from '../constants/soundCategories'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-const CATEGORY_COLOR: Record<SoundCategory, string> = {
-  ambience: '#2a7a6e',
-  music:    '#c8a84b',
-  effect:   '#e88c3a',
-}
 
 const CROSSFADE_MS = 1500
 
@@ -568,7 +563,7 @@ export default function SoundboardWidget() {
         {(['ambience', 'music', 'effect'] as SoundCategory[]).map(cat => {
           const catSounds = byCategory(cat)
           if (catSounds.length === 0) return null
-          const color = CATEGORY_COLOR[cat]
+          const color = soundCategoryColor(cat)
           return (
             <div key={cat}>
               <div style={{

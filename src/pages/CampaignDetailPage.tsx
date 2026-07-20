@@ -1,9 +1,7 @@
 // path: src/pages/CampaignDetailPage.tsx
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/store'
-import {
-  BookOpen, Scroll, Sparkles, ShoppingBag, Network, Clock, Music2, Map,
-} from 'lucide-react'
+import { Scroll, Map } from 'lucide-react'
 import TimelineEmbed from '../components/TimelineEmbed'
 import HubWorldMap from '../components/campaign/HubWorldMap'
 import MapHubView from '../components/campaign/MapHub'
@@ -12,6 +10,7 @@ import {
   type HubPanelKey, HUB_PANEL_DEFAULTS, loadHubPanels, saveHubPanels,
   HubSettingsMenu, RecentlyUpdatedPanel, ActiveQuestsPanel, WikiHealthPanel, ArticlesByTypePanel, ClocksPanel,
 } from '../components/campaign/HubPanels'
+import { NAV_ITEMS, type SectionView } from '../constants/sections'
 
 // ── Nav Dock Card ─────────────────────────────────────────────────────────────
 
@@ -227,35 +226,23 @@ export default function CampaignDetailPage() {
           stat={sessions.length > 0 ? `${sessions.length} session${sessions.length !== 1 ? 's' : ''}` : undefined}
           onClick={() => setSubView('sessions')} accent="var(--gold)"
         />
-        <NavDockCard
-          icon={<BookOpen size={16} />} title="Wiki"
-          stat={articleCount > 0 ? `${articleCount} article${articleCount !== 1 ? 's' : ''}` : undefined}
-          onClick={() => setView('wiki')} accent="#5b9fe8"
-        />
-        <NavDockCard
-          icon={<Sparkles size={16} />} title="DM Notes"
-          stat={noteCount > 0 ? `${noteCount} note${noteCount !== 1 ? 's' : ''}` : undefined}
-          onClick={() => setView('dm-notes')} accent="#fe6565"
-        />
-        <NavDockCard
-          icon={<ShoppingBag size={16} />} title="Loot Tables"
-          stat={lootCount > 0 ? `${lootCount} table${lootCount !== 1 ? 's' : ''}` : undefined}
-          onClick={() => setView('loot-tables')} accent="#49c185"
-        />
-        <NavDockCard
-          icon={<Network size={16} />} title="Relations"
-          stat={relationsCount > 0 ? `${relationsCount} web${relationsCount !== 1 ? 's' : ''}` : undefined}
-          onClick={() => setView('relations')} accent="#b07de8"
-        />
-        <NavDockCard
-          icon={<Clock size={16} />} title="Timeline"
-          onClick={() => setView('timeline')} accent="#e88c3a"
-        />
-        <NavDockCard
-          icon={<Music2 size={16} />} title="Soundboard"
-          stat={soundboardCount > 0 ? `${soundboardCount} board${soundboardCount !== 1 ? 's' : ''}` : undefined}
-          onClick={() => setView('soundboard')} accent="#3b82f6"
-        />
+        {NAV_ITEMS.map(({ view, label, icon: Icon, accent }) => {
+          const counts: Partial<Record<SectionView, [number, string]>> = {
+            'wiki':        [articleCount, 'article'],
+            'dm-notes':    [noteCount, 'note'],
+            'loot-tables': [lootCount, 'table'],
+            'relations':   [relationsCount, 'web'],
+            'soundboard':  [soundboardCount, 'board'],
+          }
+          const count = counts[view]
+          return (
+            <NavDockCard
+              key={view} icon={<Icon size={16} />} title={label} accent={accent}
+              stat={count && count[0] > 0 ? `${count[0]} ${count[1]}${count[0] !== 1 ? 's' : ''}` : undefined}
+              onClick={() => setView(view)}
+            />
+          )
+        })}
       </div>
     </div>
   )

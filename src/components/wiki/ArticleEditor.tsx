@@ -24,8 +24,8 @@ import { TIMELINE_DATE_FIELDS, parseMilestones, type Milestone } from '../../con
 import LocationMapSection from '../LocationMapSection'
 import QuestSubstepsSection, { parseSubsteps } from '../QuestSubstepsSection'
 import type { Substep } from '../QuestSubstepsSection'
-import QuestRewardSection, { parseRewards } from '../QuestRewardSection'
-import type { Reward } from '../QuestRewardSection'
+import QuestRewardSection, { parseReward } from '../QuestRewardSection'
+import type { QuestReward } from '../QuestRewardSection'
 
 import {
   ARTICLE_TYPES, ARTICLE_TRACKS, TRACK_VALUE_COLORS,
@@ -248,7 +248,7 @@ function CreatureVariantsSection({
                 )
               })()}
               {masterTable && (
-                <span style={{ fontSize: 10, color: '#49c185', background: '#49c18514', border: '1px solid #49c18530', borderRadius: 99, padding: '1px 7px', flexShrink: 0 }}>
+                <span style={{ fontSize: 10, color: 'var(--success)', background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius: 99, padding: '1px 7px', flexShrink: 0 }}>
                   {masterTable.name}
                 </span>
               )}
@@ -290,7 +290,7 @@ function CreatureVariantsSection({
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Master loot table</div>
                     {readMode ? (
                       masterTable
-                        ? <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99, background: '#49c18518', border: '1px solid #49c18540', fontSize: 12, color: '#49c185', width: 'fit-content' }}>
+                        ? <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99, background: 'var(--success-bg)', border: '1px solid var(--success-border)', fontSize: 12, color: 'var(--success)', width: 'fit-content' }}>
                             <ShoppingBag size={11} /> {masterTable.name}
                           </div>
                         : <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No master table</span>
@@ -349,8 +349,7 @@ function CreatureVariantsSection({
         <button
           onClick={addVariant}
           style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '7px 14px', fontSize: 12, cursor: 'pointer', background: 'transparent', border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', width: '100%', justifyContent: 'center', transition: 'all var(--transition)' }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-primary)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+          className="hover-text"
         >
           <Plus size={13} /> Add variant
         </button>
@@ -442,6 +441,11 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const locationNames        = namesByType.location ?? []
   const creatureNames        = namesByType.creature ?? []
   const playerCharacterNames = namesByType.playerCharacter ?? []
+  // Quest reward items can link to any item-ish article
+  const rewardItemNames = useMemo(
+    () => [...(namesByType.item ?? []), ...(namesByType.artifact ?? [])].sort((a, b) => a.localeCompare(b)),
+    [namesByType]
+  )
   const characterNames = useMemo(
     () => [...(namesByType.character ?? []), ...(namesByType.playerCharacter ?? [])].sort((a, b) => a.localeCompare(b)),
     [namesByType]
@@ -480,8 +484,8 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const [lootTableId, setLootTableId] = useState<number | null>(article.loot_table_id ?? null)
   // Quest substeps
   const [substeps, setSubsteps] = useState<Substep[]>(() => parseSubsteps((article as any).substeps))
-  // Quest rewards
-  const [rewards, setRewards]   = useState<Reward[]>(() => parseRewards((article as any).rewards))
+  // Quest reward — one record per quest (currency / items / information / other)
+  const [reward, setReward]     = useState<QuestReward>(() => parseReward((article as any).rewards))
 
   const hasStatblock = STATBLOCK_TYPES.includes(articleType)
   const hasItemBlock = articleType === 'item'
@@ -489,8 +493,8 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const hasMap       = articleType === 'location'
   const hasQuest     = articleType === 'quest'
 
-  const pendingRef = useRef({ title, content, articleType, tracks, statblock, variants, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, rewards })
-  pendingRef.current = { title, content, articleType, tracks, statblock, variants, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, rewards }
+  const pendingRef = useRef({ title, content, articleType, tracks, statblock, variants, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, reward })
+  pendingRef.current = { title, content, articleType, tracks, statblock, variants, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, reward }
 
   useEffect(() => {
     return () => {
@@ -502,7 +506,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
         loot_table: p.lootTableJson, loot_table_id: p.lootTableId,
         tags: JSON.stringify(p.tags), cover_image: p.coverImage, portrait_image: p.portraitImage,
         substeps: JSON.stringify(p.substeps),
-        rewards:  JSON.stringify(p.rewards),
+        rewards:  JSON.stringify(p.reward),
       })
     }
   }, [])
@@ -519,7 +523,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
     setLootTableJson(article.loot_table || '{"name":"Loot","items":[]}')
     setLootTableId(article.loot_table_id ?? null)
     setSubsteps(parseSubsteps((article as any).substeps))
-    setRewards(parseRewards((article as any).rewards))
+    setReward(parseReward((article as any).rewards))
     setDirty(false)
   }, [article.id])
 
@@ -551,10 +555,10 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
       loot_table: lootTableJson, loot_table_id: lootTableId,
       tags: JSON.stringify(tags), cover_image: coverImage, portrait_image: portraitImage,
       substeps: JSON.stringify(substeps),
-      rewards:  JSON.stringify(rewards),
+      rewards:  JSON.stringify(reward),
     })
     setDirty(false); setSaving(false); setSavedTick(t => t + 1)
-  }, [article.id, dirty, title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, substeps, rewards, updateArticle])
+  }, [article.id, dirty, title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, substeps, reward, updateArticle])
 
   useEffect(() => {
     if (!dirty) return
@@ -576,7 +580,10 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   }
   const removeTag = (tag: string) => { setTags(prev => prev.filter(t => t !== tag)); setDirty(true) }
 
+  // A quest's Player_Character only means anything for personal quests — hide it
+  // otherwise so the Details panel isn't offering an irrelevant field.
   const currentTypeTracks = Object.entries(ARTICLE_TRACKS[articleType] || {})
+    .filter(([name]) => !(articleType === 'quest' && name === 'Player_Character' && tracks.Type !== 'Personal'))
   const statblockHasData = statblock.ac > 0 || statblock.hp > 0 || statblock.traits.length > 0 || statblock.actions.length > 0
 
   const lootSuggestions = articles.filter(a => ['item', 'artifact', 'note'].includes(a.article_type)).map(a => a.title)
@@ -671,7 +678,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
             {/* Editor */}
             <div style={{ padding: '0 8px' }}>
               <RichEditor key={article.id} content={content} onChange={v => { setContent(v); setDirty(true) }}
-                placeholder="Start writing… Use [[ to link wiki articles, @@ for spells, \\\\ for sessions."
+                placeholder="Start writing… Use [[ to link wiki articles, @@ for spells, \\ for sessions."
                 onWikiLinkClick={navigateToArticleByTitle} expandable readOnly={readMode} />
             </div>
 
@@ -770,11 +777,13 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
             {/* Quest rewards section */}
             {hasQuest && (
               <div style={{ padding: '0 24px 32px' }}>
-                <SectionDivider label="Rewards" />
+                <SectionDivider label="Reward" />
                 <QuestRewardSection
-                  rewards={rewards}
+                  reward={reward}
                   readMode={readMode}
-                  onChange={r => { setRewards(r); setDirty(true) }}
+                  itemSuggestions={rewardItemNames}
+                  onOpenArticle={navigateToArticleByTitle}
+                  onChange={r => { setReward(r); setDirty(true) }}
                 />
               </div>
             )}
@@ -795,7 +804,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                     </div>
                     {readMode ? (
                       masterTable ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99, background: '#49c18518', border: '1px solid #49c18540', fontSize: 12, color: '#49c185', width: 'fit-content' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99, background: 'var(--success-bg)', border: '1px solid var(--success-border)', fontSize: 12, color: 'var(--success)', width: 'fit-content' }}>
                           <ShoppingBag size={11} /> {masterTable.name}
                         </div>
                       ) : (
@@ -953,6 +962,11 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                         onChange={v => {
                           setTracks(prev => {
                             const updated = { ...prev, [trackName]: v }
+                            // Leaving a personal quest hides Player_Character —
+                            // drop the value so it can't linger unseen.
+                            if (articleType === 'quest' && trackName === 'Type' && v !== 'Personal') {
+                              delete updated.Player_Character
+                            }
                             const oldTrackTags = getTrackTags(prev)
                             const newTrackTags = getTrackTags(updated)
                             setTags(prevTags => {
@@ -1051,9 +1065,8 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                 const t = ARTICLE_TYPES.find(x => x.value === a.article_type) || ARTICLE_TYPES[ARTICLE_TYPES.length - 1]
                 return (
                   <button key={a.id} onClick={() => navigateToArticleByTitle(a.title)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 'var(--radius-sm)', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = t.color; (e.currentTarget as HTMLElement).style.color = t.color }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)' }}>
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 'var(--radius-sm)', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease', '--hover-accent': t.color } as React.CSSProperties}
+                    className="hover-accent-border">
                     <t.icon size={11} color={t.color} />
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</span>
                   </button>

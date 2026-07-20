@@ -9,6 +9,7 @@ import { ARTICLE_TYPES, ALL_FILTERS, parseTags } from '../components/wiki/wikiCo
 import { ArticleEditor } from '../components/wiki/ArticleEditor'
 import WikiGraphView from '../components/wiki/WikiGraphView'
 import { useExcludedTypes, TypeVisibilityMenu } from '../components/wiki/TypeVisibilityMenu'
+import Modal from '../components/Modal'
 
 // ─── Create Modal ──────────────────────────────────────────────────────────────
 
@@ -32,9 +33,7 @@ function CreateArticleModal({ onClose, initialType, initialTitle }: { onClose: (
   const randomPlaceholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)]
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">New Article</div>
+    <Modal title="New Article" onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="input-group">
             <label className="input-label">Title</label>
@@ -70,8 +69,7 @@ function CreateArticleModal({ onClose, initialType, initialTitle }: { onClose: (
             {saving ? 'Creating…' : 'Create Article'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

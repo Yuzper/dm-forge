@@ -163,9 +163,9 @@ export function AffiliationsSection({ articleId }: { articleId: number }) {
           display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px',
           borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer',
           border: `1px solid ${color}44`, background: `${color}12`, color,
-        }}
-        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = `${color}22`}
-        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = `${color}12`}
+          '--hover-accent': `${color}22`,
+        } as React.CSSProperties}
+        className="hover-accent-bg"
       >
         <ExternalLink size={10} /> {a.title}
       </button>
@@ -224,9 +224,9 @@ export function GeographySection({ articleId, reloadKey }: { articleId: number; 
         display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px',
         borderRadius: 99, fontSize: 11, cursor: 'pointer',
         border: `1px solid ${color}44`, background: `${color}12`, color,
-      }}
-      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = `${color}22`}
-      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = `${color}12`}>
+        '--hover-accent': `${color}22`,
+      } as React.CSSProperties}
+      className="hover-accent-bg">
       {c.title}
     </button>
   )
@@ -241,8 +241,7 @@ export function GeographySection({ articleId, reloadKey }: { articleId: number; 
             <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               {i > 0 && <ChevronRight size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
               <button onClick={() => navigateToArticleByTitle(a.title)} title={`Go to ${a.title}`} style={linkStyle}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.textDecoration = 'underline'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.textDecoration = 'none'}>
+                className="hover-underline">
                 {a.title}
               </button>
             </span>

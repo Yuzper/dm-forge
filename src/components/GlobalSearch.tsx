@@ -4,6 +4,7 @@ import { useStore } from '../store/store'
 import { Search, BookOpen, Scroll, Sparkles, MapPin } from 'lucide-react'
 import type { GlobalSearchResults } from '../types'
 import { ARTICLE_TYPE_COLORS } from '../constants/articleTypes'
+import { SECTION_ACCENTS } from '../constants/sections'
 
 const EMPTY: GlobalSearchResults = { articles: [], sessions: [], notes: [], pois: [] }
 
@@ -14,9 +15,9 @@ type FlatItem =
   | { kind: 'poi';     item: GlobalSearchResults['pois'][number] }
 
 const GROUPS: { kind: FlatItem['kind']; label: string; icon: React.ReactNode; accent: string }[] = [
-  { kind: 'article', label: 'Wiki articles', icon: <BookOpen size={11} />, accent: '#5b9fe8' },
+  { kind: 'article', label: 'Wiki articles', icon: <BookOpen size={11} />, accent: SECTION_ACCENTS['wiki'] },
   { kind: 'session', label: 'Sessions',      icon: <Scroll size={11} />,   accent: 'var(--gold)' },
-  { kind: 'note',    label: 'DM notes',      icon: <Sparkles size={11} />, accent: '#9b7de8' },
+  { kind: 'note',    label: 'DM notes',      icon: <Sparkles size={11} />, accent: SECTION_ACCENTS['dm-notes'] },
   { kind: 'poi',     label: 'Map pins',      icon: <MapPin size={11} />,   accent: '#49c185' },
 ]
 

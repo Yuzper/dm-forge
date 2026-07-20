@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useStore } from '../store/store'
-import { ZoomIn, ZoomOut, Filter, X, ExternalLink } from 'lucide-react'
+import { ZoomIn, ZoomOut, Filter, ExternalLink } from 'lucide-react'
 import { parseInWorldDate } from '../components/InWorldDatePicker'
 import { buildArticleTimeline, type Lifespan } from '../constants/timelineDates'
 import TimelineCanvas from '../components/TimelineCanvas'
@@ -14,6 +14,7 @@ import {
   type CampaignCalendar, getCampaignCalendar, yearLength, formatCalendarDay,
   type TimelineEventItem, type ClusterItem, type SessionRenderItem, type BinChip, type Era,
 } from '../utils/timelineGeometry'
+import { TimelineFilterPanel as FilterPanel, type TimelineFilters } from './TimelineFilterPanel'
 
 // ── Layout constants ───────────────────────────────────────────────────────────
 
@@ -32,42 +33,12 @@ const DEFAULT_DAY_ZOOM = 4
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface Filters { sessions: boolean; events: boolean; deaths: boolean; quests: boolean; articles: boolean; eras: boolean }
+type Filters = TimelineFilters
 interface Tooltip { x: number; y: number; label: string; sub?: string; color: string }
 interface BinTooltip { label: string; syCount: number; evCount: number; items: { title: string; kind: string }[]; x: number; y: number; nextZoom: ZoomLevel }
 interface DayTooltip { items: ClusterItem[]; x: number; y: number }
 
-// ── Filter Panel ───────────────────────────────────────────────────────────────
-
-function FilterPanel({ filters, onChange, onClose }: { filters: Filters; onChange: (f: Filters) => void; onClose: () => void }) {
-  const ROWS = [
-    { key: 'sessions' as const, label: 'Sessions', color: 'var(--gold)', icon: '○' },
-    { key: 'events'   as const, label: 'Events',   color: '#e05555',    icon: '◆' },
-    { key: 'deaths'   as const, label: 'Deaths',   color: '#9b7de8',    icon: '☠' },
-    { key: 'quests'   as const, label: 'Quests',   color: '#5b9fe8',    icon: '◆' },
-    { key: 'articles' as const, label: 'Other articles', color: '#8a8a8a', icon: '◆' },
-    { key: 'eras'     as const, label: 'Era bands', color: '#c8a84b',  icon: '▭' },
-  ]
-  return (
-    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 180, zIndex: 100, overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 6px', borderBottom: '1px solid var(--border)' }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Show</span>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}><X size={12} /></button>
-      </div>
-      {ROWS.map(row => (
-        <button key={row.key} onClick={() => onChange({ ...filters, [row.key]: !filters[row.key] })}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', textAlign: 'left' }}
-          className="hover-bg">
-          <div style={{ width: 13, height: 13, borderRadius: 3, border: `1.5px solid ${filters[row.key] ? row.color : 'var(--border)'}`, background: filters[row.key] ? row.color : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 120ms' }}>
-            {filters[row.key] && <span style={{ fontSize: 8, color: '#000', fontWeight: 700 }}>✓</span>}
-          </div>
-          <span style={{ color: row.color, marginRight: 2 }}>{row.icon}</span>
-          {row.label}
-        </button>
-      ))}
-    </div>
-  )
-}
+// Filter panel shared with the full timeline page — see TimelineFilterPanel.
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 

@@ -31,7 +31,7 @@ function SpellPill({ name, spellMap }: { name: string; spellMap: Map<string, Spe
   const [pos, setPos] = useState({ x: 0, y: 0 })
   const spell = spellMap.get(name)
   // Delayed close lets the cursor reach the card to scroll its content.
-  const closeTimer = useRef<ReturnType<typeof setTimeout>>()
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const cancelClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current) }
   const scheduleClose = () => { cancelClose(); closeTimer.current = setTimeout(() => setHover(false), 150) }
 

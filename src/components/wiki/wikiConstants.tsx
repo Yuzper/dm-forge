@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import type { ArticleType } from '../../types'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
+import { RARITY_COLORS } from '../../constants/loot'
 
 // ── Article type definitions ───────────────────────────────────────────────────
 // Colors come from the shared ARTICLE_TYPE_COLORS map (single source of truth);
@@ -136,8 +137,8 @@ export const TRACK_VALUE_COLORS: Record<string, string> = {
   Completed: '#5b9fe8', Past: '#5b9fe8', Retired: '#5b9fe8',
   Upcoming: '#c8a84b', Ongoing: '#e88c3a',
   Trivial: '#8a8a8a', Easy: '#3dbf7f', Medium: '#c8a84b', Hard: '#e88c3a', Deadly: '#e05555',
-  Common: '#8a8a8a', Uncommon: '#3dbf7f', Rare: '#5b9fe8',
-  'Very Rare': '#b07de8', Legendary: '#e8d44d', Artifact: '#c8a84b',
+  // Item rarities share the ladder used by item hover cards (constants/loot.ts)
+  ...RARITY_COLORS,
   Personal: '#8a8a8a', Local: '#5bbfb0', Regional: '#5b9fe8',
   National: '#b07de8', Global: '#e88c3a', Secret: '#e05555', 'World-shaking': '#e05555',
   Tiny: '#8a8a8a', Small: '#5bbfb0', Large: '#e88c3a', Huge: '#e05555', Gargantuan: '#8b2533',

@@ -9,6 +9,11 @@ import type { MasterLootTable, LootTableCategory, LootItem } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 import LootTableEditor from '../components/LootTableEditor'
 import SectionDivider from '../components/SectionDivider'
+import Modal from '../components/Modal'
+import { SECTION_ACCENTS } from '../constants/sections'
+
+// Section accent used for loot-table UI chrome on this page.
+const ACCENT = SECTION_ACCENTS['loot-tables']
 
 // ── Category config ────────────────────────────────────────────────────────────
 
@@ -54,9 +59,7 @@ function CreateTableModal({ campaignId, onClose, onCreate, initialCategory }: {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">New Loot Table</div>
+    <Modal title="New Loot Table" onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="input-group">
             <label className="input-label">Name</label>
@@ -92,8 +95,7 @@ function CreateTableModal({ campaignId, onClose, onCreate, initialCategory }: {
             {saving ? 'Creating…' : 'Create Table'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -317,9 +319,8 @@ function CategoryGroup({ category, tables, activeId, onSelect, onCreateInCategor
         <button
           onClick={() => onCreateInCategory(category)}
           title={`New ${label} table`}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2, borderRadius: 'var(--radius-sm)', transition: 'color 120ms ease' }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = color}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2, borderRadius: 'var(--radius-sm)', transition: 'color 120ms ease', '--hover-accent': color } as React.CSSProperties}
+          className="hover-accent"
         >
           <Plus size={12} />
         </button>
@@ -430,7 +431,7 @@ export default function LootTablesPage() {
         >
           <ArrowLeft size={14} /> Back
         </button>
-        <ShoppingBag size={13} color="#49c185" />
+        <ShoppingBag size={13} color={ACCENT} />
         <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '0.03em', flex: 1 }}>
           Loot Tables
         </span>
@@ -444,9 +445,9 @@ export default function LootTablesPage() {
             border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)',
             color: 'var(--text-muted)', fontSize: 11, cursor: resetting ? 'wait' : 'pointer',
             transition: 'all var(--transition)',
-          }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#49c185'; (e.currentTarget as HTMLElement).style.color = '#49c185' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+            '--hover-accent': ACCENT,
+          } as React.CSSProperties}
+          className="hover-accent-border"
         >
           <RotateCcw size={11} /> {resetting ? 'Resetting…' : 'Reset defaults'}
         </button>
@@ -485,7 +486,7 @@ export default function LootTablesPage() {
                 <br />
                 <button
                   onClick={() => handleCreate('creature')}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#49c185', fontSize: 12, padding: '4px 0', marginTop: 4 }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: ACCENT, fontSize: 12, padding: '4px 0', marginTop: 4 }}
                 >
                   Create your first table
                 </button>

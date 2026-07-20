@@ -13,6 +13,7 @@ import type { HistoryEntry } from '../store/store'
 import { StoreMapProvider } from '../context/MapContext'
 import { THEMES, TEXT_THEMES } from '../constants/themes'
 import type { ThemeKey, TextThemeKey } from '../constants/themes'
+import { NAV_ITEMS } from '../constants/sections'
 
 // ── Collapsed rail ─────────────────────────────────────────────────────────────
 
@@ -114,18 +115,10 @@ export default function Sidebar() {
             <RailIcon icon={<Scroll size={16} />} title="Sessions" accent="var(--gold)"
               active={view === 'campaign' && campaignSubView === 'sessions'}
               onClick={() => { setView('campaign'); setCampaignSubView('sessions') }} />
-            <RailIcon icon={<BookOpen size={16} />} title="Wiki" accent="#5b9fe8"
-              active={view === 'wiki'} onClick={() => setView('wiki')} />
-            <RailIcon icon={<Sparkles size={16} />} title="DM Notes" accent="#fe6565"
-              active={view === 'dm-notes'} onClick={() => setView('dm-notes')} />
-            <RailIcon icon={<ShoppingBag size={16} />} title="Loot Tables" accent="#49c185"
-              active={view === 'loot-tables'} onClick={() => setView('loot-tables')} />
-            <RailIcon icon={<Network size={16} />} title="Relations" accent="#b07de8"
-              active={view === 'relations'} onClick={() => setView('relations')} />
-            <RailIcon icon={<Clock size={16} />} title="Timeline" accent="#e88c3a"
-              active={view === 'timeline'} onClick={() => setView('timeline')} />
-            <RailIcon icon={<Music2 size={16} />} title="Soundboard" accent="#3b82f6"
-              active={view === 'soundboard'} onClick={() => setView('soundboard')} />
+            {NAV_ITEMS.map(({ view: v, label, icon: Icon, accent }) => (
+              <RailIcon key={v} icon={<Icon size={16} />} title={label} accent={accent}
+                active={view === v} onClick={() => setView(v)} />
+            ))}
           </>
         )}
 
@@ -257,71 +250,19 @@ export default function Sidebar() {
                 </span>
               </button>
 
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{
-                  width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
-                  color: view === 'wiki' ? '#5b9fe8' : 'var(--text-secondary)',
-                }}
-                onClick={() => setView('wiki')}
-              >
-                <BookOpen size={13} /> Wiki
-              </button>
-
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{
-                  width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
-                  color: view === 'dm-notes' ? "#fe6565" : 'var(--text-secondary)',
-                }}
-                onClick={() => setView('dm-notes')}
-              >
-                <Sparkles size={13} /> DM Notes
-              </button>
-
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{
-                  width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
-                  color: view === 'loot-tables' ? '#49c185' : 'var(--text-secondary)',
-                }}
-                onClick={() => setView('loot-tables')}
-              >
-                <ShoppingBag size={13} /> Loot Tables
-              </button>
-
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{
-                  width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
-                  color: view === 'relations' ? '#b07de8' : 'var(--text-secondary)',
-                }}
-                onClick={() => setView('relations')}
-              >
-                <Network size={13} /> Relations
-              </button>
-
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{
-                  width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
-                  color: view === 'timeline' ? '#e88c3a' : 'var(--text-secondary)',
-                }}
-                onClick={() => setView('timeline')}
-              >
-                <Clock size={13} /> Timeline
-              </button>
-
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{
-                  width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
-                  color: view === 'soundboard' ? '#3b82f6' : 'var(--text-secondary)',
-                }}
-                onClick={() => setView('soundboard')}
-              >
-                <Music2 size={13} /> Soundboard
-              </button>
+              {NAV_ITEMS.map(({ view: v, label, icon: Icon, accent }) => (
+                <button
+                  key={v}
+                  className="btn btn-ghost btn-sm"
+                  style={{
+                    width: '100%', justifyContent: 'flex-start', padding: '4px 6px', fontSize: 12, marginTop: 2,
+                    color: view === v ? accent : 'var(--text-secondary)',
+                  }}
+                  onClick={() => setView(v)}
+                >
+                  <Icon size={13} /> {label}
+                </button>
+              ))}
               </div>
             </div>
           )}
@@ -369,14 +310,7 @@ export default function Sidebar() {
                     fontFamily: 'var(--font-ui)', cursor: 'pointer',
                     textAlign: 'left', transition: 'all 120ms ease',
                   }}
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
-                    ;(e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'
-                  }}
-                  onMouseLeave={e => {
-                    ;(e.currentTarget as HTMLElement).style.background = 'none'
-                    ;(e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'
-                  }}
+                  className="hover-bg hover-text-secondary"
                 >
                   <span style={{ flexShrink: 0, opacity: 0.7 }}>{historyIcon(entry)}</span>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
@@ -424,93 +358,33 @@ const BG_OPTIONS: { value: BgStyle; label: string; preview: string }[] = [
   { value: 'wood',      label: 'Wood',      preview: 'repeating-linear-gradient(90deg, var(--bg-base) 0px, var(--bg-surface) 2px, var(--bg-base) 4px, var(--bg-base) 10px)' },
 ]
 
-function ThemePicker() {
-  const { colorTheme, setColorTheme } = useStore()
-  const [open, setOpen] = useState(false)
+// ── Footer pickers ─────────────────────────────────────────────────────────────
+// One generic popup picker drives the Theme / Text / Background pickers: a
+// trigger row plus a swatch grid, closing on outside click like other menus.
 
-  return (
-    <div style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen(v => !v)}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-          padding: '7px 10px', background: open ? 'var(--bg-elevated)' : 'transparent',
-          border: `1px solid ${open ? 'var(--border-gold)' : 'var(--border-light)'}`,
-          borderRadius: 'var(--radius-sm)',
-          color: open ? 'var(--gold)' : 'var(--text-muted)',
-          fontSize: 12, fontFamily: 'var(--font-ui)',
-          cursor: 'pointer', transition: 'all var(--transition)',
-        }}
-        className={(!open) ? 'hover-gold' : ''}
-      >
-        <Palette size={13} />
-        Theme
-        <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>{THEMES[colorTheme].label}</span>
-      </button>
-
-      {open && (
-        <div style={{
-          position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, right: 0,
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-light)',
-          borderRadius: 'var(--radius-md)',
-          padding: '10px',
-          boxShadow: 'var(--shadow-lg)',
-          zIndex: 50,
-        }}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 2 }}>
-            Colour theme
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
-            {(Object.keys(THEMES) as ThemeKey[]).map(key => {
-              const t = THEMES[key]
-              const active = colorTheme === key
-              return (
-                <button
-                  key={key}
-                  title={t.label}
-                  onClick={() => { setColorTheme(key); setOpen(false) }}
-                  style={{
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-                    background: 'none', border: 'none', cursor: 'pointer', padding: '4px 2px',
-                    borderRadius: 'var(--radius-sm)',
-                  }}
-                >
-                  {/* Swatch: bg colour with accent dot */}
-                  <div style={{
-                    width: 36, height: 28,
-                    borderRadius: 4,
-                    background: t.bgPreview,
-                    border: `2px solid ${active ? 'var(--gold)' : 'var(--border-light)'}`,
-                    boxShadow: active ? 'var(--shadow-gold)' : 'none',
-                    transition: 'border-color var(--transition)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <div style={{
-                      width: 10, height: 10, borderRadius: '50%',
-                      background: t.accentPreview,
-                      boxShadow: `0 0 6px ${t.accentPreview}88`,
-                    }} />
-                  </div>
-                  <span style={{ fontSize: 9, color: active ? 'var(--gold)' : 'var(--text-muted)', letterSpacing: '0.04em' }}>
-                    {t.label}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  )
+interface FooterPickerOption {
+  key: string
+  label: string
+  active: boolean
+  swatchStyle?: React.CSSProperties
+  swatchContent?: React.ReactNode
+  onSelect: () => void
 }
 
-function TextPicker() {
-  const { textTheme, setTextTheme } = useStore()
+function FooterPicker({ icon, label, valueLabel, title, columns, options }: {
+  icon: React.ReactNode
+  label: string
+  valueLabel: string
+  title: string
+  columns: number
+  options: FooterPickerOption[]
+}) {
   const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useMenuClose(open, ref, setOpen)
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div ref={ref} style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen(v => !v)}
         style={{
@@ -524,9 +398,9 @@ function TextPicker() {
         }}
         className={(!open) ? 'hover-gold' : ''}
       >
-        <Type size={13} />
-        Text
-        <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>{TEXT_THEMES[textTheme].label}</span>
+        {icon}
+        {label}
+        <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>{valueLabel}</span>
       </button>
 
       {open && (
@@ -540,93 +414,14 @@ function TextPicker() {
           zIndex: 50,
         }}>
           <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 2 }}>
-            Text colour
+            {title}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 6 }}>
-            {(Object.keys(TEXT_THEMES) as TextThemeKey[]).map(key => {
-              const t = TEXT_THEMES[key]
-              const active = textTheme === key
-              return (
-                <button
-                  key={key}
-                  title={t.label}
-                  onClick={() => { setTextTheme(key); setOpen(false) }}
-                  style={{
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-                    background: 'none', border: 'none', cursor: 'pointer', padding: '4px 2px',
-                    borderRadius: 'var(--radius-sm)',
-                  }}
-                >
-                  {/* Swatch: 'Aa' letterform in the palette's primary colour on a dark tile */}
-                  <div style={{
-                    width: 30, height: 28,
-                    borderRadius: 4,
-                    background: 'var(--bg-base)',
-                    border: `2px solid ${active ? 'var(--gold)' : 'var(--border-light)'}`,
-                    boxShadow: active ? 'var(--shadow-gold)' : 'none',
-                    transition: 'border-color var(--transition)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontFamily: 'var(--font-display)', fontSize: 14, lineHeight: 1,
-                    color: t.preview,
-                  }}>
-                    Aa
-                  </div>
-                  <span style={{ fontSize: 9, color: active ? 'var(--gold)' : 'var(--text-muted)', letterSpacing: '0.04em' }}>
-                    {t.label}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function BackgroundPicker() {
-  const { bgStyle, setBgStyle } = useStore()
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen(v => !v)}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-          padding: '7px 10px', background: open ? 'var(--bg-elevated)' : 'transparent',
-          border: `1px solid ${open ? 'var(--border-gold)' : 'var(--border-light)'}`,
-          borderRadius: 'var(--radius-sm)',
-          color: open ? 'var(--gold)' : 'var(--text-muted)',
-          fontSize: 12, fontFamily: 'var(--font-ui)',
-          cursor: 'pointer', transition: 'all var(--transition)',
-        }}
-        className={(!open) ? 'hover-gold' : ''}
-      >
-        <Paintbrush size={13} />
-        Background
-        <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7, textTransform: 'capitalize' }}>{bgStyle}</span>
-      </button>
-
-      {open && (
-        <div style={{
-          position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, right: 0,
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-light)',
-          borderRadius: 'var(--radius-md)',
-          padding: '10px',
-          boxShadow: 'var(--shadow-lg)',
-          zIndex: 50,
-        }}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 2 }}>
-            Background style
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
-            {BG_OPTIONS.map(opt => (
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 6 }}>
+            {options.map(o => (
               <button
-                key={opt.value}
-                title={opt.label}
-                onClick={() => { setBgStyle(opt.value); setOpen(false) }}
+                key={o.key}
+                title={o.label}
+                onClick={() => { o.onSelect(); setOpen(false) }}
                 style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
                   background: 'none', border: 'none', cursor: 'pointer', padding: '4px 2px',
@@ -636,13 +431,16 @@ function BackgroundPicker() {
                 <div style={{
                   width: 36, height: 28,
                   borderRadius: 4,
-                  background: opt.preview,
-                  border: `2px solid ${bgStyle === opt.value ? 'var(--gold)' : 'var(--border-light)'}`,
-                  boxShadow: bgStyle === opt.value ? 'var(--shadow-gold)' : 'none',
+                  border: `2px solid ${o.active ? 'var(--gold)' : 'var(--border-light)'}`,
+                  boxShadow: o.active ? 'var(--shadow-gold)' : 'none',
                   transition: 'border-color var(--transition)',
-                }} />
-                <span style={{ fontSize: 9, color: bgStyle === opt.value ? 'var(--gold)' : 'var(--text-muted)', letterSpacing: '0.04em' }}>
-                  {opt.label}
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  ...o.swatchStyle,
+                }}>
+                  {o.swatchContent}
+                </div>
+                <span style={{ fontSize: 9, color: o.active ? 'var(--gold)' : 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                  {o.label}
                 </span>
               </button>
             ))}
@@ -650,6 +448,68 @@ function BackgroundPicker() {
         </div>
       )}
     </div>
+  )
+}
+
+function ThemePicker() {
+  const { colorTheme, setColorTheme } = useStore()
+  return (
+    <FooterPicker
+      icon={<Palette size={13} />} label="Theme" title="Colour theme"
+      valueLabel={THEMES[colorTheme].label} columns={5}
+      options={(Object.keys(THEMES) as ThemeKey[]).map(key => {
+        const t = THEMES[key]
+        return {
+          key, label: t.label, active: colorTheme === key,
+          swatchStyle: { background: t.bgPreview },
+          swatchContent: (
+            <div style={{
+              width: 10, height: 10, borderRadius: '50%',
+              background: t.accentPreview, boxShadow: `0 0 6px ${t.accentPreview}88`,
+            }} />
+          ),
+          onSelect: () => setColorTheme(key),
+        }
+      })}
+    />
+  )
+}
+
+function TextPicker() {
+  const { textTheme, setTextTheme } = useStore()
+  return (
+    <FooterPicker
+      icon={<Type size={13} />} label="Text" title="Text colour"
+      valueLabel={TEXT_THEMES[textTheme].label} columns={6}
+      options={(Object.keys(TEXT_THEMES) as TextThemeKey[]).map(key => {
+        const t = TEXT_THEMES[key]
+        return {
+          key, label: t.label, active: textTheme === key,
+          // 'Aa' letterform in the palette's primary colour on a dark tile
+          swatchStyle: {
+            width: 30, background: 'var(--bg-base)',
+            fontFamily: 'var(--font-display)', fontSize: 14, lineHeight: 1, color: t.preview,
+          },
+          swatchContent: 'Aa',
+          onSelect: () => setTextTheme(key),
+        }
+      })}
+    />
+  )
+}
+
+function BackgroundPicker() {
+  const { bgStyle, setBgStyle } = useStore()
+  return (
+    <FooterPicker
+      icon={<Paintbrush size={13} />} label="Background" title="Background style"
+      valueLabel={bgStyle.charAt(0).toUpperCase() + bgStyle.slice(1)} columns={5}
+      options={BG_OPTIONS.map(opt => ({
+        key: opt.value, label: opt.label, active: bgStyle === opt.value,
+        swatchStyle: { background: opt.preview },
+        onSelect: () => setBgStyle(opt.value),
+      }))}
+    />
   )
 }
 
@@ -709,7 +569,7 @@ function BackupButton() {
   }
 
   const icon = status === 'done' ? <Check size={13} /> : status === 'error' ? <AlertCircle size={13} /> : <Download size={13} />
-  const color = status === 'done' ? 'var(--teal)' : status === 'error' ? '#e05555' : 'var(--text-muted)'
+  const color = status === 'done' ? 'var(--teal)' : status === 'error' ? 'var(--danger)' : 'var(--text-muted)'
   const label = status === 'working' ? 'Backing up…' : status === 'done' ? 'Backup saved!' : status === 'error' ? 'Backup failed' : 'Export Backup'
 
   return (
@@ -794,7 +654,7 @@ function ImportButton() {
   }
 
   const icon = status === 'error' ? <AlertCircle size={13} /> : status === 'done' ? <Check size={13} /> : <Upload size={13} />
-  const color = status === 'confirm' ? 'var(--gold)' : status === 'error' ? '#e05555' : status === 'done' ? 'var(--teal)' : 'var(--text-muted)'
+  const color = status === 'confirm' ? 'var(--gold)' : status === 'error' ? 'var(--danger)' : status === 'done' ? 'var(--teal)' : 'var(--text-muted)'
   const borderColor = status === 'confirm' ? 'var(--border-gold)' : status === 'error' ? 'rgba(139,37,51,0.4)' : status === 'done' ? 'rgba(42,122,110,0.4)' : 'var(--border-light)'
   const label = status === 'working' ? 'Importing…' : status === 'confirm' ? 'Click again to confirm' : status === 'error' ? 'Import failed' : status === 'done' ? 'Import complete!' : 'Import Backup'
 
@@ -827,7 +687,7 @@ function ImportButton() {
         </div>
       )}
       {status === 'error' && message && (
-        <div style={{ fontSize: 10, color: '#e05555', marginTop: 4, paddingLeft: 4 }}>
+        <div style={{ fontSize: 10, color: 'var(--danger)', marginTop: 4, paddingLeft: 4 }}>
           {message}
         </div>
       )}

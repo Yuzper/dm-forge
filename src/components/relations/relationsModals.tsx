@@ -9,6 +9,7 @@ import {
   buildRanksFromPreset, type RelationWeb, type DBRelationNode, type DBRelationEdge,
   ALL_ARTICLE_TYPES, ARTICLE_TYPE_LABELS, findFreePosition,
 } from './relationsShared'
+import Modal from '../Modal'
 
 // ── Modals ─────────────────────────────────────────────────────────────────────
 
@@ -33,7 +34,7 @@ export function NewWebModal({ onClose, onCreated, lockedArticle }: {
   const [articleSearch, setArticleSearch] = useState('')
   const [articleResults, setArticleResults] = useState<{ id: number; title: string; article_type: string }[]>([])
   const [newArticleType, setNewArticleType] = useState('organization')
-  const articleDebounce = useRef<ReturnType<typeof setTimeout>>()
+  const articleDebounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     if (!currentCampaign || !articleSearch.trim()) { setArticleResults([]); return }
@@ -97,9 +98,7 @@ export function NewWebModal({ onClose, onCreated, lockedArticle }: {
   const cfg = TEMPLATE_CONFIG[template]
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 480 }}>
-        <div className="modal-title">New web</div>
+    <Modal title="New web" onClose={onClose} style={{ maxWidth: 480 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Template</div>
@@ -229,12 +228,11 @@ export function NewWebModal({ onClose, onCreated, lockedArticle }: {
           </button>
         </div>
         {error && (
-          <div style={{ marginTop: 10, fontSize: 12, color: '#e05555', background: 'rgba(224,85,85,0.08)', borderRadius: 6, padding: '8px 12px' }}>
+          <div style={{ marginTop: 10, fontSize: 12, color: 'var(--danger)', background: 'var(--danger-bg)', borderRadius: 6, padding: '8px 12px' }}>
             {error}
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -251,7 +249,7 @@ export function AddNodeModal({ webId, existingNodes, onClose, onAdded, typeFilte
   // Multi-select: link several existing articles as nodes in one go.
   const [selected, setSelected] = useState<{ id: number; title: string; article_type?: string }[]>([])
   const [saving, setSaving] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // Articles already present as nodes — hidden from results to avoid duplicates.
   const existingArticleIds = useMemo(
@@ -317,9 +315,7 @@ export function AddNodeModal({ webId, existingNodes, onClose, onAdded, typeFilte
   })
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Add node{selected.length > 1 ? 's' : ''}</div>
+    <Modal title={<>Add node{selected.length > 1 ? 's' : ''}</>} onClose={onClose}>
 
         {/* Mode tabs */}
         <div style={{
@@ -433,8 +429,7 @@ export function AddNodeModal({ webId, existingNodes, onClose, onAdded, typeFilte
                 : 'Add node'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -456,9 +451,7 @@ export function EdgeLabelModal({ onClose, onConfirm, mode = 'standard', suggesti
 
   if (mode === 'person_to_union') {
     return (
-      <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-        <div className="modal">
-          <div className="modal-title">Role in union</div>
+      <Modal title="Role in union" onClose={onClose}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div className="input-group">
               <label className="input-label">Your role <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
@@ -481,15 +474,12 @@ export function EdgeLabelModal({ onClose, onConfirm, mode = 'standard', suggesti
             <button className="btn" onClick={() => onConfirm('', '')}>Skip</button>
             <button className="btn btn-primary" onClick={handleConfirm}>Connect</button>
           </div>
-        </div>
-      </div>
+      </Modal>
     )
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Define relationship</div>
+    <Modal title="Define relationship" onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="input-group">
             <label className="input-label">Relationship label</label>
@@ -534,8 +524,7 @@ export function EdgeLabelModal({ onClose, onConfirm, mode = 'standard', suggesti
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={handleConfirm} disabled={!labelFrom.trim()}>Connect</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -546,9 +535,7 @@ export function EditEdgeModal({ edge, onClose, onSave }: {
   const [labelFrom, setLabelFrom] = useState(edge.label_from)
   const [labelTo, setLabelTo] = useState(edge.label_to)
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Edit relationship</div>
+    <Modal title="Edit relationship" onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="input-group">
             <label className="input-label">Label (from → to)</label>
@@ -565,8 +552,7 @@ export function EditEdgeModal({ edge, onClose, onSave }: {
             onClick={() => onSave(labelFrom.trim(), labelTo.trim() || labelFrom.trim())}
             disabled={!labelFrom.trim()}>Save</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -586,9 +572,7 @@ export function CreateArticleModal({ node, onClose, onCreate }: {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Create article</div>
+    <Modal title="Create article" onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
             A new article titled <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{node.label}</span> will be created and linked to this node.
@@ -608,8 +592,7 @@ export function CreateArticleModal({ node, onClose, onCreate }: {
             {saving ? 'Creating…' : 'Create & link'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -622,7 +605,7 @@ export function LinkArticleModal({ node, campaignId, onClose, onLink }: {
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<{ id: number; title: string; article_type: string }[]>([])
   const [saving, setSaving] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     if (!search.trim()) { setResults([]); return }
@@ -641,9 +624,7 @@ export function LinkArticleModal({ node, campaignId, onClose, onLink }: {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Link article</div>
+    <Modal title="Link article" onClose={onClose}>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
           Link <span style={{ color: 'var(--text-primary)' }}>{node.label}</span> to an existing article.
         </div>
@@ -671,8 +652,7 @@ export function LinkArticleModal({ node, campaignId, onClose, onLink }: {
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -704,9 +684,7 @@ export function EditUnionModal({ unionId, dbNodes, dbEdges, onClose, onSaved, on
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">Edit union</div>
+    <Modal title="Edit union" onClose={onClose}>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
           Change who is in this union or relabel their roles.
         </div>
@@ -728,14 +706,14 @@ export function EditUnionModal({ unionId, dbNodes, dbEdges, onClose, onSaved, on
             </div>
           ))}
           {duplicate && (
-            <div style={{ fontSize: 12, color: '#e05555' }}>The two people in a union must be different.</div>
+            <div style={{ fontSize: 12, color: 'var(--danger)' }}>The two people in a union must be different.</div>
           )}
         </div>
         <div className="modal-actions" style={{ justifyContent: 'space-between' }}>
           <button
             className="btn"
             onClick={() => { if (!confirmDissolve) { setConfirmDissolve(true); return } onDissolve() }}
-            style={{ color: confirmDissolve ? 'var(--danger-hover)' : '#e05555' }}
+            style={{ color: confirmDissolve ? 'var(--danger-hover)' : 'var(--danger)' }}
           >
             <Trash2 size={13} /> {confirmDissolve ? 'Confirm dissolve' : 'Dissolve union'}
           </button>
@@ -746,7 +724,6 @@ export function EditUnionModal({ unionId, dbNodes, dbEdges, onClose, onSaved, on
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

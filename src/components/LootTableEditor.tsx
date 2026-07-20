@@ -3,16 +3,10 @@ import { useState, useCallback, useRef } from 'react'
 import { Plus, Trash2, StickyNote } from 'lucide-react'
 import type { LootItem, LootTable } from '../types'
 import { parseItemStatBlock } from '../types'
-import { chanceColor } from './LootTableView'
+import { chanceColor } from '../constants/loot'
 import { ItemCard, type ItemCardData } from './ItemCard'
 import { useStore } from '../store/store'
-
-function richTextToPlain(json: string): string {
-  try {
-    const walk = (node: any): string => node.type === 'text' ? (node.text ?? '') : (node.content ?? []).map(walk).join(' ')
-    return walk(JSON.parse(json)).replace(/\s+/g, ' ').trim()
-  } catch { return '' }
-}
+import { richTextToPlain } from '../utils/richText'
 
 interface Props {
   value: LootTable
@@ -157,9 +151,9 @@ function ItemRow({
               color: 'var(--text-muted)', padding: 4, flexShrink: 0,
               display: 'flex', alignItems: 'center',
               opacity: hovered ? 1 : 0, transition: 'opacity var(--transition), color var(--transition)',
-            }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--danger)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+              '--hover-accent': 'var(--danger)',
+            } as React.CSSProperties}
+            className="hover-accent"
           >
             <Trash2 size={13} />
           </button>
@@ -220,9 +214,9 @@ function ItemRow({
                 background: 'none', border: 'none', cursor: 'pointer',
                 color: 'var(--text-muted)', fontSize: 11, padding: '2px 4px',
                 opacity: hovered ? 1 : 0.5, transition: 'opacity var(--transition), color var(--transition)',
-              }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--gold-dim)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}
+                '--hover-accent': 'var(--gold-dim)',
+              } as React.CSSProperties}
+              className="hover-accent"
               title="Add a description"
             >
               <StickyNote size={11} /> note
@@ -260,7 +254,7 @@ export default function LootTableEditor({ value, onChange, suggestions, showPric
 
   // ── Item card hover ───────────────────────────────────────────────────────────
   const [hoveredItem, setHoveredItem] = useState<(ItemCardData & { x: number; y: number }) | null>(null)
-  const itemHoverTimer = useRef<ReturnType<typeof setTimeout>>()
+  const itemHoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const cancelItemClose = () => clearTimeout(itemHoverTimer.current)
   const scheduleItemClose = () => { cancelItemClose(); itemHoverTimer.current = setTimeout(() => setHoveredItem(null), 150) }
 
@@ -340,15 +334,9 @@ export default function LootTableEditor({ value, onChange, suggestions, showPric
           borderRadius: 'var(--radius)',
           padding: '9px 0',
           transition: 'border-color 150ms ease, color 150ms ease',
-        }}
-        onMouseEnter={e => {
-          (e.currentTarget as HTMLElement).style.borderColor = '#49c185'
-          ;(e.currentTarget as HTMLElement).style.color = '#49c185'
-        }}
-        onMouseLeave={e => {
-          (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'
-          ;(e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'
-        }}
+          '--hover-accent': 'var(--success)',
+        } as React.CSSProperties}
+        className="hover-accent-border"
       >
         <Plus size={13} /> Add item
       </button>

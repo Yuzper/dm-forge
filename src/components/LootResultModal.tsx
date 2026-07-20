@@ -5,13 +5,8 @@ import type { LootItem } from '../types'
 import { parseItemStatBlock } from '../types'
 import { ItemCard, type ItemCardData } from './ItemCard'
 import { useStore } from '../store/store'
-
-function richTextToPlain(json: string): string {
-  try {
-    const walk = (node: any): string => node.type === 'text' ? (node.text ?? '') : (node.content ?? []).map(walk).join(' ')
-    return walk(JSON.parse(json)).replace(/\s+/g, ' ').trim()
-  } catch { return '' }
-}
+import { richTextToPlain } from '../utils/richText'
+import { chanceColor } from '../constants/loot'
 
 interface Props {
   creatureName: string
@@ -19,13 +14,6 @@ interface Props {
   onClose: () => void
   // If provided, shows a regenerate button (for POI loot, not combat loot)
   onRegenerate?: () => void
-}
-
-function chanceColor(chance: number): string {
-  if (chance >= 100) return '#49c185'
-  if (chance >= 60)  return '#6ab87a'
-  if (chance >= 30)  return '#c8a84b'
-  return '#e05555'
 }
 
 export default function LootResultModal({ creatureName, items, onClose, onRegenerate }: Props) {
@@ -148,7 +136,7 @@ function LootItemRow({ item }: { item: LootItem }) {
   const color = chanceColor(item.chance)
 
   const [hoveredItem, setHoveredItem] = useState<(ItemCardData & { x: number; y: number }) | null>(null)
-  const hoverTimer = useRef<ReturnType<typeof setTimeout>>()
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const cancelClose = () => clearTimeout(hoverTimer.current)
   const scheduleClose = () => { cancelClose(); hoverTimer.current = setTimeout(() => setHoveredItem(null), 150) }
 

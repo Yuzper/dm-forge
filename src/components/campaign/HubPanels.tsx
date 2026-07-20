@@ -65,8 +65,7 @@ export function HubSettingsMenu({ panels, onChange }: {
         onClick={() => setOpen(o => !o)}
         title="Customise hub"
         style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 99, fontSize: 11, background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)' }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)' }}
+        className="hover-text-secondary"
       >
         <Eye size={11} /> Customise
       </button>
@@ -224,7 +223,7 @@ export function ActiveQuestsPanel({ bare = false }: { bare?: boolean } = {}) {
               )}
               {total > 0 && (
                 <div style={{ marginLeft: 15, height: 2, background: 'var(--border-light)', borderRadius: 1, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#49c185' : color, transition: 'width 200ms' }} />
+                  <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? 'var(--success)' : color, transition: 'width 200ms' }} />
                 </div>
               )}
             </button>
@@ -314,7 +313,7 @@ export function WikiHealthPanel({ bare = false }: { bare?: boolean } = {}) {
       )}
 
       {total === 0 ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#49c185' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--success)' }}>
           <span>✓</span> Wiki looks healthy
         </div>
       ) : (

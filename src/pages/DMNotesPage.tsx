@@ -2,6 +2,9 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { useMenuClose } from '../hooks/useMenuClose'
 import Modal from '../components/Modal'
+import SwatchPicker from '../components/SwatchPicker'
+import { STANDARD_PALETTE } from '../constants/palettes'
+import { SECTION_ACCENTS } from '../constants/sections'
 import { useStore } from '../store/store'
 import {
   Sparkles, Plus, Trash2, MoreHorizontal, FileText, Check,
@@ -60,10 +63,6 @@ interface DMNotePageFull extends DMNotePageSummary {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const GROUP_COLORS = [
-  '#9b7de8', '#5b9fe8', '#5bbfb0', '#49c185',
-  '#c8a84b', '#e88c3a', '#e05555', '#8a8a8a',
-]
 
 // ── Create Group Modal ─────────────────────────────────────────────────────────
 
@@ -73,7 +72,7 @@ function CreateGroupModal({ campaignId, onClose, onCreate }: {
   onCreate: (group: DMNoteGroup) => void
 }) {
   const [name, setName] = useState('')
-  const [color, setColor] = useState(GROUP_COLORS[0])
+  const [color, setColor] = useState(STANDARD_PALETTE[6])
   const [saving, setSaving] = useState(false)
 
   const handleSubmit = async () => {
@@ -100,19 +99,7 @@ function CreateGroupModal({ campaignId, onClose, onCreate }: {
         </div>
         <div className="input-group">
           <label className="input-label">Colour</label>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {GROUP_COLORS.map(c => (
-              <button
-                key={c}
-                onClick={() => setColor(c)}
-                style={{
-                  width: 22, height: 22, borderRadius: '50%', background: c, padding: 0,
-                  border: `2px solid ${color === c ? 'var(--text-primary)' : 'transparent'}`,
-                  cursor: 'pointer', transition: 'border 120ms ease',
-                }}
-              />
-            ))}
-          </div>
+          <SwatchPicker value={color} onChange={setColor} />
         </div>
       </div>
       <div className="modal-actions">
@@ -257,19 +244,7 @@ function GroupMenu({ group, isFirst, isLast, onMoveUp, onMoveDown, onRename, onD
           <div style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />
           <div style={{ padding: '4px 10px 6px' }}>
             <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Colour</div>
-            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-              {GROUP_COLORS.map(c => (
-                <button
-                  key={c}
-                  onClick={() => { onChangeColor(c); setOpen(false) }}
-                  style={{
-                    width: 16, height: 16, borderRadius: '50%', background: c, padding: 0, border: 'none',
-                    outline: group.color === c ? `2px solid ${c}` : '2px solid transparent',
-                    outlineOffset: 1, cursor: 'pointer', transition: 'outline 120ms ease',
-                  }}
-                />
-              ))}
-            </div>
+            <SwatchPicker value={group.color} onChange={onChangeColor} size={16} gap={5} />
           </div>
           {!isSystem && (
             <>
@@ -550,9 +525,9 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
                 borderRadius: 'var(--radius-sm)',
                 color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer',
                 transition: 'all 120ms ease', marginTop: 2,
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = group.color; (e.currentTarget as HTMLElement).style.color = group.color }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+                '--hover-accent': group.color,
+              } as React.CSSProperties}
+              className="hover-accent-border"
             >
               <Plus size={10} /> Add to {group.name}
             </button>
@@ -973,7 +948,7 @@ export default function DMNotesPage() {
         >
           <ArrowLeft size={14} /> Back
         </button>
-        <Sparkles size={13} color="#9b7de8" />
+        <Sparkles size={13} color={SECTION_ACCENTS['dm-notes']} />
         <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '0.03em', flex: 1 }}>
           DM Notes
         </span>

@@ -8,6 +8,7 @@ import {
 import {
   type Rank, RANK_PALETTE, makeRankId, ARTICLE_TRACKS, ARTICLE_TYPE_LABELS, ALL_ARTICLE_TYPES,
 } from './relationsShared'
+import SwatchPicker, { ColorDotPicker } from '../SwatchPicker'
 
 // ── Track Filter Panel ────────────────────────────────────────────────────────
 
@@ -129,10 +130,6 @@ export function TrackFilterPanel({
 // Pick one track (Species, State…), get a legend of every value present in the
 // web with an editable color; nodes are tinted by their value on the canvas.
 
-const COLOR_CHOICES = [
-  '#c8a84b', '#e88c3a', '#e05555', '#d4537e', '#b07de8', '#7F77DD',
-  '#5b9fe8', '#5bbfb0', '#49c185', '#97c459', '#8a8a8a', '#e0e0e0',
-]
 
 export function ColorByPanel({ availableTracks, track, values, colors, onSelectTrack, onSetColor, onClose }: {
   availableTracks: string[]
@@ -192,17 +189,8 @@ export function ColorByPanel({ availableTracks, track, values, colors, onSelectT
               <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{count}</span>
             </div>
             {picking === value && (
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', padding: '2px 0 8px 24px' }}>
-                {COLOR_CHOICES.map(c => (
-                  <button
-                    key={c}
-                    onClick={() => { onSetColor(value, c); setPicking(null) }}
-                    style={{
-                      width: 15, height: 15, borderRadius: '50%', background: c, cursor: 'pointer', padding: 0,
-                      border: `2px solid ${colors[value] === c ? 'var(--text-primary)' : 'transparent'}`,
-                    }}
-                  />
-                ))}
+              <div style={{ padding: '2px 0 8px 24px' }}>
+                <SwatchPicker value={colors[value]} onChange={c => onSetColor(value, c)} size={15} gap={5} />
               </div>
             )}
           </div>
@@ -263,8 +251,7 @@ export function RankPanel({ ranks, onChange, onClose }: {
               <button onClick={() => move(i, -1)} disabled={i === 0} style={{ ...arrowBtn, opacity: i === 0 ? 0.3 : 1 }}><ChevronUp size={12} /></button>
               <button onClick={() => move(i, 1)} disabled={i === ranks.length - 1} style={{ ...arrowBtn, opacity: i === ranks.length - 1 ? 0.3 : 1 }}><ChevronDown size={12} /></button>
             </div>
-            <input type="color" value={r.color} onChange={e => update(r.id, { color: e.target.value })}
-              style={{ width: 22, height: 22, padding: 0, border: 'none', background: 'none', cursor: 'pointer', flexShrink: 0 }} />
+            <ColorDotPicker value={r.color} onChange={c => update(r.id, { color: c })} size={22} title="Rank colour" />
             <input className="input" value={r.name} onChange={e => update(r.id, { name: e.target.value })}
               style={{ flex: 1, fontSize: 12, padding: '4px 8px', minWidth: 0 }} />
             <button onClick={() => remove(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2, flexShrink: 0 }}><Trash2 size={12} /></button>
@@ -292,7 +279,7 @@ export function LinkedArticlePill({ webId, article, onReload }: {
   const [linking, setLinking] = useState(false)
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<{ id: number; title: string; article_type: string }[]>([])
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     if (!linking || !currentCampaign || !search.trim()) { setResults([]); return }
@@ -370,9 +357,8 @@ export function LinkedArticlePill({ webId, article, onReload }: {
       <button
         onClick={() => navigateToArticleByTitle(article.title)}
         title={`Go to ${article.title}`}
-        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
-        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#7F77DD'}
-        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', '--hover-accent': '#7F77DD' } as React.CSSProperties}
+        className="hover-accent"
       >
         <ExternalLink size={11} color="#7F77DD" style={{ flexShrink: 0 }} />
         <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{article.title}</span>
@@ -384,9 +370,8 @@ export function LinkedArticlePill({ webId, article, onReload }: {
         <Pencil size={10} />
       </button>
       <button onClick={unlink} title="Unlink article"
-        style={{ display: 'flex', padding: '5px 7px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#e05555'}
-        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'}>
+        style={{ display: 'flex', padding: '5px 7px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', '--hover-accent': 'var(--danger)' } as React.CSSProperties}
+        className="hover-accent">
         <X size={10} />
       </button>
     </div>

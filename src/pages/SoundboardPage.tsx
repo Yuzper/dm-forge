@@ -7,21 +7,16 @@ import {
 } from 'lucide-react'
 import type { SoundBoard, Sound, SoundCategory, DefaultSound, Session } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
+import {
+  SOUND_CATEGORIES as CATEGORIES,
+  soundCategoryColor as categoryColor,
+  soundCategoryLabel as categoryLabel,
+} from '../constants/soundCategories'
+import { SECTION_ACCENTS } from '../constants/sections'
 
-// ── Category config ────────────────────────────────────────────────────────────
+// Section accent used for all soundboard-flavoured UI chrome on this page.
+const ACCENT = SECTION_ACCENTS['soundboard']
 
-const CATEGORIES: { value: SoundCategory; label: string; color: string }[] = [
-  { value: 'ambience', label: 'Ambience', color: '#3b82f6' },
-  { value: 'music',    label: 'Music',    color: '#10b981' },
-  { value: 'effect',   label: 'Effect',   color: '#f59e0b' },
-]
-
-function categoryColor(cat: SoundCategory) {
-  return CATEGORIES.find(c => c.value === cat)?.color ?? '#8a8a8a'
-}
-function categoryLabel(cat: SoundCategory) {
-  return CATEGORIES.find(c => c.value === cat)?.label ?? cat
-}
 function basename(p: string) {
   return p.replace(/\\/g, '/').split('/').pop() ?? p
 }
@@ -125,9 +120,9 @@ function SoundFormRow({ boardId, sound, onSave, onCancel }: {
             color: filePath ? 'var(--text-secondary)' : 'var(--text-muted)',
             fontSize: 12, cursor: 'pointer', overflow: 'hidden',
             transition: 'border-color var(--transition)',
-          }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#3b82f6'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-light)'}
+            '--hover-accent': ACCENT,
+          } as React.CSSProperties}
+          className="hover-border-accent"
         >
           <FolderOpen size={12} style={{ flexShrink: 0 }} />
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -166,7 +161,7 @@ function SoundFormRow({ boardId, sound, onSave, onCancel }: {
           type="range" min={0} max={1} step={0.01}
           value={volume}
           onChange={e => setVolume(parseFloat(e.target.value))}
-          style={{ width: 160, accentColor: '#3b82f6', cursor: 'pointer' }}
+          style={{ width: 160, accentColor: ACCENT, cursor: 'pointer' }}
           title="Per-sound volume"
         />
         <span style={{ fontSize: 10, color: 'var(--text-muted)', width: 30 }}>
@@ -180,9 +175,9 @@ function SoundFormRow({ boardId, sound, onSave, onCancel }: {
             display: 'flex', alignItems: 'center', gap: 5,
             padding: '3px 10px', borderRadius: 'var(--radius-sm)', fontSize: 11,
             cursor: 'pointer', marginLeft: 'auto',
-            border: `1px solid ${loop ? '#3b82f6' : 'var(--border-light)'}`,
-            background: loop ? '#3b82f620' : 'transparent',
-            color: loop ? '#3b82f6' : 'var(--text-muted)',
+            border: `1px solid ${loop ? ACCENT : 'var(--border-light)'}`,
+            background: loop ? `${ACCENT}20` : 'transparent',
+            color: loop ? ACCENT : 'var(--text-muted)',
             transition: 'all 120ms ease',
           }}
         >
@@ -428,7 +423,7 @@ function BoardPanel({ board, onBoardUpdate, onBoardDelete }: {
             style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4 }}
             title="Link sessions — this board auto-loads when you open them"
           >
-            <Link2 size={13} color={linkedSessions.length > 0 ? '#3b82f6' : 'currentColor'} />
+            <Link2 size={13} color={linkedSessions.length > 0 ? ACCENT : 'currentColor'} />
             {linkedSessions.length > 0 ? `${linkedSessions.length} linked` : 'Link sessions'}
           </button>
           {linkOpen && (
@@ -474,8 +469,8 @@ function BoardPanel({ board, onBoardUpdate, onBoardDelete }: {
                     >
                       <span style={{
                         width: 14, height: 14, borderRadius: 3, flexShrink: 0,
-                        border: `1px solid ${linkedHere ? '#3b82f6' : 'var(--border-light)'}`,
-                        background: linkedHere ? '#3b82f6' : 'transparent',
+                        border: `1px solid ${linkedHere ? ACCENT : 'var(--border-light)'}`,
+                        background: linkedHere ? ACCENT : 'transparent',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
                         {linkedHere && <Check size={10} color="#fff" />}
@@ -527,7 +522,7 @@ function BoardPanel({ board, onBoardUpdate, onBoardDelete }: {
             No sounds yet.{' '}
             <button
               onClick={() => setAddingSound(true)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', fontSize: 13 }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: ACCENT, fontSize: 13 }}
             >
               Add your first sound
             </button>
@@ -779,13 +774,13 @@ function BoardListItem({ board, isActive, onClick }: {
         padding: '7px 10px', borderRadius: 'var(--radius-sm)',
         cursor: isActive ? 'default' : 'pointer',
         background: isActive ? 'var(--bg-active)' : 'transparent',
-        border: `1px solid ${isActive ? '#3b82f640' : 'transparent'}`,
+        border: `1px solid ${isActive ? `${ACCENT}40` : 'transparent'}`,
         transition: 'all 120ms ease',
         display: 'flex', alignItems: 'center', gap: 8,
       }}
       className={(!isActive) ? 'hover-bg' : ''}
     >
-      <Music2 size={11} style={{ color: isActive ? '#3b82f6' : 'var(--text-muted)', flexShrink: 0 }} />
+      <Music2 size={11} style={{ color: isActive ? ACCENT : 'var(--text-muted)', flexShrink: 0 }} />
       <span style={{
         flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
@@ -881,7 +876,7 @@ export default function SoundboardPage() {
         >
           <ArrowLeft size={14} /> Back
         </button>
-        <Music2 size={13} color="#3b82f6" />
+        <Music2 size={13} color={ACCENT} />
         <span style={{
           fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500,
           color: 'var(--text-primary)', letterSpacing: '0.03em', flex: 1,
@@ -944,7 +939,7 @@ export default function SoundboardPage() {
                 <br />
                 <button
                   onClick={() => setCreating(true)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', fontSize: 12, marginTop: 4 }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: ACCENT, fontSize: 12, marginTop: 4 }}
                 >
                   Create your first board
                 </button>

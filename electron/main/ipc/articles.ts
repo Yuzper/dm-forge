@@ -230,8 +230,14 @@ export function registerArticleIPC() {
       try {
         if (r.article_type === 'quest') {
           if (JSON.parse(r.substeps || '[]').length > 0) return true
-          const rewards = JSON.parse(r.rewards || '[]')
-          return Array.isArray(rewards) && rewards.length > 0
+          // Rewards are a single record now; legacy rows still hold an array.
+          const rw = JSON.parse(r.rewards || 'null')
+          if (Array.isArray(rw)) return rw.length > 0
+          if (!rw || typeof rw !== 'object') return false
+          return Object.values(rw.currency ?? {}).some((n: any) => Number(n) > 0)
+            || (rw.items ?? []).length > 0
+            || !!(rw.information ?? '').trim()
+            || !!(rw.other ?? '').trim()
         }
         if (r.article_type === 'item' || r.article_type === 'artifact') {
           const ib = JSON.parse(r.item_block || '{}')

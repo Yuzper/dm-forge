@@ -32,7 +32,7 @@ export function highlightSpellText(text: string) {
       return <strong key={i} style={{ color: '#e0795b', fontWeight: 700 }}>{part}</strong>
     }
     if (/^\d/.test(part) && /(?:foot|feet)/i.test(part)) {
-      return <strong key={i} style={{ color: '#5b9fe8', fontWeight: 700 }}>{part}</strong>
+      return <strong key={i} style={{ color: 'var(--info)', fontWeight: 700 }}>{part}</strong>
     }
     return part
   })
