@@ -5,11 +5,12 @@ import { useStore } from '../../store/store'
 import {
   Map, BookOpen, MoreHorizontal, Trash2, Pencil,
   Scroll, Upload, X, Search, ExternalLink,
-  Maximize, Image as ImageIcon, List,
+  Maximize, Image as ImageIcon, List, Ruler,
 } from 'lucide-react'
-import type { Session, GameMap, POI } from '../../types'
+import type { Session, GameMap, POI, MapScale } from '../../types'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import Modal from '../Modal'
+import TravelMeasurePanel, { type CalibDraft } from './TravelMeasurePanel'
 import { SECTION_ACCENTS } from '../../constants/sections'
 import SwatchPicker from '../SwatchPicker'
 
@@ -378,6 +379,18 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null)
   const mapRef = useRef<HTMLDivElement>(null)
 
+  // ── Measure / travel mode ─────────────────────────────────────────────────
+  // `mapScale` is the distance calibration (persisted per map); `waypoints` is
+  // the current route (ephemeral); calibration collects two reference points.
+  const [measureMode, setMeasureMode] = useState(false)
+  const [mapScale, setMapScale] = useState<MapScale | null>(null)
+  const [waypoints, setWaypoints] = useState<{ x: number; y: number; label?: string }[]>([])
+  const [isCalibrating, setIsCalibrating] = useState(false)
+  const [calibPts, setCalibPts] = useState<{ x: number; y: number }[]>([])
+  const calibDraft: CalibDraft | null = calibPts.length === 2
+    ? { x1: calibPts[0].x, y1: calibPts[0].y, x2: calibPts[1].x, y2: calibPts[1].y }
+    : null
+
   // ── Image-relative POI positioning ────────────────────────────────────────
   useEffect(() => {
     const el = mapRef.current
@@ -444,6 +457,20 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
     setImgNatural(null)
     window.api.getImagePath(currentMap.image_path).then(setImageUrl)
   }, [currentMap?.id, currentMap?.image_path])
+
+  // ── Load distance scale + reset the (ephemeral) route on map change ────────
+  useEffect(() => {
+    setWaypoints([])
+    setIsCalibrating(false)
+    setCalibPts([])
+    try { setMapScale(currentMap?.map_scale ? JSON.parse(currentMap.map_scale) : null) }
+    catch { setMapScale(null) }
+  }, [currentMap?.id])
+
+  // Keep the cursor in sync with the active mode.
+  useEffect(() => {
+    setCursorStyle(editMode || measureMode ? 'crosshair' : 'grab')
+  }, [editMode, measureMode])
 
   // ── Persist viewport (scale + offset) per map, debounced; flush on unmount ──
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -607,6 +634,8 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
 
   const handlePOIClick = (poi: POI, e: React.MouseEvent) => {
     e.stopPropagation()
+    // In measure mode, clicking a marker snaps the route/scale point to it.
+    if (measureMode) { addMeasurePoint(poi.x, poi.y, poi.label); return }
     if (selectedPOI?.id === poi.id) { setSelectedPOI(null); setPopupPos(null); return }
     setSelectedPOI(poi)
     setPopupPos(computePopupPos(poi))
@@ -625,19 +654,75 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
     setPopupPos(computePopupPos(poi))
   }
 
-  // ── Map background click to place POI ────────────────────────────────────
+  // ── Measure-mode helpers ──────────────────────────────────────────────────
+  // A click while calibrating collects a reference point (two of them define the
+  // scale line); otherwise it appends a route waypoint.
+  const addMeasurePoint = (x: number, y: number, label?: string) => {
+    if (isCalibrating) {
+      setCalibPts(prev => { const next = [...prev, { x, y }]; return next.length > 2 ? [{ x, y }] : next })
+    } else {
+      setWaypoints(prev => [...prev, { x, y, label }])
+    }
+  }
+
+  // Map-panel-space position of a POI's dot (matches computePopupPos math), used
+  // to snap a nearby click onto that POI.
+  const poiPanelPos = (poi: POI) => {
+    const rect = mapRef.current!.getBoundingClientRect()
+    const ib = imgBoundsRef.current
+    const dotX = offsetRef.current.x + (ib ? (ib.left + poi.x / 100 * ib.w) : (poi.x / 100 * rect.width)) * scaleRef.current
+    const dotY = 34 + offsetRef.current.y + (ib ? (ib.top + poi.y / 100 * ib.h) : (poi.y / 100 * (rect.height - 34))) * scaleRef.current
+    return { x: dotX, y: dotY }
+  }
+
+  const nearestPoi = (px: number, py: number, thresh: number): POI | null => {
+    let best: POI | null = null; let bestD = thresh
+    for (const poi of pois) {
+      const p = poiPanelPos(poi)
+      const d = Math.hypot(p.x - px, p.y - py)
+      if (d < bestD) { bestD = d; best = poi }
+    }
+    return best
+  }
+
+  // ── Scale calibration ─────────────────────────────────────────────────────
+  const commitScale = async (distance: number, unit: 'mi' | 'km') => {
+    if (calibPts.length < 2 || !currentMap) return
+    const s: MapScale = {
+      x1: calibPts[0].x, y1: calibPts[0].y, x2: calibPts[1].x, y2: calibPts[1].y,
+      distance, unit,
+    }
+    setMapScale(s)
+    setIsCalibrating(false)
+    setCalibPts([])
+    const updated = await window.api.updateMap(currentMap.id, { map_scale: JSON.stringify(s) } as any)
+    setMaps(prev => prev.map(m => m.id === updated.id ? updated : m))
+    setCurrentMap(updated)
+  }
+
+  // ── Map background click: place POI (edit) or measure point (measure) ─────
   const handleMapClick = (e: React.MouseEvent) => {
     if (hasPanned.current) { hasPanned.current = false; return }
-    if (!editMode || !currentMap) return
-    if ((e.target as HTMLElement).closest('[data-poi]')) return
+    if (!currentMap) return
     const rect = mapRef.current!.getBoundingClientRect()
     const ib = imgBoundsRef.current
     if (!ib) return
     const innerX = (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current
     const innerY = (e.clientY - rect.top - 34 - offsetRef.current.y) / scaleRef.current
-    const x = (innerX - ib.left) / ib.w * 100
-    const y = (innerY - ib.top) / ib.h * 100
+    let x = (innerX - ib.left) / ib.w * 100
+    let y = (innerY - ib.top) / ib.h * 100
     if (x < 0 || x > 100 || y < 0 || y > 100) return
+
+    if (measureMode) {
+      // Snap onto a POI if the click lands close to one (town-to-town measuring).
+      const snap = nearestPoi(e.clientX - rect.left, e.clientY - rect.top, 16)
+      if (snap) { x = snap.x; y = snap.y }
+      addMeasurePoint(x, y, snap?.label)
+      return
+    }
+
+    if (!editMode) return
+    if ((e.target as HTMLElement).closest('[data-poi]')) return
     window.api.createPOI({ map_id: currentMap.id, label: 'New Location', x, y }).then((poi: POI) => {
       setPois((prev: POI[]) => [...prev, poi])
       setSelectedPOI(poi)
@@ -867,9 +952,24 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
                 <List size={12} /> Locations
               </button>
             )}
+            {maps.length > 0 && (
+              <button
+                onClick={e => { e.stopPropagation(); setMeasureMode(v => !v); setEditMode(false); setSelectedPOI(null) }}
+                title="Measure distance & travel time"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  background: measureMode ? 'rgba(200,115,58,0.2)' : 'rgba(255,255,255,0.06)',
+                  border: `1px solid ${measureMode ? 'rgba(200,115,58,0.4)' : 'rgba(255,255,255,0.12)'}`,
+                  color: measureMode ? '#c8733a' : 'rgba(255,255,255,0.55)',
+                  borderRadius: 4, padding: '3px 8px', fontSize: 11, cursor: 'pointer', transition: 'all var(--transition)',
+                }}
+              >
+                <Ruler size={12} /> Measure
+              </button>
+            )}
             {editMode
               ? <button onClick={e => { e.stopPropagation(); setEditMode(false); setSelectedPOI(null) }} style={{ background: 'rgba(200,115,58,0.2)', border: '1px solid rgba(200,115,58,0.4)', color: '#c8733a', borderRadius: 4, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}>Done</button>
-              : <button onClick={e => { e.stopPropagation(); setEditMode(true) }} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.55)', borderRadius: 4, padding: '3px 10px', fontSize: 11, cursor: 'pointer', transition: 'all var(--transition)' }}
+              : <button onClick={e => { e.stopPropagation(); setEditMode(true); setMeasureMode(false) }} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.55)', borderRadius: 4, padding: '3px 10px', fontSize: 11, cursor: 'pointer', transition: 'all var(--transition)' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#fff'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.3)' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.55)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.12)' }}>
                   Edit
@@ -913,6 +1013,34 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
               )}
               {imageUrl && imgBoundsRef.current && (
               <div style={{ position: 'absolute', left: imgBoundsRef.current.left, top: imgBoundsRef.current.top, width: imgBoundsRef.current.w, height: imgBoundsRef.current.h }}>
+              {/* Measure overlay: reference line, route legs, waypoint dots.
+                  %coords resolve against this box (like POIs); strokes/radii are
+                  divided by the zoom `scale` to stay a constant on-screen size. */}
+              {measureMode && (
+                <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none', zIndex: 6 }}>
+                  {/* Saved reference line (muted, dashed) */}
+                  {mapScale && !isCalibrating && (
+                    <line x1={`${mapScale.x1}%`} y1={`${mapScale.y1}%`} x2={`${mapScale.x2}%`} y2={`${mapScale.y2}%`}
+                      stroke="rgba(255,255,255,0.55)" strokeWidth={1.5 / scale} strokeDasharray={`${4 / scale} ${3 / scale}`} strokeLinecap="round" />
+                  )}
+                  {/* Calibration line being drawn */}
+                  {isCalibrating && calibPts.length === 2 && (
+                    <line x1={`${calibPts[0].x}%`} y1={`${calibPts[0].y}%`} x2={`${calibPts[1].x}%`} y2={`${calibPts[1].y}%`}
+                      stroke="#f0c674" strokeWidth={2 / scale} strokeDasharray={`${5 / scale} ${4 / scale}`} strokeLinecap="round" />
+                  )}
+                  {isCalibrating && calibPts.map((p, i) => (
+                    <circle key={`c${i}`} cx={`${p.x}%`} cy={`${p.y}%`} r={4.5 / scale} fill="#f0c674" stroke="#000" strokeWidth={1 / scale} />
+                  ))}
+                  {/* Route legs */}
+                  {!isCalibrating && waypoints.map((p, i) => i > 0 && (
+                    <line key={`l${i}`} x1={`${waypoints[i - 1].x}%`} y1={`${waypoints[i - 1].y}%`} x2={`${p.x}%`} y2={`${p.y}%`}
+                      stroke="#c8733a" strokeWidth={2.5 / scale} strokeLinecap="round" strokeLinejoin="round" />
+                  ))}
+                  {!isCalibrating && waypoints.map((p, i) => (
+                    <circle key={`w${i}`} cx={`${p.x}%`} cy={`${p.y}%`} r={4.5 / scale} fill={i === 0 ? '#fff' : '#c8733a'} stroke="#000" strokeWidth={1 / scale} />
+                  ))}
+                </svg>
+              )}
               {pois.map(poi => (
                 <div key={poi.id} data-poi="1"
                   style={{ position: 'absolute', left: `${poi.x}%`, top: `${poi.y}%`, transform: 'translate(-50%, -50%)', zIndex: 5 }}
@@ -997,6 +1125,32 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
         {editMode && (
           <div style={{ position: 'absolute', ...(fullBleed ? { top: 42, left: 14 } : { bottom: 10, left: 12 }), fontSize: 10, color: 'rgba(255,255,255,0.35)', pointerEvents: 'none', userSelect: 'none', zIndex: 15 }}>
             Click to place · drag to move · scroll to zoom
+          </div>
+        )}
+
+        {/* Measure hint */}
+        {measureMode && (
+          <div style={{ position: 'absolute', ...(fullBleed ? { top: 42, left: 14 } : { bottom: 10, left: 12 }), fontSize: 10, color: 'rgba(255,255,255,0.35)', pointerEvents: 'none', userSelect: 'none', zIndex: 15 }}>
+            {isCalibrating ? 'Click two points a known distance apart' : mapScale ? 'Click points to trace a route · snaps to nearby locations' : 'Set a map scale to start measuring'}
+          </div>
+        )}
+
+        {/* Travel / measure panel — top-right, clear of the location list & zoom */}
+        {maps.length > 0 && measureMode && (mapVisible || fullBleed) && (
+          <div style={{ position: 'absolute', top: 42, right: 10, zIndex: 16 }} onMouseDown={e => e.stopPropagation()}>
+            <TravelMeasurePanel
+              scale={mapScale}
+              natural={imgNatural}
+              waypoints={waypoints}
+              isCalibrating={isCalibrating}
+              calibDraft={calibDraft}
+              onExit={() => { setMeasureMode(false); setIsCalibrating(false); setCalibPts([]) }}
+              onBeginCalibrate={() => { setIsCalibrating(true); setCalibPts([]) }}
+              onCancelCalibrate={() => { setIsCalibrating(false); setCalibPts([]) }}
+              onCommitScale={commitScale}
+              onUndoPoint={() => setWaypoints(prev => prev.slice(0, -1))}
+              onClearRoute={() => setWaypoints([])}
+            />
           </div>
         )}
       </div>

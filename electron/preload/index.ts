@@ -197,4 +197,24 @@ contextBridge.exposeInMainWorld('api', {
   updateSound:       (id: number, data: any)     => ipcRenderer.invoke('sounds:update', id, data),
   deleteSound:       (id: number)                => ipcRenderer.invoke('sounds:delete', id),
   selectAudioFile:   ()                          => ipcRenderer.invoke('sounds:select-file'),
+
+  // Players (player-facing pages)
+  getPlayers:   (campaignId: number)         => ipcRenderer.invoke('players:get-all', campaignId),
+  createPlayer: (data: any)                  => ipcRenderer.invoke('players:create', data),
+  updatePlayer: (id: number, data: any)      => ipcRenderer.invoke('players:update', id, data),
+  deletePlayer: (id: number)                 => ipcRenderer.invoke('players:delete', id),
+
+  // Visibility grants (grantee = player id, or null for the whole party)
+  getVisibilityGrants: (campaignId: number)  => ipcRenderer.invoke('visibility:get-grants', campaignId),
+  getGrantsForEntity:  (entityType: string, entityId: number) =>
+                         ipcRenderer.invoke('visibility:get-for-entity', entityType, entityId),
+  grantVisibility:     (campaignId: number, entityType: string, entityId: number, grantee: number | null) =>
+                         ipcRenderer.invoke('visibility:grant', campaignId, entityType, entityId, grantee),
+  revokeVisibility:    (entityType: string, entityId: number, grantee: number | null) =>
+                         ipcRenderer.invoke('visibility:revoke', entityType, entityId, grantee),
+  setEntityAudience:   (campaignId: number, entityType: string, entityId: number, grantees: (number | null)[]) =>
+                         ipcRenderer.invoke('visibility:set-audience', campaignId, entityType, entityId, grantees),
+
+  // Publish the player-facing site (encrypted per-player static bundle)
+  publishPlayerSite:   (campaignId: number) => ipcRenderer.invoke('publish:export', campaignId),
 })

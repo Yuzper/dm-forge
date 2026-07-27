@@ -67,7 +67,11 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
   },
   location: {
     State:  ['Discovered', 'Undiscovered', 'Destroyed', 'Abandoned'],
-    Size:   ['Room', 'Building', 'Village', 'Town', 'City', 'Metropolis', 'Duchy', 'Kingdom', 'Empire', 'Continent', 'World', 'Ruins', 'Dungeon', 'Wilderness', 'Landmark', 'Natural Wonder'],
+    // Two axes: Size = how big (a rough small→large scale mixing settlement,
+    // realm and landmass), Type = what kind of place it is. Kept separate so a
+    // location can be both at once (e.g. Size: City + Type: Ruins).
+    Size:   ['Room', 'Building', 'Village', 'Town', 'City', 'Metropolis', 'Duchy', 'Kingdom', 'Empire', 'Island', 'Continent', 'World'],
+    Type:   ['Ruins', 'Dungeon', 'Wilderness', 'Landmark', 'Natural Wonder'],
     Plane:  ['Material Plane', 'The Nine Hells', 'The Abyss', 'Ethereal Plane', 'Shadowfell', 'Feywild', 'Elemental Plane', 'Astral Plane'],
     Within: [],
   },

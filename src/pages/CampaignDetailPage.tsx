@@ -1,7 +1,7 @@
 // path: src/pages/CampaignDetailPage.tsx
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/store'
-import { Scroll, Map } from 'lucide-react'
+import { Scroll, Map, Users } from 'lucide-react'
 import TimelineEmbed from '../components/TimelineEmbed'
 import HubWorldMap from '../components/campaign/HubWorldMap'
 import MapHubView from '../components/campaign/MapHub'
@@ -81,6 +81,7 @@ export default function CampaignDetailPage() {
   const { currentCampaign, sessions, setView } = useStore()
   const { campaignSubView: subView, setCampaignSubView: setSubView } = useStore()
   const setHintContext = useStore(s => s.setHintContext)
+  const setPlayersManagerOpen = useStore(s => s.setPlayersManagerOpen)
   useEffect(() => {
     setHintContext(subView === 'hub' ? 'campaign-hub' : null)
     return () => setHintContext(null)
@@ -178,6 +179,14 @@ export default function CampaignDetailPage() {
                 <Map size={11} /> Map view
               </button>
             )}
+            <button
+              onClick={() => setPlayersManagerOpen(true)}
+              title="Manage players for the player-facing site"
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 99, fontSize: 11, background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}
+              className="hover-gold-border"
+            >
+              <Users size={11} /> Players
+            </button>
             <HubSettingsMenu panels={hubPanels} onChange={togglePanel} />
           </div>
         </div>

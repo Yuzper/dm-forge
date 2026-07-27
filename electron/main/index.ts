@@ -17,6 +17,8 @@ import { registerSoundIPC } from './ipc/sounds'
 import { registerSearchIPC } from './ipc/search'
 import { registerBackupIPC } from './ipc/backup'
 import { registerClockIPC } from './ipc/clocks'
+import { registerPlayerIPC } from './ipc/players'
+import { registerPublishIPC } from './ipc/publish'
 
 function registerIPC(imagesPath: string) {
   registerCampaignIPC()
@@ -32,6 +34,8 @@ function registerIPC(imagesPath: string) {
   registerSearchIPC()
   registerBackupIPC()
   registerClockIPC()
+  registerPlayerIPC()
+  registerPublishIPC()
 }
 
 app.whenReady().then(() => {

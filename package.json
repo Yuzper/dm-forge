@@ -1,13 +1,15 @@
 {
   "name": "dm-forge",
-  "version": "1.4.0",
+  "version": "1.6.0",
   "description": "A DM's companion for planning and running D&D sessions",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "package": "electron-vite build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
+    "dev:viewer": "vite --config viewer/vite.config.ts",
+    "build:viewer": "vite build --config viewer/vite.config.ts",
+    "package": "electron-vite build && npm run build:viewer && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -71,6 +73,10 @@
       {
         "from": "src/data/creatures",
         "to": "creatures"
+      },
+      {
+        "from": "dist-viewer",
+        "to": "player-viewer"
       }
     ],
     "publish": {

@@ -50,6 +50,18 @@ export interface GameMap {
   attached?: number           // 1 when attached (vs owned) in a session listing
   layer_id?: number | null
   article_title?: string | null
+  map_scale?: string | null   // JSON MapScale for the travel/measure tool; null = uncalibrated
+}
+
+// Travel pace on foot (PHB p.182). See src/utils/travel.ts for mph values.
+export type TravelPace = 'fast' | 'normal' | 'slow'
+
+// One reference line the user drew to calibrate real distance, stored (as JSON)
+// in maps.map_scale. Endpoints are %coords of the fitted image box, like POIs.
+export interface MapScale {
+  x1: number; y1: number; x2: number; y2: number
+  distance: number            // real-world length of that line, in `unit`
+  unit: 'mi' | 'km'
 }
 
 // A visit layer on a map: the POIs made for one visit to the location (which
@@ -129,6 +141,16 @@ export interface Article extends ArticleSummary {
   item_block: string
   substeps: string
   rewards: string
+  track_visibility: string
+}
+
+// Per-track / per-milestone player visibility (companion to `tracks`).
+// No entry = inherit-by-default (except *_Date tracks, which default to DM-only).
+export type TrackVisMode = 'inherit' | 'dm' | 'restricted'
+export interface TrackVisEntry { mode: TrackVisMode; players?: number[] }
+export interface TrackVisibility {
+  tracks?: Record<string, TrackVisEntry>
+  milestones?: Record<string, TrackVisEntry>
 }
 
 export type ArticleType =
@@ -496,6 +518,7 @@ export interface CreateArticleInput {
   portrait_image?: string | null
   substeps?: string
   rewards?: string
+  track_visibility?: string
 }
 
 export interface CreateLootTableInput {
@@ -505,6 +528,42 @@ export interface CreateLootTableInput {
   category?: LootTableCategory
   items?: string    // JSON: LootItem[]
   is_default?: boolean
+}
+
+// ── Player-facing pages ─────────────────────────────────────────────────────
+
+// First-class entities that visibility grants can target. Track/subtrack
+// visibility is handled separately (companion JSON on the article).
+export type VisibilityEntityType = 'article' | 'map' | 'poi' | 'layer'
+
+// A grant's audience: a specific player id, or null meaning "party" (all players).
+export type Grantee = number | null
+
+export interface Player {
+  id: number
+  campaign_id: number
+  username: string
+  display_name: string
+  password: string           // DM-assigned share password, stored locally (see plan)
+  pc_article_id: number | null
+  created_at: string
+}
+
+export interface CreatePlayerInput {
+  campaign_id: number
+  username: string
+  display_name?: string
+  password?: string
+  pc_article_id?: number | null
+}
+
+export interface VisibilityGrant {
+  id: number
+  campaign_id: number
+  entity_type: VisibilityEntityType
+  entity_id: number
+  player_id: number | null   // null = party (all players)
+  created_at: string
 }
 
 export interface ElectronAPI {
@@ -650,6 +709,31 @@ export interface ElectronAPI {
   updateSound:      (id: number, data: Partial<Sound>) => Promise<Sound>
   deleteSound:      (id: number)                => Promise<void>
   selectAudioFile:  ()                          => Promise<string | null>
+
+  // Players (player-facing pages)
+  getPlayers:    (campaignId: number)              => Promise<Player[]>
+  createPlayer:  (data: CreatePlayerInput)         => Promise<Player>
+  updatePlayer:  (id: number, data: Partial<CreatePlayerInput>) => Promise<Player>
+  deletePlayer:  (id: number)                      => Promise<void>
+
+  // Visibility grants (deny-by-default; grantee = player id or null for party)
+  getVisibilityGrants:   (campaignId: number) => Promise<VisibilityGrant[]>
+  getGrantsForEntity:    (entityType: VisibilityEntityType, entityId: number) => Promise<VisibilityGrant[]>
+  grantVisibility:       (campaignId: number, entityType: VisibilityEntityType, entityId: number, grantee: Grantee) => Promise<void>
+  revokeVisibility:      (entityType: VisibilityEntityType, entityId: number, grantee: Grantee) => Promise<void>
+  setEntityAudience:     (campaignId: number, entityType: VisibilityEntityType, entityId: number, grantees: Grantee[]) => Promise<void>
+
+  // Publish the player-facing site
+  publishPlayerSite:     (campaignId: number) => Promise<PublishResult>
+}
+
+export interface PublishResult {
+  success: boolean
+  path?: string
+  error?: string
+  canceled?: boolean
+  warnings?: string[]
+  stats?: { players: number; articles: number; images: number }
 }
 
 

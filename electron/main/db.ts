@@ -256,6 +256,47 @@ export function initDatabase() {
       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- ── Player-facing pages ──────────────────────────────────────────────────
+    -- Players who get a curated, per-player read-only view of the wiki/map.
+    -- The password is a DM-assigned share password kept locally; at publish time it
+    -- derives that player's bundle-encryption key (see docs/player-pages-plan.md).
+    CREATE TABLE IF NOT EXISTS players (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id   INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      username      TEXT    NOT NULL,
+      display_name  TEXT    NOT NULL DEFAULT '',
+      password      TEXT    NOT NULL DEFAULT '',
+      pc_article_id INTEGER          REFERENCES articles(id) ON DELETE SET NULL,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(campaign_id, username)
+    );
+
+    -- Deny-by-default visibility grants: one row = "this entity is visible to this
+    -- grantee." No row = hidden. player_id NULL means the whole party (all players).
+    -- Polymorphic over first-class entities only (article/map/poi/layer); track &
+    -- subtrack visibility lives in a companion JSON on the article, not here.
+    CREATE TABLE IF NOT EXISTS visibility_grants (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      entity_type TEXT    NOT NULL,   -- 'article' | 'map' | 'poi' | 'layer'
+      entity_id   INTEGER NOT NULL,
+      player_id   INTEGER          REFERENCES players(id) ON DELETE CASCADE,  -- NULL = party
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+  `)
+
+  // Grant uniqueness needs two partial indexes because SQLite treats NULLs as
+  // distinct in a normal UNIQUE — so (type,id,NULL) party rows wouldn't dedupe.
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grants_party
+      ON visibility_grants(entity_type, entity_id)
+      WHERE player_id IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grants_player
+      ON visibility_grants(entity_type, entity_id, player_id)
+      WHERE player_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_grants_campaign ON visibility_grants(campaign_id);
+    CREATE INDEX IF NOT EXISTS idx_players_campaign ON players(campaign_id);
   `)
 
   // ── Migrations for existing databases ────────────────────────────────────────
@@ -281,6 +322,12 @@ export function initDatabase() {
   if (!articleCols.some(c => c.name === 'rewards')) {
     db.exec(`ALTER TABLE articles ADD COLUMN rewards TEXT NOT NULL DEFAULT '[]'`)
   }
+  // Per-track / per-milestone player visibility (companion to `tracks`). JSON:
+  // { tracks: { <key>: {mode,players?} }, milestones: { <id>: {mode,players?} } }.
+  // Empty = inherit-by-default (see docs/player-pages-plan.md).
+  if (!articleCols.some(c => c.name === 'track_visibility')) {
+    db.exec(`ALTER TABLE articles ADD COLUMN track_visibility TEXT NOT NULL DEFAULT '{}'`)
+  }
 
 
   // Mapless "scenes" are map rows with an empty image_path; this column holds
@@ -288,6 +335,12 @@ export function initDatabase() {
   const mapContentCols = db.pragma('table_info(maps)') as { name: string }[]
   if (!mapContentCols.some(c => c.name === 'content')) {
     db.exec(`ALTER TABLE maps ADD COLUMN content TEXT NOT NULL DEFAULT '{"type":"doc","content":[]}'`)
+  }
+
+  // Distance-scale calibration for the world-map travel/measure tool: a JSON
+  // MapScale ({ x1,y1,x2,y2, distance, unit }) or NULL when not yet calibrated.
+  if (!mapContentCols.some(c => c.name === 'map_scale')) {
+    db.exec(`ALTER TABLE maps ADD COLUMN map_scale TEXT`)
   }
 
   const poiCols = db.pragma('table_info(pois)') as { name: string }[]
@@ -552,6 +605,41 @@ export function initDatabase() {
     }
   } catch (e) {
     log.warn('Loot default backfill failed:', e)
+  }
+
+  // Location `Size` was a catch-all that mixed magnitude words (City, Kingdom…)
+  // with kind-of-place words (Ruins, Dungeon…). The kind words now live in a
+  // separate `Type` track, so move any that were stored under `Size` over to it
+  // (carrying a per-value visibility rule if one exists). Idempotent: once
+  // moved, `Size` no longer holds a kind word.
+  try {
+    const KIND = new Set(['Ruins', 'Dungeon', 'Wilderness', 'Landmark', 'Natural Wonder'])
+    const locs = db.prepare(
+      `SELECT id, tracks, track_visibility FROM articles WHERE article_type = 'location'`
+    ).all() as { id: number; tracks: string; track_visibility: string }[]
+    const updTracks = db.prepare('UPDATE articles SET tracks = ? WHERE id = ?')
+    const updBoth = db.prepare('UPDATE articles SET tracks = ?, track_visibility = ? WHERE id = ?')
+    for (const row of locs) {
+      let t: Record<string, string>
+      try { t = JSON.parse(row.tracks) } catch { continue }
+      if (!t || typeof t !== 'object' || !KIND.has(t.Size)) continue
+      t.Type = t.Size
+      delete t.Size
+      // Carry any per-value visibility rule from Size → Type.
+      let visStr: string | null = null
+      try {
+        const vis = JSON.parse(row.track_visibility || '{}')
+        if (vis?.tracks?.Size && !vis.tracks?.Type) {
+          vis.tracks.Type = vis.tracks.Size
+          delete vis.tracks.Size
+          visStr = JSON.stringify(vis)
+        }
+      } catch { /* leave visibility untouched */ }
+      if (visStr) updBoth.run(JSON.stringify(t), visStr, row.id)
+      else updTracks.run(JSON.stringify(t), row.id)
+    }
+  } catch (e) {
+    log.warn('Location Size/Type split migration failed:', e)
   }
 
   return { userDataPath, imagesPath }

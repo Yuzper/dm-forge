@@ -1,6 +1,7 @@
 // path: src/store/store.ts
 import { create } from 'zustand'
-import type { Campaign, Session, Arc, GameMap, POI, Article, ArticleSummary, ArticleType } from '../types'
+import type { Campaign, Session, Arc, GameMap, POI, Article, ArticleSummary, ArticleType,
+  Player, VisibilityGrant, VisibilityEntityType, Grantee, CreatePlayerInput } from '../types'
 import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
 import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
 import { applyTheme, getStoredTheme, applyTextTheme, getStoredTextTheme } from '../constants/themes'
@@ -152,6 +153,18 @@ interface AppStore {
   relationsFocusArticleId: number | null // Deep-link: select + center the node linked to this article when the web opens
   setRelationsFocusArticleId: (id: number | null) => void
   getArticleBacklinks: (title: string) => Promise<ArticleSummary[]>
+
+  // Players & visibility (player-facing pages)
+  players: Player[]
+  grants: VisibilityGrant[]
+  playersManagerOpen: boolean
+  setPlayersManagerOpen: (v: boolean) => void
+  loadPlayers: () => Promise<void>
+  loadGrants: () => Promise<void>
+  createPlayer: (data: Omit<CreatePlayerInput, 'campaign_id'>) => Promise<void>
+  updatePlayer: (id: number, data: Partial<CreatePlayerInput>) => Promise<void>
+  deletePlayer: (id: number) => Promise<void>
+  setEntityAudience: (entityType: VisibilityEntityType, entityId: number, grantees: Grantee[]) => Promise<void>
 
   // Soundboard widget
   soundboardOpen: boolean
@@ -337,10 +350,13 @@ export const useStore = create<AppStore>((set, get) => ({
           maps: [], currentMap: null,
           pois: [], selectedPOI: null,
           articles: [], allArticles: [], currentArticle: null,
+          players: [], grants: [],
         })
         get().loadSessions(entry.campaign.id)
         get().loadArcs(entry.campaign.id)
         get().loadAllArticles()
+        get().loadPlayers()
+        get().loadGrants()
         break
 
       case 'session':
@@ -436,6 +452,7 @@ export const useStore = create<AppStore>((set, get) => ({
       maps: [], currentMap: null,
       pois: [], selectedPOI: null,
       articles: [], allArticles: [], currentArticle: null,
+      players: [], grants: [],
       navigationHistory: pushEntry(s.navigationHistory, {
         type: 'campaign', label: campaign.name, campaign,
       }),
@@ -443,6 +460,8 @@ export const useStore = create<AppStore>((set, get) => ({
     get().loadSessions(campaign.id)
     get().loadArcs(campaign.id)
     get().loadAllArticles()
+    get().loadPlayers()
+    get().loadGrants()
   },
 
   createCampaign: async (data, seedMonsters = true) => {
@@ -1028,4 +1047,52 @@ export const useStore = create<AppStore>((set, get) => ({
   setRelationsOpenWebId: (relationsOpenWebId) => set({ relationsOpenWebId }),
   relationsFocusArticleId: null,
   setRelationsFocusArticleId: (relationsFocusArticleId) => set({ relationsFocusArticleId }),
+
+  // ── Players & visibility ──────────────────────────────────────────────────────
+
+  players: [],
+  grants: [],
+  playersManagerOpen: false,
+  setPlayersManagerOpen: (playersManagerOpen) => set({ playersManagerOpen }),
+
+  loadPlayers: async () => {
+    const { currentCampaign } = get()
+    if (!currentCampaign) { set({ players: [] }); return }
+    const players = await window.api.getPlayers(currentCampaign.id)
+    set({ players })
+  },
+
+  loadGrants: async () => {
+    const { currentCampaign } = get()
+    if (!currentCampaign) { set({ grants: [] }); return }
+    const grants = await window.api.getVisibilityGrants(currentCampaign.id)
+    set({ grants })
+  },
+
+  createPlayer: async (data) => {
+    const { currentCampaign } = get()
+    if (!currentCampaign) return
+    await window.api.createPlayer({ campaign_id: currentCampaign.id, ...data })
+    await get().loadPlayers()
+  },
+
+  updatePlayer: async (id, data) => {
+    await window.api.updatePlayer(id, data)
+    await get().loadPlayers()
+  },
+
+  deletePlayer: async (id) => {
+    await window.api.deletePlayer(id)
+    // Deleting a player cascades their grants in the DB — refresh both caches.
+    await get().loadPlayers()
+    await get().loadGrants()
+  },
+
+  setEntityAudience: async (entityType, entityId, grantees) => {
+    const { currentCampaign } = get()
+    if (!currentCampaign) return
+    await window.api.setEntityAudience(currentCampaign.id, entityType, entityId, grantees)
+    const grants = await window.api.getVisibilityGrants(currentCampaign.id)
+    set({ grants })
+  },
 }))

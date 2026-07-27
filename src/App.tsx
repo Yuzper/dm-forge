@@ -25,6 +25,7 @@ import StatBlockOverlay from './components/StatBlockOverlay'
 import HintsWidget from './components/HintsWidget'
 import GlobalSearch from './components/GlobalSearch'
 import FindBar from './components/FindBar'
+import PlayersManager from './components/PlayersManager'
 
 const params = new URLSearchParams(window.location.search)
 const statblockMode = params.get('mode') === 'statblock'
@@ -33,7 +34,7 @@ const statblockOverride = statblockMode ? params.get('statblockOverride') : null
 const nameOverride = statblockMode ? params.get('nameOverride') : null
 
 export default function App() {
-  const { view, loadCampaigns, bgStyle, currentCampaign, soundboardOpen, statBlockOverlays } = useStore()
+  const { view, loadCampaigns, bgStyle, currentCampaign, soundboardOpen, statBlockOverlays, playersManagerOpen } = useStore()
 
   useEffect(() => { if (!statblockMode) loadCampaigns() }, [])
 
@@ -58,6 +59,7 @@ export default function App() {
       <HintsWidget />
       <GlobalSearch />
       <FindBar />
+      {currentCampaign && playersManagerOpen && <PlayersManager />}
       <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {view === 'campaigns'   && <CampaignsPage />}
         {view === 'campaign'    && <CampaignDetailPage />}

@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { useStore } from '../../store/store'
 import {
   ChevronDown, ChevronUp, X, Clock, LayoutGrid,
-  Scroll, BookOpen, Sparkles, ShoppingBag, Network, Music2,
+  Scroll, BookOpen, Sparkles, ShoppingBag, Network, Music2, Users,
 } from 'lucide-react'
 import HubWorldMap from './HubWorldMap'
 import TimelineEmbed from '../TimelineEmbed'
@@ -225,6 +225,7 @@ export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, onS
   stats: MapHubStats
 }) {
   const { currentCampaign } = useStore()
+  const setPlayersManagerOpen = useStore(s => s.setPlayersManagerOpen)
   const [overlays, setOverlays] = useState<Record<OverlayKey, boolean>>(() =>
     currentCampaign ? loadOverlayState(currentCampaign.id) : { ...OVERLAY_DEFAULTS }
   )
@@ -266,6 +267,14 @@ export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, onS
             className="hover-gold-border"
           >
             <LayoutGrid size={11} /> Classic view
+          </button>
+          <button
+            onClick={() => setPlayersManagerOpen(true)}
+            title="Manage players for the player-facing site"
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 99, fontSize: 11, background: 'color-mix(in srgb, var(--bg-surface) 88%, transparent)', border: '1px solid var(--border-light)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}
+            className="hover-gold-border"
+          >
+            <Users size={11} /> Players
           </button>
           <HubSettingsMenu panels={panels} onChange={onTogglePanel} />
         </div>

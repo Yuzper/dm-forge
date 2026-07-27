@@ -5,7 +5,7 @@ import { useMenuClose } from '../../hooks/useMenuClose'
 import {
   Plus, Trash2, Check, X, ChevronLeft, ScrollText,
   MoreHorizontal, Image as ImageIcon, Link,
-  ShoppingBag, ChevronDown, ChevronRight,
+  ShoppingBag, ChevronDown, ChevronRight, SlidersHorizontal,
 } from 'lucide-react'
 import RichEditor from '../RichEditor'
 import type { Article, ArticleSummary, ArticleType, MasterLootTable, LootItem } from '../../types'
@@ -22,6 +22,8 @@ import SectionDivider from '../SectionDivider'
 import { InWorldDatePicker } from '../InWorldDatePicker'
 import { TIMELINE_DATE_FIELDS, parseMilestones, type Milestone } from '../../constants/timelineDates'
 import LocationMapSection from '../LocationMapSection'
+import AudienceControl from '../AudienceControl'
+import TrackVisibilityPanel from './TrackVisibilityPanel'
 import QuestSubstepsSection, { parseSubsteps } from '../QuestSubstepsSection'
 import type { Substep } from '../QuestSubstepsSection'
 import QuestRewardSection, { parseReward } from '../QuestRewardSection'
@@ -470,6 +472,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const [dirty, setDirty]             = useState(false)
   const [saving, setSaving]           = useState(false)
   const [readMode, setReadMode]       = useState(true)
+  const [showTrackVis, setShowTrackVis] = useState(false)
   const [savedTick, setSavedTick]     = useState(0)   // bumped after each save — refreshes derived sections
 
   // Floating hint follows the article mode: reading vs. editing
@@ -617,6 +620,11 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
             placeholder="Article title…" />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', borderLeft: '1px solid var(--border)', flexShrink: 0 }}>
+          <AudienceControl entityType="article" entityId={article.id} />
+          <button className="btn btn-sm btn-ghost btn-icon" title="Field visibility (per-track / milestone)"
+            onClick={() => setShowTrackVis(true)} style={{ color: 'var(--text-muted)' }}>
+            <SlidersHorizontal size={14} />
+          </button>
           {readMode ? (
             <button className="btn btn-sm" onClick={() => setReadMode(false)}>Edit</button>
           ) : (
@@ -631,6 +639,10 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
           <ArticleMenu onDelete={async () => { await deleteArticle(article.id); onBack() }} />
         </div>
       </div>
+
+      {showTrackVis && (
+        <TrackVisibilityPanel article={article} tracks={tracks} onClose={() => setShowTrackVis(false)} />
+      )}
 
       <div style={{ flex: 1, overflow: 'auto' }}>
         {/* Banner */}

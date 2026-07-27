@@ -6,6 +6,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["serve", "-p", "5500"],
       "port": 5500
+    },
+    {
+      "name": "player-viewer",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--config", "viewer/vite.config.ts"],
+      "port": 5177
     }
   ]
 }

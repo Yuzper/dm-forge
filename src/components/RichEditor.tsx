@@ -16,6 +16,7 @@ import TableHeader from '@tiptap/extension-table-header'
 import { WikiLink } from './WikiLinkExtension'
 import { SessionLink } from './SessionLinkExtension'
 import { SpellLink } from './SpellLinkExtension'
+import { DmOnly } from './DmOnlyMark'
 import { SpellCard } from './SpellCard'
 import { ItemCard, type ItemCardData } from './ItemCard'
 import { parseItemStatBlock } from '../types'
@@ -28,7 +29,7 @@ import {
   AlignLeft, AlignCenter, AlignRight,
   Image as ImageIcon, Highlighter, Link2,
   Undo, Redo, Minus, Table2, Palette,
-  Paintbrush, RemoveFormatting,
+  Paintbrush, RemoveFormatting, EyeOff,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { InfoHint } from './InfoHint'
@@ -645,6 +646,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       WikiLink,
       SessionLink,
       SpellLink,
+      DmOnly,
     ],
     content: parsedContent,
     editable: !readOnly,
@@ -947,6 +949,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
             <ToolbarButton onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} title="Underline"><UnderlineIcon size={13} /></ToolbarButton>
             <ToolbarButton onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} title="Strikethrough"><Strikethrough size={13} /></ToolbarButton>
             <ToolbarButton onClick={() => editor.chain().focus().toggleHighlight().run()} active={editor.isActive('highlight')} title="Highlight"><Highlighter size={13} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().toggleMark('dmOnly').run()} active={editor.isActive('dmOnly')} title="DM-only — hidden from players on export"><EyeOff size={13} /></ToolbarButton>
 
             {/* Text colour */}
             <div style={{ position: 'relative', flexShrink: 0 }}>
