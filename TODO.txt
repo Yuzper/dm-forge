@@ -10,3 +10,12 @@ Needs a "Unaccounted for" list with creatures with no XP value. The config shoul
 
 Remember for presentation:
  - Article Locaitons Maps live here, origin of truth.
+
+
+ ---------
+
+Polygons on map, drawing layers
+
+Redo timeline layout
+
+

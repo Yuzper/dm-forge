@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Map, Upload, MoreHorizontal, Pencil, Trash2, History, Eye, EyeOff } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Pencil, Trash2, History, Eye, EyeOff, Image as ImageIcon } from 'lucide-react'
 import { MapContext } from '../context/MapContext'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
@@ -30,7 +30,9 @@ function RenameMapModal({ map, onSave, onClose }: { map: GameMap; onSave: (name:
 
 // ── Tab context menu ──────────────────────────────────────────────────────────
 
-function MapTabMenu({ map: _map, onRename, onDelete }: { map: GameMap; onRename: () => void; onDelete: () => void }) {
+function MapTabMenu({ map: _map, onRename, onReplaceImage, onDelete }: {
+  map: GameMap; onRename: () => void; onReplaceImage: () => void; onDelete: () => void
+}) {
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
   const menuRef = useRef<HTMLDivElement>(null)
@@ -75,6 +77,9 @@ function MapTabMenu({ map: _map, onRename, onDelete }: { map: GameMap; onRename:
         }}>
           <button onClick={() => { onRename(); setOpen(false) }} style={menuItemStyle}>
             <Pencil size={13} /> Rename
+          </button>
+          <button onClick={() => { onReplaceImage(); setOpen(false) }} style={menuItemStyle}>
+            <ImageIcon size={13} /> Replace image
           </button>
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
           <button
@@ -163,13 +168,23 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
     setImporting(false)
   }
 
-  // ── Map rename / delete ────────────────────────────────────────────────────
+  // ── Map rename / replace image / delete ────────────────────────────────────
   const handleRenameMap = async (name: string) => {
     if (!renamingMap || !name) return
     const updated = await window.api.updateMap(renamingMap.id, { name })
     setMaps(prev => prev.map(m => m.id === updated.id ? updated : m))
     if (currentMap?.id === updated.id) setCurrentMap(updated)
     setRenamingMap(null)
+  }
+
+  // Swap the image but keep the map row — POIs, layers and visits are all keyed
+  // to the map id, so they survive the swap (same behaviour as the world map).
+  const handleReplaceMapImage = async (map: GameMap) => {
+    const result = await window.api.replaceMapImage(map.id)
+    if (!result) return
+    const updated = await window.api.updateMap(map.id, { image_path: result.path })
+    setMaps(prev => prev.map(m => m.id === updated.id ? updated : m))
+    if (currentMap?.id === updated.id) setCurrentMap(updated)
   }
 
   const handleDeleteMap = async (id: number) => {
@@ -276,6 +291,7 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
               <MapTabMenu
                 map={map}
                 onRename={() => setRenamingMap(map)}
+                onReplaceImage={() => handleReplaceMapImage(map)}
                 onDelete={() => handleDeleteMap(map.id)}
               />
             )}

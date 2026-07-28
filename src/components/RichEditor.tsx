@@ -14,6 +14,7 @@ import TableRow from '@tiptap/extension-table-row'
 import TableCell from '@tiptap/extension-table-cell'
 import TableHeader from '@tiptap/extension-table-header'
 import { WikiLink } from './WikiLinkExtension'
+import { WikiAutolink } from './WikiAutolinkExtension'
 import { SessionLink } from './SessionLinkExtension'
 import { SpellLink } from './SpellLinkExtension'
 import { DmOnly } from './DmOnlyMark'
@@ -281,6 +282,68 @@ function WikiLinkPopover({ query, coords, onSelect, onClose }: {
   )
 }
 
+// Live "as you type" article dropdown (autolink). Unlike the [[ popover this is
+// triggered by typing a bare word, so it must NOT hijack Enter (paragraph break):
+// Tab accepts the highlighted article, arrows navigate, Esc closes, everything
+// else passes through. Contains-match, current article excluded.
+function WordSuggestPopover({ matches, coords, onSelect, onClose }: {
+  matches: { id: number; title: string; article_type: string }[]
+  coords: { left: number; top: number; bottom: number }
+  onSelect: (title: string) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [selectedIndex, setSelectedIndex] = useState(0)
+
+  // New match set (each keystroke) → highlight the top entry again.
+  useEffect(() => { setSelectedIndex(0) }, [matches])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (matches.length === 0) return
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, matches.length - 1)) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
+      else if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); onSelect(matches[selectedIndex].title) }
+      else if (e.key === 'Escape') { e.preventDefault(); onClose() }
+      // Space, letters, etc. fall through so ordinary typing is never interrupted.
+    }
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [matches, selectedIndex, onSelect, onClose])
+
+  if (matches.length === 0) return null
+
+  return (
+    <div ref={ref} style={{
+      position: 'fixed', left: coords.left, top: coords.bottom + 6,
+      width: 260, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+      borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', zIndex: 1000, overflow: 'hidden',
+    }}>
+      <div style={{ padding: '4px 10px', fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+        Link article · <kbd style={{ fontSize: 9 }}>Tab</kbd> / <kbd style={{ fontSize: 9 }}>↵</kbd>
+      </div>
+      <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+        {matches.map((a, i) => (
+          <button
+            key={a.id}
+            onMouseDown={e => { e.preventDefault(); onSelect(a.title) }}
+            onMouseEnter={() => setSelectedIndex(i)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px',
+              background: i === selectedIndex ? 'var(--bg-hover)' : 'none', border: 'none',
+              color: i === selectedIndex ? 'var(--text-primary)' : 'var(--text-secondary)',
+              fontSize: 13, fontFamily: 'var(--font-ui)', cursor: 'pointer', textAlign: 'left',
+            }}
+          >
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{a.article_type}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function WikiLinkToolbarPopover({ onSelect, onClose }: {
   onSelect: (title: string) => void
   onClose: () => void
@@ -532,9 +595,12 @@ interface RichEditorProps {
   onWikiLinkClick?: (title: string) => void
   readOnly?: boolean
   expandable?: boolean
+  // Title of the article being edited — excluded from autolink suggestions so a
+  // page is never suggested as a link to itself.
+  excludeTitle?: string
 }
 
-export default function RichEditor({ content, onChange, placeholder, onWikiLinkClick, readOnly, expandable }: RichEditorProps) {
+export default function RichEditor({ content, onChange, placeholder, onWikiLinkClick, readOnly, expandable, excludeTitle }: RichEditorProps) {
   const { navigateToArticleByTitle, navigateToSessionById } = useStore()
   const editorRef = useRef<HTMLDivElement>(null)
 
@@ -551,6 +617,15 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
   const [spellSearch, setSpellSearch] = useState<{
     query: string; from: number; to: number
     coords: { left: number; top: number; bottom: number }
+  } | null>(null)
+
+  // Live "as you type" article dropdown (contains-match once the word is 4+ chars).
+  // Matches are resolved once here (not re-filtered in the popover) so we scan the
+  // article list only once per keystroke.
+  const [wordSuggest, setWordSuggest] = useState<{
+    from: number; to: number
+    coords: { left: number; top: number; bottom: number }
+    matches: { id: number; title: string; article_type: string }[]
   } | null>(null)
 
   const [hoveredSpell, setHoveredSpell] = useState<{ spell: Spell; x: number; y: number } | null>(null)
@@ -644,6 +719,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       TableCell,
       Placeholder.configure({ placeholder: placeholder || 'Begin writing…' }),
       WikiLink,
+      WikiAutolink.configure({ excludeTitle: excludeTitle ?? null }),
       SessionLink,
       SpellLink,
       DmOnly,
@@ -749,6 +825,25 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     }
     const onSpellClose = () => setSpellSearch(null)
 
+    const onWordSuggest = (e: Event) => {
+      const { query, from, to, coords } = (e as CustomEvent).detail
+      // Resolve the matches once here: filter (contains), prefix-first sort, cap 8.
+      // The popover just renders these — no second scan of the article list.
+      const q = String(query).toLowerCase()
+      const exclude = excludeTitle?.toLowerCase().trim()
+      const matches = useStore.getState().allArticles
+        .filter(a => { const t = a.title.toLowerCase(); return t.includes(q) && t !== exclude })
+        .sort((a, b) => {
+          const ap = a.title.toLowerCase().startsWith(q) ? 0 : 1
+          const bp = b.title.toLowerCase().startsWith(q) ? 0 : 1
+          return ap - bp || a.title.localeCompare(b.title)
+        })
+        .slice(0, 8)
+        .map(a => ({ id: a.id, title: a.title, article_type: a.article_type }))
+      setWordSuggest(matches.length ? { from, to, coords, matches } : null)
+    }
+    const onWordSuggestClose = () => setWordSuggest(null)
+
     const onMouseOver = (e: MouseEvent) => {
       // Spell links → spell card.
       const spellTarget = (e.target as HTMLElement).closest('[data-spell-link]') as HTMLElement | null
@@ -777,6 +872,8 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     el.addEventListener('sessionlinkSearchClose', onSessionClose)
     el.addEventListener('spelllinkSearch', onSpellSearch)
     el.addEventListener('spelllinkSearchClose', onSpellClose)
+    el.addEventListener('wikiWordSuggest', onWordSuggest)
+    el.addEventListener('wikiWordSuggestClose', onWordSuggestClose)
     el.addEventListener('mouseover', onMouseOver)
     el.addEventListener('mouseout', onMouseOut)
     return () => {
@@ -786,6 +883,8 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       el.removeEventListener('sessionlinkSearchClose', onSessionClose)
       el.removeEventListener('spelllinkSearch', onSpellSearch)
       el.removeEventListener('spelllinkSearchClose', onSpellClose)
+      el.removeEventListener('wikiWordSuggest', onWordSuggest)
+      el.removeEventListener('wikiWordSuggestClose', onWordSuggestClose)
       el.removeEventListener('mouseover', onMouseOver)
       el.removeEventListener('mouseout', onMouseOut)
     }
@@ -850,6 +949,20 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       })
       .run()
     setWikiSearch(null)
+  }
+
+  // Accept a live-dropdown suggestion: replace the typed word with a wikiLink.
+  const insertWordLink = (title: string) => {
+    if (!editor || !wordSuggest) return
+    const { from, to } = wordSuggest
+    editor.chain().focus()
+      .deleteRange({ from, to })
+      .insertContentAt(from, {
+        type: 'text', text: title,
+        marks: [{ type: 'wikiLink', attrs: { title } }],
+      })
+      .run()
+    setWordSuggest(null)
   }
 
   const insertWikiLinkFromToolbar = (title: string) => {
@@ -1170,6 +1283,15 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
           coords={spellSearch.coords}
           onSelect={insertSpellLink}
           onClose={() => setSpellSearch(null)}
+        />
+      )}
+
+      {wordSuggest && !readOnly && (
+        <WordSuggestPopover
+          matches={wordSuggest.matches}
+          coords={wordSuggest.coords}
+          onSelect={insertWordLink}
+          onClose={() => setWordSuggest(null)}
         />
       )}
 

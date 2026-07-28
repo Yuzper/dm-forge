@@ -7,6 +7,9 @@ import {
   Handle, Position, NodeProps, EdgeProps,
   getBezierPath, getSmoothStepPath, EdgeLabelRenderer, BaseEdge,
 } from 'reactflow'
+// Multi-value tracks (Allies, Rivals, …) store a JSON array in the track slot;
+// trackValues unpacks them so nodes never render raw JSON.
+import { trackValues } from '../wiki/wikiConstants'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -243,7 +246,9 @@ export function dbNodeToRF(
     try { parsedTracks = JSON.parse(node.tracks) } catch {}
   }
   const rank = node.rank_id ? ranksById[node.rank_id] : undefined
-  const colorValue = colorBy ? parsedTracks[colorBy.track] : undefined
+  // Colourable tracks are single-entry by construction (the picker disables any
+  // track where a node holds several), so this unwraps the lone stored value.
+  const colorValue = colorBy ? trackValues(parsedTracks[colorBy.track])[0] : undefined
   return {
     id: String(node.id),
     position: { x: node.pos_x, y: node.pos_y },
@@ -339,8 +344,8 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
   // Which tracks to show for this node's article type
   const typeFilters = data.articleType ? (data.trackFilters[data.articleType] || []) : []
   const trackLines = typeFilters
-    .map(key => ({ key, val: data.tracks[key] }))
-    .filter(t => t.val && t.val.trim() !== '')
+    .map(key => ({ key, val: trackValues(data.tracks[key]).join(', ') }))
+    .filter(t => t.val !== '')
 
   return (
     <div
@@ -412,9 +417,9 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
             <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{t.val}</span>
           </div>
         ))}
-        {data.linked && data.vitality && trackLines.length === 0 && (
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{data.vitality}</div>
-        )}
+        {/* Vitality has no implicit line of its own — it shows only when the DM
+            ticks Vitality in Track filters, like any other track. (It still
+            drives the dead styling above regardless.) */}
         {!data.linked && (
           <div
             style={{ fontSize: 10, color: '#7F77DD', marginTop: 2, cursor: 'pointer' }}

@@ -22,6 +22,7 @@ import {
   dbNodeToRF, dbEdgeToRF, NODE_TYPES, EDGE_TYPES,
 } from './relationsShared'
 import { TrackFilterPanel, RankPanel, ColorByPanel, LinkedArticlePill, ExportMenu } from './relationsPanels'
+import { trackValues } from '../wiki/wikiConstants'
 import { SECTION_ACCENTS } from '../../constants/sections'
 import {
   AddNodeModal, EdgeLabelModal, EditEdgeModal,
@@ -117,44 +118,62 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
   )
 
   // Track keys usable for coloring — any key holding a plain value on some node.
+  // A key is flagged `multi` when some node holds several entries for it (Allies,
+  // Domains…): a node can only take one colour, so those are offered but disabled
+  // rather than silently colouring by an arbitrary entry.
   const availableColorTracks = useMemo(() => {
-    const keys = new Set<string>()
+    const hasMulti = new Map<string, boolean>()
     for (const n of dbNodes) {
       if (!n.tracks) continue
       try {
         for (const [k, v] of Object.entries(JSON.parse(n.tracks))) {
-          if (typeof v === 'string' && v && !v.startsWith('{') && !v.startsWith('[') &&
-              !k.endsWith('_Date') && k !== 'Timeline_Milestones') keys.add(k)
+          // Date pickers ({...} payloads) and milestones are never colourable.
+          if (typeof v !== 'string' || v.startsWith('{')) continue
+          if (k.endsWith('_Date') || k === 'Timeline_Milestones') continue
+          const vals = trackValues(v)
+          if (vals.length === 0) continue
+          hasMulti.set(k, (hasMulti.get(k) ?? false) || vals.length > 1)
         }
       } catch {}
     }
-    return Array.from(keys).sort((a, b) => a.localeCompare(b))
+    return Array.from(hasMulti.entries())
+      .map(([key, multi]) => ({ key, multi }))
+      .sort((a, b) => a.key.localeCompare(b.key))
   }, [dbNodes])
+
+  // A track saved earlier can become multi-entry later — treat it as unselected
+  // so the canvas never colours from a track the picker now disables.
+  const selectedIsMulti = colorBy.track
+    ? availableColorTracks.find(t => t.key === colorBy.track)?.multi ?? false
+    : false
 
   // Distinct values (with node counts) of the chosen track in this web.
   const colorTrackValues = useMemo(() => {
-    if (!colorBy.track) return [] as [string, number][]
+    if (!colorBy.track || selectedIsMulti) return [] as [string, number][]
     const counts = new Map<string, number>()
     for (const n of dbNodes) {
       if (!n.tracks) continue
       try {
-        const v = JSON.parse(n.tracks)[colorBy.track]
-        if (typeof v === 'string' && v) counts.set(v, (counts.get(v) ?? 0) + 1)
+        // trackValues unwraps the single-entry array a multi-value track stores,
+        // so the legend shows "Death" rather than a raw ["Death"] string.
+        for (const entry of trackValues(JSON.parse(n.tracks)[colorBy.track])) {
+          counts.set(entry, (counts.get(entry) ?? 0) + 1)
+        }
       } catch {}
     }
     return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]))
-  }, [dbNodes, colorBy.track])
+  }, [dbNodes, colorBy.track, selectedIsMulti])
 
   // Saved picks layered over palette auto-assignment, so every value present
   // gets a color immediately and user choices persist.
   const effectiveColorBy = useMemo<ColorByConfig | undefined>(() => {
-    if (!colorBy.track) return undefined
+    if (!colorBy.track || selectedIsMulti) return undefined
     const colors: Record<string, string> = {}
     colorTrackValues.forEach(([v], i) => {
       colors[v] = colorBy.colors[v] ?? RANK_PALETTE[i % RANK_PALETTE.length]
     })
     return { track: colorBy.track, colors }
-  }, [colorBy, colorTrackValues])
+  }, [colorBy, colorTrackValues, selectedIsMulti])
 
   const cfg = TEMPLATE_CONFIG[web.template] || TEMPLATE_CONFIG.custom
   // The territory web is auto-generated from location "Located within" links, so

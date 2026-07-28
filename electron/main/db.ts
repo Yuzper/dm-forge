@@ -607,6 +607,14 @@ export function initDatabase() {
     log.warn('Loot default backfill failed:', e)
   }
 
+  // `players` is CREATE TABLE IF NOT EXISTS, so a table made by an earlier dev
+  // build of the player-pages feature never picks up columns added later. Publish
+  // reads pc_article_id (own-PC grant + statblock), so backfill it defensively.
+  const playerCols = db.pragma('table_info(players)') as { name: string }[]
+  if (playerCols.length > 0 && !playerCols.some(c => c.name === 'pc_article_id')) {
+    db.exec(`ALTER TABLE players ADD COLUMN pc_article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL`)
+  }
+
   // Location `Size` was a catch-all that mixed magnitude words (City, Kingdom…)
   // with kind-of-place words (Ruins, Dungeon…). The kind words now live in a
   // separate `Type` track, so move any that were stored under `Size` over to it

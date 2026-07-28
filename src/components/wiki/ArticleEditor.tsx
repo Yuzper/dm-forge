@@ -5,7 +5,7 @@ import { useMenuClose } from '../../hooks/useMenuClose'
 import {
   Plus, Trash2, Check, X, ChevronLeft, ScrollText,
   MoreHorizontal, Image as ImageIcon, Link,
-  ShoppingBag, ChevronDown, ChevronRight, SlidersHorizontal,
+  ShoppingBag, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import RichEditor from '../RichEditor'
 import type { Article, ArticleSummary, ArticleType, MasterLootTable, LootItem } from '../../types'
@@ -23,7 +23,8 @@ import { InWorldDatePicker } from '../InWorldDatePicker'
 import { TIMELINE_DATE_FIELDS, parseMilestones, type Milestone } from '../../constants/timelineDates'
 import LocationMapSection from '../LocationMapSection'
 import AudienceControl from '../AudienceControl'
-import TrackVisibilityPanel from './TrackVisibilityPanel'
+import TrackVisibilityControl, { effectiveTrackMode, trackModePlayers } from './TrackVisibilityControl'
+import type { TrackVisibility, TrackVisMode } from '../../types'
 import QuestSubstepsSection, { parseSubsteps } from '../QuestSubstepsSection'
 import type { Substep } from '../QuestSubstepsSection'
 import QuestRewardSection, { parseReward } from '../QuestRewardSection'
@@ -38,9 +39,9 @@ import { ClocksSection } from '../clocks/ClocksSection'
 
 // ─── Track Row ─────────────────────────────────────────────────────────────────
 
-function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions }: {
+function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions, visControl }: {
   trackKey: string; name: string; options: string[]; value: string
-  onChange: (v: string) => void; dynamicOptions?: string[]
+  onChange: (v: string) => void; dynamicOptions?: string[]; visControl?: React.ReactNode
 }) {
   // One alphabetical, de-duplicated list regardless of how the options were
   // assembled (static list, dynamic article names, or a merge of both).
@@ -80,6 +81,7 @@ function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions }: 
           <option value="__custom__">Custom…</option>
         </select>
       )}
+      {visControl}
     </div>
   )
 }
@@ -87,8 +89,8 @@ function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions }: 
 // Multi-value sibling of TrackRow (Allies, Rivals, …): holds a list of entries
 // stored as a JSON array in the same track slot. Existing entries show as
 // removable chips; a picker (dynamic article names + Custom…) adds more.
-function MultiTrackRow({ name, value, onChange, dynamicOptions }: {
-  name: string; value: string; onChange: (v: string) => void; dynamicOptions?: string[]
+function MultiTrackRow({ name, value, onChange, dynamicOptions, visControl }: {
+  name: string; value: string; onChange: (v: string) => void; dynamicOptions?: string[]; visControl?: React.ReactNode
 }) {
   const entries = trackValues(value)
   const [customMode, setCustomMode] = useState(false)
@@ -108,6 +110,7 @@ function MultiTrackRow({ name, value, onChange, dynamicOptions }: {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
       <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0, marginTop: 5 }}>{formatTrackName(name)}</span>
+      {visControl && <span style={{ order: 2, marginTop: 5 }}>{visControl}</span>}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
         {entries.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -422,13 +425,15 @@ function CreatureVariantsSection({
   )
 }
 
-function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMode, baseYear }: {
+function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMode, baseYear, renderVis }: {
   articleType: ArticleType
   tracks: Record<string, string>
   setTracks: React.Dispatch<React.SetStateAction<Record<string, string>>>
   setDirty: (v: boolean) => void
   readMode: boolean
   baseYear: number
+  // Inline player-visibility eye for a date field / milestone (edit mode only).
+  renderVis?: (key: string, isMilestone: boolean) => React.ReactNode
 }) {
   // Skip semantic fields already shown in Details (e.g. character Death_Date).
   const typeTracks = ARTICLE_TRACKS[articleType] || {}
@@ -462,7 +467,10 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {fields.map(f => (
             <div key={f.key}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{f.label}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{f.label}</span>
+                {renderVis?.(f.key, false)}
+              </div>
               <InWorldDatePicker value={tracks[f.key] || ''} onChange={v => setField(f.key, v)} label="" baseYear={baseYear} />
             </div>
           ))}
@@ -475,6 +483,7 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
               <div key={m.id} style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8, padding: 8, border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)' }}>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input className="input" value={m.label} onChange={e => updateMilestone(m.id, { label: e.target.value })} placeholder="Label (e.g. Rebuilt)" style={{ flex: 1, minWidth: 0, fontSize: 12, height: 28 }} />
+                  {renderVis?.(m.id, true)}
                   <button onClick={() => removeMilestone(m.id)} title="Remove" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: 2, flexShrink: 0 }}><X size={13} /></button>
                 </div>
                 <InWorldDatePicker value={m.date} onChange={v => updateMilestone(m.id, { date: v })} label="" baseYear={baseYear} />
@@ -488,7 +497,7 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
 }
 
 export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: { article: Article; onBack: () => void; backLabel?: string }) {
-  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, allArticles, loadAllArticles, setView, setRelationsOpenWebId, setRelationsFocusArticleId, setHintContext } = useStore()
+  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, allArticles, loadAllArticles, setView, setRelationsOpenWebId, setRelationsFocusArticleId, setHintContext, players, loadPlayers } = useStore()
 
   // Article names per type for the track dropdowns, derived from the store's
   // live list so newly created articles show up immediately. Alphabetical.
@@ -519,6 +528,9 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const [content, setContent]         = useState(article.content)
   const [articleType, setArticleType] = useState<ArticleType>(article.article_type as ArticleType)
   const [tracks, setTracks]           = useState<Record<string, string>>(() => { try { return JSON.parse(article.tracks) } catch { return {} } })
+  // Per-field player visibility. DM-only metadata, so it saves straight away
+  // through the store (not via the article's dirty/save cycle).
+  const [trackVis, setTrackVis]       = useState<TrackVisibility>(() => { try { return JSON.parse(article.track_visibility || '{}') } catch { return {} } })
   const [statblock, setStatblock]     = useState(() => parseStatBlock(article.statblock))
   const [variants, setVariants]       = useState<CreatureVariant[]>(() => parseCreatureVariants(article.statblock))
   const [itemBlock, setItemBlock]     = useState(() => parseItemStatBlock(article.item_block))
@@ -533,7 +545,6 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const [dirty, setDirty]             = useState(false)
   const [saving, setSaving]           = useState(false)
   const [readMode, setReadMode]       = useState(true)
-  const [showTrackVis, setShowTrackVis] = useState(false)
   const [savedTick, setSavedTick]     = useState(0)   // bumped after each save — refreshes derived sections
 
   // Floating hint follows the article mode: reading vs. editing
@@ -579,6 +590,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
     setTitle(article.title); setContent(article.content)
     setArticleType(article.article_type as ArticleType)
     setTracks(() => { try { return JSON.parse(article.tracks) } catch { return {} } })
+    setTrackVis(() => { try { return JSON.parse(article.track_visibility || '{}') } catch { return {} } })
     setStatblock(parseStatBlock(article.statblock))
     setVariants(parseCreatureVariants(article.statblock))
     setItemBlock(parseItemStatBlock(article.item_block))
@@ -592,6 +604,40 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   }, [article.id])
 
   useEffect(() => { getArticleBacklinks(article.title).then(setBacklinks) }, [article.title])
+
+  // ── Per-field player visibility ─────────────────────────────────────────────
+  // The roster loads when a campaign is opened, but not on the wiki/article
+  // history-restore path — fetch it here so "Some players" is never empty.
+  useEffect(() => { if (players.length === 0) loadPlayers() }, [])
+  const allPlayers = useMemo(
+    () => players.map(p => ({ id: p.id, label: p.display_name || p.username })),
+    [players]
+  )
+  // Saves through the store so `currentArticle` stays in step — writing straight
+  // to the DB leaves the in-memory article stale and the eyes read as defaults.
+  const persistVis = (next: TrackVisibility) => {
+    setTrackVis(next)
+    updateArticle(article.id, { track_visibility: JSON.stringify(next) })
+  }
+  const patchVis = (key: string, isMs: boolean, patch: (prev: { mode: TrackVisMode; players?: number[] }) => { mode: TrackVisMode; players?: number[] }) => {
+    const bucket = isMs ? 'milestones' : 'tracks'
+    const cur = { ...(trackVis[bucket] ?? {}) }
+    cur[key] = patch(cur[key] ?? { mode: effectiveTrackMode(trackVis, key, isMs) })
+    persistVis({ ...trackVis, [bucket]: cur })
+  }
+  const renderVis = (key: string, isMs = false) => (
+    <TrackVisibilityControl
+      mode={effectiveTrackMode(trackVis, key, isMs)}
+      players={trackModePlayers(trackVis, key, isMs)}
+      allPlayers={allPlayers}
+      onMode={mode => patchVis(key, isMs, prev => ({ mode, players: prev.players ?? [] }))}
+      onTogglePlayer={id => patchVis(key, isMs, prev => {
+        const set = new Set(prev.players ?? [])
+        set.has(id) ? set.delete(id) : set.add(id)
+        return { mode: 'restricted', players: [...set] }
+      })}
+    />
+  )
 
   const reloadRelationWebs = useCallback(() => {
     setRelationWebsLoaded(false)
@@ -682,10 +728,6 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', borderLeft: '1px solid var(--border)', flexShrink: 0 }}>
           <AudienceControl entityType="article" entityId={article.id} />
-          <button className="btn btn-sm btn-ghost btn-icon" title="Field visibility (per-track / milestone)"
-            onClick={() => setShowTrackVis(true)} style={{ color: 'var(--text-muted)' }}>
-            <SlidersHorizontal size={14} />
-          </button>
           {readMode ? (
             <button className="btn btn-sm" onClick={() => setReadMode(false)}>Edit</button>
           ) : (
@@ -700,10 +742,6 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
           <ArticleMenu onDelete={async () => { await deleteArticle(article.id); onBack() }} />
         </div>
       </div>
-
-      {showTrackVis && (
-        <TrackVisibilityPanel article={article} tracks={tracks} onClose={() => setShowTrackVis(false)} />
-      )}
 
       <div style={{ flex: 1, overflow: 'auto' }}>
         {/* Banner */}
@@ -752,7 +790,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
             <div style={{ padding: '0 8px' }}>
               <RichEditor key={article.id} content={content} onChange={v => { setContent(v); setDirty(true) }}
                 placeholder="Start writing… Use [[ to link wiki articles, @@ for spells, \\ for sessions."
-                onWikiLinkClick={navigateToArticleByTitle} expandable readOnly={readMode} />
+                onWikiLinkClick={navigateToArticleByTitle} expandable readOnly={readMode} excludeTitle={title} />
             </div>
 
             {/* Stat block — non-creature types */}
@@ -1001,6 +1039,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                             <span style={{ fontSize: 12, color: val ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{val || '—'}</span>
                             <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>set in Item Stats</span>
+                            <span style={{ marginLeft: 'auto' }}>{renderVis('Rarity')}</span>
                           </div>
                         </div>
                       )
@@ -1009,6 +1048,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                       return (
                         <div key={articleType + trackName} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                           <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>{formatTrackName(trackName)}</span>
+                          {renderVis(trackName)}
                           <div style={{ flex: 1 }}>
                             <InWorldDatePicker
                               value={tracks[trackName] || ''}
@@ -1083,6 +1123,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                           value={tracks[trackName] || ''}
                           onChange={commit}
                           dynamicOptions={dynamicOptions}
+                          visControl={renderVis(trackName)}
                         />
                       )
                     }
@@ -1095,6 +1136,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                         value={tracks[trackName] || ''}
                         onChange={commit}
                         dynamicOptions={dynamicOptions}
+                        visControl={renderVis(trackName)}
                       />
                     )
                   })
@@ -1109,6 +1151,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
               setDirty={setDirty}
               readMode={readMode}
               baseYear={(currentCampaign as any)?.timeline_base_year ?? 1507}
+              renderVis={(key, isMs) => renderVis(key, isMs)}
             />
 
             {currentCampaign && (

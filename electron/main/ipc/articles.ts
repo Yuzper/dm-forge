@@ -3,6 +3,7 @@ import { app, ipcMain } from 'electron'
 import { db } from '../db'
 import { extractInlineImagePaths, safeUnlink, safeUnlinkRelative, unlinkImageRef } from '../helpers'
 import { syncHierarchyForWeb, syncTerritoryWeb } from '../relationsSync'
+import { trackValues } from './publishCore'
 
 export function registerArticleIPC() {
 
@@ -160,11 +161,14 @@ export function registerArticleIPC() {
         }
       }
       // Track values naming an existing article count as links (never ghosts).
+      // trackValues() unpacks multi-value tracks (Allies, Rivals, …), which store
+      // a JSON array in the slot — matching the raw string would find no title.
       try {
         const tracks = JSON.parse(r.tracks || '{}')
         for (const v of Object.values(tracks)) {
-          if (typeof v === 'string') {
-            const lower = v.toLowerCase()
+          if (typeof v !== 'string') continue
+          for (const entry of trackValues(v)) {
+            const lower = entry.toLowerCase()
             if (lower !== selfLower && byTitle.has(lower)) targets.add(lower)
           }
         }

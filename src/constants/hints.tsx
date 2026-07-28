@@ -73,6 +73,7 @@ export const HINTS: Record<string, Hint> = {
       <>Type <Kbd>[[</Kbd> to link a wiki article</>,
       <>Type <Kbd>@@</Kbd> to link a spell</>,
       <>Type <Kbd>\\</Kbd> to link a session</>,
+      <>Or just write: start a <strong>capitalised</strong> name and a dropdown suggests matching articles — <Kbd>Tab</Kbd> or <Kbd>Enter</Kbd> to link. Names already written that match an article get a dotted underline; click it (or press <Kbd>Ctrl+Shift+L</Kbd>) to link.</>,
       <>
         The sections under the article text depend on its type:
         <span style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
@@ -108,7 +109,7 @@ export const HINTS: Record<string, Hint> = {
   'timeline': {
     title: 'Getting around the timeline',
     items: [
-      <>In day view, click an empty spot on the timeline to add an event on that day.</>,
+      <>Hit <strong>Add event</strong> (top right) to create an event and place it on a day.</>,
       <>Click a year or era bin to zoom into it; click a stacked badge to pick from clustered items.</>,
       <>Give an article an in-world date and it shows up here automatically.</>,
       <>Use the zoom tabs, <strong>Filter</strong>, and <strong>Settings</strong> (era bands &amp; lifespans) to shape the view.</>,
@@ -145,7 +146,7 @@ export const HINTS: Record<string, Hint> = {
     title: 'Organise your notes',
     items: [
       <>Drag pages to reorder them, or drop them into a folder.</>,
-      <>Notes support the same <Kbd>[[</Kbd> <Kbd>@@</Kbd> <Kbd>\\</Kbd> links as articles.</>,
+      <>Notes support the same <Kbd>[[</Kbd> <Kbd>@@</Kbd> <Kbd>\\</Kbd> links as articles — plus the autolink dropdown (type a capitalised name) and click-to-link underlines.</>,
       <>Press <Kbd>Ctrl+F</Kbd> to highlight a word in the open note; <Kbd>Ctrl+S</Kbd> searches all notes, articles, and sessions at once.</>,
     ],
   },

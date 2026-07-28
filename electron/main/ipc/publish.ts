@@ -7,9 +7,9 @@
 // Pure projection/crypto logic lives in publishCore.ts (unit-testable). This
 // file is the electron shell: dialog, DB reads, grant resolution, file writes.
 //
-// Not yet handled (later phases): DM-only inline marks, track/subtrack
-// visibility, POI/map/graph export. Article content currently ships whole
-// (minus link-scrub + always-strip fields).
+// Handled: DM-only inline marks, per-track/subtrack visibility, link scrubbing,
+// always-strip fields, world map + POI export (POI visibility derives from its
+// linked article). Not yet: per-POI/map/layer grants, fog of war.
 import { app, dialog, ipcMain } from 'electron'
 import path from 'path'
 import fs from 'fs'

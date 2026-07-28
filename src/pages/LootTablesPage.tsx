@@ -295,7 +295,16 @@ function CategoryGroup({ category, tables, activeId, onSelect, onCreateInCategor
   onSelect: (t: MasterLootTable) => void
   onCreateInCategory: (cat: LootTableCategory) => void
 }) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(`loot:category-collapsed:${category}`) === '1' } catch { return false }
+  })
+  const toggleCollapsed = () => {
+    setCollapsed(v => {
+      const next = !v
+      try { localStorage.setItem(`loot:category-collapsed:${category}`, next ? '1' : '0') } catch {}
+      return next
+    })
+  }
   const color = categoryColor(category)
   const label = categoryLabel(category)
 
@@ -303,7 +312,7 @@ function CategoryGroup({ category, tables, activeId, onSelect, onCreateInCategor
     <div style={{ marginBottom: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 4px 2px' }}>
         <button
-          onClick={() => setCollapsed(v => !v)}
+          onClick={toggleCollapsed}
           style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', flex: 1, textAlign: 'left', padding: 0 }}
         >
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />

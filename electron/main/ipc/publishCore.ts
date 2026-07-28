@@ -33,6 +33,21 @@ export function trackValues(raw: string): string[] {
   return [v]
 }
 
+// Date tracks / milestones store an InWorldDate payload ({day,year,label}), not
+// prose. Render its human-readable label — shipping the raw JSON would show the
+// player `{"day":3,"year":1507,...}`. Returns '' for anything that isn't a date.
+export function dateLabel(raw: string): string {
+  const v = (raw ?? '').trim()
+  if (!v.startsWith('{')) return ''
+  try {
+    const d = JSON.parse(v)
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return ''
+    if (typeof d.label === 'string' && d.label.trim()) return d.label.trim()
+    if (typeof d.day === 'number' && typeof d.year === 'number') return `Day ${d.day}, Year ${d.year}`
+  } catch { /* not a date payload */ }
+  return ''
+}
+
 export function trackTagsFromObj(tracks: Record<string, any>): string[] {
   const out: string[] = []
   for (const [k, v] of Object.entries(tracks)) {
@@ -180,15 +195,23 @@ export function buildPlayerBundle(
       if (typeof val !== 'string' || key === 'Timeline_Milestones') continue
       if (!trackVisibleTo(vis, key, playerId)) continue
       tagSource[key] = val
-      // Multi-value tracks (Allies/Rivals) show their entries joined.
+      const label = key.replace(/_/g, ' ')
+      // Multi-value tracks (Allies/Rivals) show their entries joined; date tracks
+      // hold a JSON payload, so they show their human-readable label instead of
+      // being dropped (previously a shared date exported nothing at all).
       const vals = trackValues(val)
-      if (vals.length) infoTracks.push({ label: key.replace(/_/g, ' '), value: vals.join(', ') })
+      if (vals.length) infoTracks.push({ label, value: vals.join(', ') })
+      else {
+        const d = dateLabel(val)
+        if (d) infoTracks.push({ label, value: d })
+      }
     }
     const milestones: { label: string; date: string }[] = []
     try {
       const raw = JSON.parse(tracksObj.Timeline_Milestones || '[]')
       if (Array.isArray(raw)) for (const m of raw) {
-        if (m?.id && trackVisibleTo(vis, m.id, playerId, true)) milestones.push({ label: m.label || '', date: m.date || '' })
+        // date is an InWorldDate payload — ship its label, never the raw JSON.
+        if (m?.id && trackVisibleTo(vis, m.id, playerId, true)) milestones.push({ label: m.label || '', date: dateLabel(m.date || '') })
       }
     } catch { /* none */ }
 

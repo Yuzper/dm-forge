@@ -132,7 +132,9 @@ export function TrackFilterPanel({
 
 
 export function ColorByPanel({ availableTracks, track, values, colors, onSelectTrack, onSetColor, onClose }: {
-  availableTracks: string[]
+  // `multi` marks a track where some node holds several entries — a node can
+  // only take one colour, so those are offered greyed-out and unselectable.
+  availableTracks: { key: string; multi: boolean }[]
   track: string | null
   values: [string, number][]          // [track value, node count] — sorted
   colors: Record<string, string>      // effective color per value
@@ -163,7 +165,11 @@ export function ColorByPanel({ availableTracks, track, values, colors, onSelectT
           onChange={e => { setPicking(null); onSelectTrack(e.target.value || null) }}
         >
           <option value="">— no coloring —</option>
-          {availableTracks.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+          {availableTracks.map(t => (
+            <option key={t.key} value={t.key} disabled={t.multi}>
+              {t.key.replace(/_/g, ' ')}{t.multi ? ' — multiple entries, can’t color' : ''}
+            </option>
+          ))}
         </select>
 
         {track && values.length === 0 && (

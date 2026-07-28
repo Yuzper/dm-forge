@@ -83,8 +83,8 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
   },
   faction: {
     Status: ['Active', 'Disbanded', 'Unknown'],
-    Type:   ['Guild', 'Order', 'Company', 'Cult', 'Noble House', 'Political Bloc', 'Secret Society', 'Council',
-             'Clan', 'Tribe', 'Syndicate', 'Cabal', 'Sect', 'Coven', 'Military Order', 'Merchant House',
+    Type:   ['Player Party', 'Guild', 'Order', 'Company', 'Cult', 'Noble House', 'Political Bloc', 'Secret Society',
+             'Council', 'Clan', 'Tribe', 'Syndicate', 'Cabal', 'Sect', 'Coven', 'Military Order', 'Merchant House',
              'Brotherhood', 'Court', 'Rebellion', 'Mercenary Company'],
     Scale:  ['Local', 'Regional', 'National', 'Global', 'Secret'],
     Leader: [],

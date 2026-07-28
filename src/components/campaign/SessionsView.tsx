@@ -318,7 +318,16 @@ function ArcSection({ arc, sessions, sortAsc, onAddSession, dragEnabled = false,
   onSectionDragOver?: (e: React.DragEvent) => void
   onSectionDrop?: () => void
 }) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(`dmforge:arc-collapsed:${arc.id}`) === '1' } catch { return false }
+  })
+  const toggleCollapsed = () => {
+    setCollapsed(v => {
+      const next = !v
+      try { localStorage.setItem(`dmforge:arc-collapsed:${arc.id}`, next ? '1' : '0') } catch {}
+      return next
+    })
+  }
   const [editOpen, setEditOpen] = useState(false)
   const sorted = [...sessions].sort((a, b) => {
     const numDiff = a.session_number - b.session_number
@@ -344,7 +353,7 @@ function ArcSection({ arc, sessions, sortAsc, onAddSession, dragEnabled = false,
             <GripVertical size={14} />
           </span>
         )}
-        <button onClick={() => setCollapsed(v => !v)}
+        <button onClick={toggleCollapsed}
           style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', flex: 1, textAlign: 'left', padding: 0 }}>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: arc.color, flexShrink: 0 }} />
           <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, color: arc.color, letterSpacing: '0.04em' }}>{arc.name}</span>

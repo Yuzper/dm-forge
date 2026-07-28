@@ -383,7 +383,16 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
       return next
     })
   }
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => {
+    try { return localStorage.getItem(`dmnotes:group-sort:${group.id}`) === 'desc' ? 'desc' : 'asc' } catch { return 'asc' }
+  })
+  const toggleSort = () => {
+    setSortDir(d => {
+      const next = d === 'asc' ? 'desc' : 'asc'
+      try { localStorage.setItem(`dmnotes:group-sort:${group.id}`, next) } catch {}
+      return next
+    })
+  }
   const [renameValue, setRenameValue] = useState(group.name)
   const renameRef = useRef<HTMLInputElement>(null)
 
@@ -462,7 +471,7 @@ function GroupSection({ group, pages, groups, isFirst, isLast, groupIndex, dnd, 
         </button>
         {!!group.is_system && (
           <button
-            onClick={e => { e.stopPropagation(); setSortDir(d => d === 'asc' ? 'desc' : 'asc') }}
+            onClick={e => { e.stopPropagation(); toggleSort() }}
             title={sortDir === 'asc' ? 'Sorted ascending — click for descending' : 'Sorted descending — click for ascending'}
             className="btn btn-ghost btn-icon btn-sm"
             style={{ color: 'var(--text-muted)', flexShrink: 0 }}
@@ -637,7 +646,7 @@ function PageEditor({ page, onDeleted, onTitleChange }: {
           </button>
         </div>
       </div>
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
         <RichEditor
           key={page.id}
           content={content}

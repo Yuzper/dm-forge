@@ -334,6 +334,18 @@ input[type="number"].ghost-input { -moz-appearance: textfield; }
   opacity: 0.85;
 }
 
+/* Passive autolink suggestion: a plain-text mention of an existing article.
+   Subtle dotted underline; click (or Mod+Shift+L on the cursor) to link. */
+.wiki-mention-suggest {
+  border-bottom: 1px dotted var(--gold-dim);
+  cursor: pointer;
+  transition: background var(--transition), border-bottom-color var(--transition);
+}
+.wiki-mention-suggest:hover {
+  background: rgba(200, 168, 75, 0.12);
+  border-bottom-color: var(--gold);
+}
+
 /* Session links inside editor */
 .session-link {
   color: #4697ed;
