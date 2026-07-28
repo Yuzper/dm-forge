@@ -207,7 +207,7 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
             {ALL_FILTERS.filter(f => !excluded.has(f.value)).map(f => {
               const Icon = f.icon; const active = wikiFilter === f.value
               return (
-                <button key={f.value} onClick={() => setWikiFilter(f.value as any)} style={{
+                <button key={f.value} onClick={() => setWikiFilter(active ? 'all' : (f.value as any))} style={{
                   display: 'flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 99,
                   border: `1px solid ${active ? 'var(--border-gold)' : 'var(--border-light)'}`,
                   background: active ? 'var(--bg-active)' : 'transparent',

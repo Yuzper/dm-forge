@@ -17,7 +17,6 @@ export const ARTICLE_TYPES: { value: ArticleType; label: string; icon: any; colo
   { value: 'creature',        label: 'Creature',     icon: PawPrint,    color: ARTICLE_TYPE_COLORS.creature },
   { value: 'location',        label: 'Location',     icon: MapPin,      color: ARTICLE_TYPE_COLORS.location },
   { value: 'faction',         label: 'Faction',      icon: Users,       color: ARTICLE_TYPE_COLORS.faction },
-  { value: 'organization',    label: 'Organization', icon: Users,       color: ARTICLE_TYPE_COLORS.organization },
   { value: 'culture',         label: 'Culture',      icon: Landmark,    color: ARTICLE_TYPE_COLORS.culture },
   { value: 'religion',        label: 'Religion',     icon: Landmark,    color: ARTICLE_TYPE_COLORS.religion },
   { value: 'item',            label: 'Item',         icon: Package,     color: ARTICLE_TYPE_COLORS.item },
@@ -44,6 +43,8 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
     Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Location:    [],
     Culture:     [],
+    Faction:     [],
+    Religion:    [],
   },
   playerCharacter: {
     Vitality:      ['Alive', 'Dead', 'Unknown', 'Retired', 'Immortal'],
@@ -57,6 +58,8 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
     Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Location:    [],
     Culture:     [],
+    Faction:     [],
+    Religion:    [],
   },
   creature: {
     Vitality:      ['Living', 'Extinct', 'Endangered', 'Unknown'],
@@ -72,20 +75,17 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
     // location can be both at once (e.g. Size: City + Type: Ruins).
     Size:   ['Room', 'Building', 'Village', 'Town', 'City', 'Metropolis', 'Duchy', 'Kingdom', 'Empire', 'Island', 'Continent', 'World'],
     Type:   ['Ruins', 'Dungeon', 'Wilderness', 'Landmark', 'Natural Wonder'],
+    Government: ['Monarchy', 'Republic', 'Theocracy', 'Oligarchy', 'Magocracy', 'Tribal', 'Anarchy', 'Confederation'],
+    'Ruler/Leader': [],
+    Controlled_By: [],
     Plane:  ['Material Plane', 'The Nine Hells', 'The Abyss', 'Ethereal Plane', 'Shadowfell', 'Feywild', 'Elemental Plane', 'Astral Plane'],
     Within: [],
   },
   faction: {
     Status: ['Active', 'Disbanded', 'Unknown'],
-    Scale:  ['Local', 'Regional', 'National', 'Global', 'Secret'],
-    Leader: [],
-    HQ:     [],
-    Follower_Count: [],
-    Allies: [],
-    Rivals: [],
-  },
-  organization: {
-    Status: ['Active', 'Disbanded', 'Unknown'],
+    Type:   ['Guild', 'Order', 'Company', 'Cult', 'Noble House', 'Political Bloc', 'Secret Society', 'Council',
+             'Clan', 'Tribe', 'Syndicate', 'Cabal', 'Sect', 'Coven', 'Military Order', 'Merchant House',
+             'Brotherhood', 'Court', 'Rebellion', 'Mercenary Company'],
     Scale:  ['Local', 'Regional', 'National', 'Global', 'Secret'],
     Leader: [],
     HQ:     [],
@@ -96,22 +96,28 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
   quest: {
     Status:           ['Active', 'Completed', 'Failed', 'Abandoned'],
     Type:             ['Main', 'Side', 'Personal', 'Faction'],
+    Difficulty:       ['Trivial', 'Easy', 'Medium', 'Hard', 'Deadly'],
     Quest_Giver:      [],
     Player_Character: [],
   },
   item: {
     Status:   ['Found', 'Lost', 'Destroyed', 'Unknown'],
+    Category: ['Weapon', 'Armor', 'Potion', 'Scroll', 'Wand', 'Ring', 'Rod', 'Staff', 'Wondrous', 'Tool', 'Gear', 'Treasure'],
     Rarity:   ['Common', 'Uncommon', 'Rare', 'Very Rare', 'Legendary', 'Artifact'],
     Location: [],
   },
   event: {
     Status:        ['Upcoming', 'Ongoing', 'Past'],
+    Type:          ['Battle', 'War', 'Festival', 'Celebration', 'Disaster', 'Cataclysm', 'Destruction', 'Political', 'Treaty',
+                    'Discovery', 'Ritual', 'Founding', 'Coronation', 'Death', 'Betrayal', 'Prophecy', 'Plague', 'Uprising'],
     Scale:         ['Personal', 'Local', 'Regional', 'World-shaking'],
+    Location:      [],
     In_World_Date: [],
   },
   culture:  { Status: ['Active', 'Undercover', 'Extinct', 'Unknown'] },
   religion: {
     Status:         ['Active', 'Undercover', 'Extinct', 'Unknown'],
+    Domains:        ['Life', 'Death', 'War', 'Knowledge', 'Nature', 'Trickery', 'Tempest', 'Light', 'Forge', 'Grave', 'Order', 'Peace'],
     Leader:         [],
     Holy_Symbol:    [],
     Follower_Count: [],
@@ -151,6 +157,36 @@ export const TRACK_VALUE_COLORS: Record<string, string> = {
 // Date tracks hold JSON (e.g. {"day":3,"year":1507}) and shouldn't become tags.
 export const NON_TAG_TRACKS = new Set(['In_World_Date', 'Death_Date', 'Timeline_Milestones'])
 
+// Tracks that hold several entries instead of one. Stored as a JSON array of
+// strings in the same `tracks[key]` slot; a legacy plain string reads as a
+// single-element list (see trackValues).
+export const MULTI_TRACKS = new Set(['Allies', 'Rivals', 'Sacred_Sites', 'Domains'])
+
+// The individual entries of a track value. Plain string → one entry; a JSON
+// array (multi-value tracks) → its string members; JSON objects (date pickers,
+// milestone lists) → none. Empty/blank → none.
+export function trackValues(raw: string | null | undefined): string[] {
+  const v = (raw ?? '').trim()
+  if (!v) return []
+  if (v.startsWith('[')) {
+    try {
+      const arr = JSON.parse(v)
+      if (Array.isArray(arr)) return arr.filter((x): x is string => typeof x === 'string' && x.trim() !== '').map(x => x.trim())
+    } catch { /* malformed → no entries */ }
+    return []
+  }
+  if (v.startsWith('{')) return []
+  return [v]
+}
+
+// Serialise a multi-value list back into a track slot: '' when empty, a JSON
+// array otherwise. (A single entry still stores as an array so the shape is
+// stable for multi-value tracks.)
+export function stringifyMulti(list: string[]): string {
+  const clean = list.map(s => s.trim()).filter(Boolean)
+  return clean.length ? JSON.stringify(clean) : ''
+}
+
 // A plain enum/text track value becomes a tag; JSON values (date pickers,
 // milestone lists) and any *_Date field are skipped so they never leak in.
 export function isTaggableTrack(key: string, value: string): boolean {
@@ -163,9 +199,13 @@ export function isTaggableTrack(key: string, value: string): boolean {
 }
 
 export function getTrackTags(tracks: Record<string, string>): string[] {
-  return Object.entries(tracks)
-    .filter(([k, v]) => isTaggableTrack(k, v))
-    .map(([, v]) => v.toLowerCase().replace(/\s+/g, '-'))
+  const out: string[] = []
+  for (const [k, v] of Object.entries(tracks)) {
+    if (NON_TAG_TRACKS.has(k) || k.endsWith('_Date')) continue
+    // Expands multi-value tracks (Allies/Rivals) into one tag per entry.
+    for (const val of trackValues(v)) out.push(val.toLowerCase().replace(/\s+/g, '-'))
+  }
+  return out
 }
 
 // Parse a stored tags array, dropping any JSON-fragment garbage that earlier

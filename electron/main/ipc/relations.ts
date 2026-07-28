@@ -407,7 +407,7 @@ export function registerRelationIPC() {
       JOIN relation_webs w ON w.id = n.web_id
       JOIN articles a      ON a.id = w.article_id
       WHERE n.article_id = ?
-        AND a.article_type IN ('faction', 'organization', 'religion')
+        AND a.article_type IN ('faction', 'religion')
       ORDER BY a.article_type, a.title COLLATE NOCASE
     `).all(articleId)
   })

@@ -30,7 +30,7 @@ import QuestRewardSection, { parseReward } from '../QuestRewardSection'
 import type { QuestReward } from '../QuestRewardSection'
 
 import {
-  ARTICLE_TYPES, ARTICLE_TRACKS, TRACK_VALUE_COLORS,
+  ARTICLE_TYPES, ARTICLE_TRACKS, TRACK_VALUE_COLORS, MULTI_TRACKS, trackValues, stringifyMulti,
   getTrackTags, parseTags, formatTrackName, sidebarSectionLabel, imgBtnStyle, addBannerStyle,
 } from './wikiConstants'
 import { ArticleRelationsPanel, RelationWebsSection, MemberCountSection, AffiliationsSection, GeographySection } from './ArticleRelationsPanel'
@@ -80,6 +80,68 @@ function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions }: 
           <option value="__custom__">Custom…</option>
         </select>
       )}
+    </div>
+  )
+}
+
+// Multi-value sibling of TrackRow (Allies, Rivals, …): holds a list of entries
+// stored as a JSON array in the same track slot. Existing entries show as
+// removable chips; a picker (dynamic article names + Custom…) adds more.
+function MultiTrackRow({ name, value, onChange, dynamicOptions }: {
+  name: string; value: string; onChange: (v: string) => void; dynamicOptions?: string[]
+}) {
+  const entries = trackValues(value)
+  const [customMode, setCustomMode] = useState(false)
+  const [customText, setCustomText] = useState('')
+  const options = Array.from(new Set(dynamicOptions ?? []))
+    .filter(o => !entries.includes(o))
+    .sort((a, b) => a.localeCompare(b))
+
+  const add = (v: string) => {
+    const t = v.trim()
+    if (!t || entries.includes(t)) return
+    onChange(stringifyMulti([...entries, t]))
+  }
+  const remove = (v: string) => onChange(stringifyMulti(entries.filter(e => e !== v)))
+  const commitCustom = () => { add(customText); setCustomText(''); setCustomMode(false) }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+      <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0, marginTop: 5 }}>{formatTrackName(name)}</span>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+        {entries.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {entries.map(e => (
+              <span key={e} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 4px 2px 8px', borderRadius: 99, border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+                {e}
+                <button onClick={() => remove(e)} title="Remove"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0, display: 'flex', alignItems: 'center' }}>
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {customMode ? (
+          <div style={{ display: 'flex', gap: 4 }}>
+            <input autoFocus className="input" style={{ height: 28, fontSize: 12, flex: 1 }} value={customText}
+              placeholder="Custom…" onChange={e => setCustomText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitCustom() } }} />
+            <button onClick={commitCustom} className="btn btn-sm" style={{ fontSize: 11 }}>Add</button>
+            <button onClick={() => { setCustomMode(false); setCustomText('') }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 4px', display: 'flex', alignItems: 'center' }}>
+              <X size={11} />
+            </button>
+          </div>
+        ) : (
+          <select className="input" style={{ height: 28, fontSize: 12 }} value=""
+            onChange={e => { const v = e.target.value; if (!v) return; if (v === '__custom__') setCustomMode(true); else add(v) }}>
+            <option value="">+ Add {formatTrackName(name).toLowerCase()}…</option>
+            {options.map(o => <option key={o} value={o}>{o}</option>)}
+            <option value="__custom__">Custom…</option>
+          </select>
+        )}
+      </div>
     </div>
   )
 }
@@ -437,7 +499,6 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
     return m
   }, [allArticles])
   const factionNames         = namesByType.faction ?? []
-  const organizationNames    = namesByType.organization ?? []
   const religionNames        = namesByType.religion ?? []
   const cultureNames         = namesByType.culture ?? []
   const locationNames        = namesByType.location ?? []
@@ -916,10 +977,14 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                           </div>
                         )
                       }
-                      const color = TRACK_VALUE_COLORS[val] || '#8a8a8a'
+                      // Multi-value tracks (Allies/Rivals) render their entries
+                      // joined; single-value tracks keep their status colour.
+                      const vals = trackValues(val)
+                      if (vals.length === 0) return null
+                      const color = vals.length === 1 ? (TRACK_VALUE_COLORS[vals[0]] || '#8a8a8a') : '#8a8a8a'
                       return (
                         <div key={trackName} style={{ fontSize: 11, fontWeight: 600, color, padding: '3px 10px', borderRadius: 99, border: `1px solid ${color}44`, background: `${color}12` }}>
-                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{formatTrackName(trackName)}: </span>{val}
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{formatTrackName(trackName)}: </span>{vals.join(', ')}
                         </div>
                       )
                     })}
@@ -964,6 +1029,63 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                         </div>
                       )
                     }
+                    // Track values that pull their suggestions from live article
+                    // titles rather than a fixed enum. Shared by TrackRow and the
+                    // multi-value MultiTrackRow.
+                    const dynamicOptions =
+                      trackName === 'Religion'           ? religionNames :
+                      trackName === 'Culture'            ? cultureNames :
+                      trackName === 'Faction'            ? factionNames :
+                      trackName === 'Species'            ? [...(ARTICLE_TRACKS[articleType]?.Species ?? []), ...creatureNames] :
+                      trackName === 'Location'           ? locationNames :
+                      trackName === 'Within'             ? locationNames.filter(n => n !== title) :
+                      trackName === 'HQ'                 ? locationNames :
+                      trackName === 'Ruler/Leader'       ? characterNames :
+                      trackName === 'Controlled_By'      ? factionNames :
+                      trackName === 'Owner'              ? characterNames :
+                      trackName === 'Sender'             ? characterNames :
+                      trackName === 'Intended_Recipient' ? characterNames :
+                      trackName === 'Leader'             ? characterNames :
+                      trackName === 'Quest_Giver'        ? characterNames :
+                      trackName === 'Player_Character'   ? playerCharacterNames :
+                      trackName === 'Allies'             ? [...characterNames, ...factionNames, ...religionNames] :
+                      trackName === 'Rivals'             ? [...characterNames, ...factionNames, ...religionNames] :
+                      trackName === 'Sacred_Sites'       ? locationNames :
+                      trackName === 'Domains'            ? (ARTICLE_TRACKS[articleType]?.Domains ?? []) :
+                      undefined
+
+                    // Keep the manual-tag / track-tag reconciliation in one place;
+                    // both row kinds commit through it.
+                    const commit = (v: string) => {
+                      setTracks(prev => {
+                        const updated = { ...prev, [trackName]: v }
+                        // Leaving a personal quest hides Player_Character —
+                        // drop the value so it can't linger unseen.
+                        if (articleType === 'quest' && trackName === 'Type' && v !== 'Personal') {
+                          delete updated.Player_Character
+                        }
+                        const oldTrackTags = getTrackTags(prev)
+                        const newTrackTags = getTrackTags(updated)
+                        setTags(prevTags => {
+                          const manualTags = prevTags.filter(t => !oldTrackTags.includes(t))
+                          return Array.from(new Set([...manualTags, ...newTrackTags]))
+                        })
+                        return updated
+                      })
+                      setDirty(true)
+                    }
+
+                    if (MULTI_TRACKS.has(trackName)) {
+                      return (
+                        <MultiTrackRow
+                          key={articleType + trackName}
+                          name={trackName}
+                          value={tracks[trackName] || ''}
+                          onChange={commit}
+                          dynamicOptions={dynamicOptions}
+                        />
+                      )
+                    }
                     return (
                       <TrackRow
                         key={articleType + trackName}
@@ -971,42 +1093,8 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                         name={trackName}
                         options={options}
                         value={tracks[trackName] || ''}
-                        onChange={v => {
-                          setTracks(prev => {
-                            const updated = { ...prev, [trackName]: v }
-                            // Leaving a personal quest hides Player_Character —
-                            // drop the value so it can't linger unseen.
-                            if (articleType === 'quest' && trackName === 'Type' && v !== 'Personal') {
-                              delete updated.Player_Character
-                            }
-                            const oldTrackTags = getTrackTags(prev)
-                            const newTrackTags = getTrackTags(updated)
-                            setTags(prevTags => {
-                              const manualTags = prevTags.filter(t => !oldTrackTags.includes(t))
-                              return Array.from(new Set([...manualTags, ...newTrackTags]))
-                            })
-                            return updated
-                          })
-                          setDirty(true)
-                        }}
-                        dynamicOptions={
-                          trackName === 'Organization'       ? organizationNames :
-                          trackName === 'Religion'           ? religionNames :
-                          trackName === 'Culture'            ? cultureNames :
-                          trackName === 'Species'            ? [...(ARTICLE_TRACKS[articleType]?.Species ?? []), ...creatureNames] :
-                          trackName === 'Location'           ? locationNames :
-                          trackName === 'Within'             ? locationNames.filter(n => n !== title) :
-                          trackName === 'HQ'                 ? locationNames :
-                          trackName === 'Owner'              ? characterNames :
-                          trackName === 'Sender'             ? characterNames :
-                          trackName === 'Intended_Recipient' ? characterNames :
-                          trackName === 'Leader'             ? characterNames :
-                          trackName === 'Quest_Giver'        ? characterNames :
-                          trackName === 'Player_Character'   ? playerCharacterNames :
-                          trackName === 'Allies'             ? [...characterNames, ...organizationNames, ...factionNames, ...religionNames] :
-                          trackName === 'Rivals'             ? [...characterNames, ...organizationNames, ...factionNames, ...religionNames] :
-                          undefined
-                        }
+                        onChange={commit}
+                        dynamicOptions={dynamicOptions}
                       />
                     )
                   })
@@ -1027,7 +1115,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
               <ClocksSection articleId={article.id} campaignId={currentCampaign.id} readMode={readMode} />
             )}
 
-            {['faction', 'organization', 'religion'].includes(articleType) && (
+            {['faction', 'religion'].includes(articleType) && (
               <MemberCountSection articleId={article.id} followerEstimate={tracks.Follower_Count} />
             )}
 

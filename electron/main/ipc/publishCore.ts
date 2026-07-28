@@ -16,14 +16,29 @@ export const PBKDF2_ITERATIONS = 150_000
 // Player-facing tags come ONLY from tracks — hand-typed DM tags never ship.
 const NON_TAG_TRACKS = new Set(['In_World_Date', 'Death_Date', 'Timeline_Milestones'])
 
+// A track value is a plain string or a JSON array of strings (multi-value
+// tracks like Allies/Rivals). Returns the individual entries; JSON objects
+// (date pickers, milestone lists) yield none. Mirrors the renderer's trackValues.
+export function trackValues(raw: string): string[] {
+  const v = (raw ?? '').trim()
+  if (!v) return []
+  if (v.startsWith('[')) {
+    try {
+      const a = JSON.parse(v)
+      if (Array.isArray(a)) return a.filter((x: any): x is string => typeof x === 'string' && x.trim() !== '').map((x: string) => x.trim())
+    } catch { /* malformed → none */ }
+    return []
+  }
+  if (v.startsWith('{')) return []
+  return [v]
+}
+
 export function trackTagsFromObj(tracks: Record<string, any>): string[] {
   const out: string[] = []
   for (const [k, v] of Object.entries(tracks)) {
     if (typeof v !== 'string') continue
     if (NON_TAG_TRACKS.has(k) || k.endsWith('_Date')) continue
-    const val = v.trim()
-    if (!val || val.startsWith('{') || val.startsWith('[')) continue
-    out.push(val.toLowerCase().replace(/\s+/g, '-'))
+    for (const val of trackValues(v)) out.push(val.toLowerCase().replace(/\s+/g, '-'))
   }
   return [...new Set(out)]
 }
@@ -165,8 +180,9 @@ export function buildPlayerBundle(
       if (typeof val !== 'string' || key === 'Timeline_Milestones') continue
       if (!trackVisibleTo(vis, key, playerId)) continue
       tagSource[key] = val
-      const v = val.trim()
-      if (v && !v.startsWith('{') && !v.startsWith('[')) infoTracks.push({ label: key.replace(/_/g, ' '), value: v })
+      // Multi-value tracks (Allies/Rivals) show their entries joined.
+      const vals = trackValues(val)
+      if (vals.length) infoTracks.push({ label: key.replace(/_/g, ' '), value: vals.join(', ') })
     }
     const milestones: { label: string; date: string }[] = []
     try {

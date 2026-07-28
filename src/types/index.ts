@@ -155,7 +155,7 @@ export interface TrackVisibility {
 
 export type ArticleType =
   | 'character' | 'playerCharacter' | 'location' | 'faction'
-  | 'organization' | 'culture' | 'religion' | 'item' | 'artifact'
+  | 'culture' | 'religion' | 'item' | 'artifact'
   | 'quest' | 'event' | 'lore' | 'creature' | 'note' | 'other'
 
 export interface GlobalSearchResults {

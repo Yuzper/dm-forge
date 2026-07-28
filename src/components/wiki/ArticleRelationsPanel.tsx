@@ -35,8 +35,7 @@ interface ArticleRelationRow {
 function webSectionHint(articleType: ArticleType): string {
   switch (articleType) {
     case 'faction':
-    case 'organization':
-      return 'Map a structure within this organisation — its chain of command, ranks, cells, or alliances and rivalries between members.'
+      return 'Map a structure within this faction — its chain of command, ranks, cells, or alliances and rivalries between members.'
     case 'religion':
       return 'Map a structure within this faith — its clergy hierarchy, sects, holy orders, or pantheon of deities.'
     case 'location':
@@ -149,7 +148,7 @@ export function AffiliationsSection({ articleId }: { articleId: number }) {
   }, [articleId])
 
   const religion = items.find(a => a.article_type === 'religion')
-  const factions = items.filter(a => a.article_type === 'faction' || a.article_type === 'organization')
+  const factions = items.filter(a => a.article_type === 'faction')
   if (!religion && factions.length === 0) return null
 
   const chip = (a: { id: number; title: string; article_type: string }) => {

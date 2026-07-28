@@ -91,8 +91,18 @@ function MiniTimeline({ campaignId, selectedDay, cal, onPickDay }: MiniTimelineP
   const baseYear = cal.start.year
   const PX_PER_DAY = zoom === 'day' ? 6 : 2
   const allDays = [...sessions.map(s => (s as any).in_world_day).filter(Boolean), selectedDay || 1, 1]
-  const MIN_DAY = Math.min(...allDays, 1) - 5
-  const MAX_DAY = Math.max(...allDays, L + 10) + 10
+  let MIN_DAY = Math.min(...allDays, 1) - 5
+  let MAX_DAY = Math.max(...allDays, L + 10) + 10
+  // Guard against a runaway range: a date far from the campaign — e.g. while
+  // typing a distant year in the Year field — would otherwise span hundreds of
+  // thousands of days, generating that many ticks/bands and freezing the app.
+  // Cap the rendered window (centred on the selection) so the SVG stays bounded.
+  const MAX_SPAN = L * 40 + 400   // ~40 years of context is plenty for a picker
+  if (MAX_DAY - MIN_DAY > MAX_SPAN) {
+    const center = selectedDay || 1
+    MIN_DAY = Math.round(center - MAX_SPAN / 2)
+    MAX_DAY = Math.round(center + MAX_SPAN / 2)
+  }
   const geo = makePickerAxisGeo(zoom, PAD_L, MIN_DAY, PX_PER_DAY, cal)
   const { dx, xToDay, worldYearToX } = geo
   const W_DAY = PAD_L + (MAX_DAY - MIN_DAY) * PX_PER_DAY + PAD_R

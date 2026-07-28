@@ -16,7 +16,6 @@ export interface TimelineDateField {
 export const TIMELINE_DATE_FIELDS: Partial<Record<ArticleType, TimelineDateField[]>> = {
   location:        [{ key: 'Founded_Date', label: 'Founded', role: 'start' }, { key: 'Destroyed_Date', label: 'Destroyed', role: 'end' }],
   faction:         [{ key: 'Founded_Date', label: 'Founded', role: 'start' }, { key: 'Disbanded_Date', label: 'Disbanded', role: 'end' }],
-  organization:    [{ key: 'Founded_Date', label: 'Founded', role: 'start' }, { key: 'Disbanded_Date', label: 'Disbanded', role: 'end' }],
   character:        [{ key: 'Born_Date', label: 'Born', role: 'start' }, { key: 'Death_Date', label: 'Died', role: 'end' }],
   playerCharacter:  [{ key: 'Born_Date', label: 'Born', role: 'start' }, { key: 'Death_Date', label: 'Died', role: 'end' }],
   item:            [{ key: 'Created_Date', label: 'Created', role: 'start' }, { key: 'Lost_Date', label: 'Lost', role: 'end' }],

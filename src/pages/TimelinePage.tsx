@@ -12,7 +12,7 @@ import {
   isYearMode, dayToWorldYear, worldYearToDay, computeBins,
   makePageAxisGeo,
   type CampaignCalendar, getCampaignCalendar,
-  yearLength, dayToCalendarDate, formatCalendarDay,
+  yearLength, formatCalendarDay,
   type TimelineEventItem, type ClusterItem, type SessionRenderItem, type BinChip, type Era,
 } from '../utils/timelineGeometry'
 
@@ -493,16 +493,6 @@ export default function TimelinePage() {
     if (nextZoom !== zoom) { scrollToBinRef.current = (chip.startYear + chip.endYear) / 2; setZoom(nextZoom) }
   }
 
-  // Click on empty timeline space (day mode) → quick-create an event at that day.
-  // Marks stop propagation, so this only fires for background clicks.
-  const handleBackgroundClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (isYearMode(zoom)) return
-    const x = e.clientX - e.currentTarget.getBoundingClientRect().left
-    const day = Math.round((x - PAD_L) / pxPerDay) + minDay
-    setCreateDateRaw(JSON.stringify({ day, year: dayToCalendarDate(day, cal).year, label: formatCalendarDay(day, cal) }))
-    setShowCreate(true)
-  }
-
   // Scroll to latest session on mount/data change
   useEffect(() => {
     if (!scrollRef.current) return
@@ -651,7 +641,6 @@ export default function TimelinePage() {
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <div ref={scrollRef} style={{ overflowX: 'auto', overflowY: 'hidden', padding: '32px 0 0', background: 'var(--bg-base)' }}>
           <svg width={CANVAS_W} height={TOTAL_H} style={{ display: 'block', overflow: 'visible' }}
-            onClick={handleBackgroundClick}
             onMouseLeave={() => { setDayTooltip(null); setBinTooltip(null) }}>
             <TimelineCanvas
               zoom={zoom} geo={geo} width={CANVAS_W}

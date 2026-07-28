@@ -419,7 +419,7 @@ export function ExportMenu({ onExport }: { onExport: (format: 'png' | 'svg') => 
 
 // ── Web Card Menu ─────────────────────────────────────────────────────────────
 
-export function WebMenu({ onDelete }: { onDelete: () => void }) {
+export function WebMenu({ onEdit, onDelete }: { onEdit?: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -447,6 +447,14 @@ export function WebMenu({ onDelete }: { onDelete: () => void }) {
       </button>
       {open && (
         <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 150, zIndex: 50, overflow: 'hidden' }}>
+          {onEdit && (
+            <button
+              onClick={e => { e.stopPropagation(); onEdit(); setOpen(false); setConfirmDelete(false) }}
+              className="menu-item"
+            >
+              <Pencil size={13} /> Edit
+            </button>
+          )}
           <button
             onClick={e => { e.stopPropagation(); if (!confirmDelete) { setConfirmDelete(true); return } onDelete(); setOpen(false) }}
             style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'none', border: 'none', fontSize: 13, cursor: 'pointer', textAlign: 'left', color: confirmDelete ? 'var(--danger-hover)' : '#e05555' }}

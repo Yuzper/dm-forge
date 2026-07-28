@@ -171,27 +171,26 @@ export const ARTICLE_TRACKS: Partial<Record<string, Record<string, string[]>>> =
     Size: ['Tiny','Small','Medium','Large','Huge','Gargantuan'],
     Habitat: ['Forest','Desert','Mountain','Swamp','Ocean','Underdark','Urban','Arctic','Plains'],
   },
-  location: { State: [], Size: [], Plane: [], Within: [] },
-  faction:  { Status: [], Scale: [], Leader: [], HQ: [], Allies: [], Rivals: [] },
-  organization: { Status: [], Scale: [], Leader: [], HQ: [], Allies: [], Rivals: [] },
-  quest: { Status: [], Difficulty: [] },
-  item:  { Status: [], Rarity: [], Location: [] },
-  event: { Status: [], Scale: [] },
+  location: { State: [], Size: [], Type: [], Government: [], 'Ruler/Leader': [], Controlled_By: [], Plane: [], Within: [] },
+  faction:  { Status: [], Type: [], Scale: [], Leader: [], HQ: [], Allies: [], Rivals: [] },
+  quest: { Status: [], Type: [], Difficulty: [] },
+  item:  { Status: [], Category: [], Rarity: [], Location: [] },
+  event: { Status: [], Type: [], Scale: [], Location: [] },
   culture:  { Status: [] },
-  religion: { Status: [], Leader: [], Holy_Symbol: [], Follower_Count: [], Allies: [], Rivals: [], Sacred_Sites: [] },
+  religion: { Status: [], Domains: [], Leader: [], Holy_Symbol: [], Follower_Count: [], Allies: [], Rivals: [], Sacred_Sites: [] },
   lore:  { Status: [] },
   note:  { Sender: [], Intended_Recipient: [], Language: [], Date: [], Location: [] },
   other: { Status: [] },
 }
 
 export const ALL_ARTICLE_TYPES = [
-  'character','playerCharacter','creature','location','faction','organization',
+  'character','playerCharacter','creature','location','faction',
   'quest','item','event','culture','religion','lore','note','other',
 ]
 
 export const ARTICLE_TYPE_LABELS: Record<string, string> = {
   character: 'Character', playerCharacter: 'Player Character', creature: 'Creature',
-  location: 'Location', faction: 'Faction', organization: 'Organization',
+  location: 'Location', faction: 'Faction',
   quest: 'Quest', item: 'Item', event: 'Event', culture: 'Culture',
   religion: 'Religion', lore: 'Lore', note: 'Note', other: 'Other',
 }

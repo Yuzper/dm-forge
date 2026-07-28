@@ -33,7 +33,7 @@ export function NewWebModal({ onClose, onCreated, lockedArticle }: {
   const [linkedArticle, setLinkedArticle] = useState<{ id: number; title: string } | null>(null)
   const [articleSearch, setArticleSearch] = useState('')
   const [articleResults, setArticleResults] = useState<{ id: number; title: string; article_type: string }[]>([])
-  const [newArticleType, setNewArticleType] = useState('organization')
+  const [newArticleType, setNewArticleType] = useState('faction')
   const articleDebounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
@@ -232,6 +232,61 @@ export function NewWebModal({ onClose, onCreated, lockedArticle }: {
             {error}
           </div>
         )}
+    </Modal>
+  )
+}
+
+// Edit an existing web's title / description. Persists via updateRelationWeb and
+// hands the saved patch back so the caller can update its list in place.
+export function EditWebModal({ web, onClose, onSaved }: {
+  web: RelationWeb
+  onClose: () => void
+  onSaved: (patch: { name: string; description: string }) => void
+}) {
+  const [name, setName] = useState(web.name)
+  const [description, setDescription] = useState(web.description ?? '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSave = async () => {
+    if (!name.trim() || saving) return
+    setSaving(true)
+    setError(null)
+    try {
+      await (window as any).api.updateRelationWeb(web.id, { name: name.trim(), description: description.trim() })
+      onSaved({ name: name.trim(), description: description.trim() })
+    } catch (err: any) {
+      console.error('updateRelationWeb failed:', err)
+      setError(err?.message || 'Failed to save — please try again.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal title="Edit web" onClose={onClose} style={{ maxWidth: 480 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="input-group">
+          <label className="input-label">Name</label>
+          <input className="input" autoFocus value={name} onChange={e => setName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSave()} />
+        </div>
+        <div className="input-group">
+          <label className="input-label">Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+          <input className="input" placeholder="A brief description…" value={description} onChange={e => setDescription(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSave()} />
+        </div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleSave} disabled={!name.trim() || saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+      {error && (
+        <div style={{ marginTop: 10, fontSize: 12, color: 'var(--danger)', background: 'var(--danger-bg)', borderRadius: 6, padding: '8px 12px' }}>
+          {error}
+        </div>
+      )}
     </Modal>
   )
 }

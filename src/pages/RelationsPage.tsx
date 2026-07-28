@@ -6,7 +6,7 @@ import {
   type RelationWeb, TEMPLATE_CONFIG,
 } from '../components/relations/relationsShared'
 import RelationsCanvasView from '../components/relations/RelationsCanvasView'
-import { NewWebModal } from '../components/relations/relationsModals'
+import { NewWebModal, EditWebModal } from '../components/relations/relationsModals'
 import { WebMenu } from '../components/relations/relationsPanels'
 
 // ── Hub View ───────────────────────────────────────────────────────────────────
@@ -15,6 +15,7 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
   const { currentCampaign, setView, setCampaignSubView } = useStore()
   const [webs, setWebs] = useState<RelationWeb[]>([])
   const [showNew, setShowNew] = useState(false)
+  const [editWeb, setEditWeb] = useState<RelationWeb | null>(null)
 
   useEffect(() => {
     if (!currentCampaign) return
@@ -70,10 +71,12 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{web.description}</div>
                     )}
                   </div>
-                  <WebMenu onDelete={async () => {
-                    await (window as any).api.deleteRelationWeb(web.id)
-                    setWebs(prev => prev.filter(w => w.id !== web.id))
-                  }} />
+                  <WebMenu
+                    onEdit={() => setEditWeb(web)}
+                    onDelete={async () => {
+                      await (window as any).api.deleteRelationWeb(web.id)
+                      setWebs(prev => prev.filter(w => w.id !== web.id))
+                    }} />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)', padding: '2px 8px', background: 'var(--bg-elevated)', borderRadius: 99 }}>{web.node_count} node{web.node_count !== 1 ? 's' : ''}</span>
@@ -92,6 +95,16 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
         <NewWebModal
           onClose={() => setShowNew(false)}
           onCreated={web => { setWebs(prev => [...prev, web]); setShowNew(false); onOpenWeb(web) }}
+        />
+      )}
+      {editWeb && (
+        <EditWebModal
+          web={editWeb}
+          onClose={() => setEditWeb(null)}
+          onSaved={patch => {
+            setWebs(prev => prev.map(w => w.id === editWeb.id ? { ...w, ...patch } : w))
+            setEditWeb(null)
+          }}
         />
       )}
     </div>

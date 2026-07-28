@@ -579,7 +579,7 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
               const Icon = f.icon; const active = typeFilter === f.value
               const color = f.value === 'all' ? 'var(--gold)' : f.color
               return (
-                <button key={f.value} onClick={() => setTypeFilter(f.value as any)} style={{
+                <button key={f.value} onClick={() => setTypeFilter(active ? 'all' : (f.value as any))} style={{
                   display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 99,
                   border: `1px solid ${active ? color : 'var(--border-light)'}`,
                   background: active ? `color-mix(in srgb, ${color} 12%, transparent)` : 'transparent',
