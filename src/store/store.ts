@@ -1,7 +1,7 @@
 // path: src/store/store.ts
 import { create } from 'zustand'
 import type { Campaign, Session, Arc, GameMap, POI, Article, ArticleSummary, ArticleType,
-  Player, VisibilityGrant, VisibilityEntityType, Grantee, CreatePlayerInput } from '../types'
+  Player, VisibilityGrant, VisibilityEntityType, Grantee, CreatePlayerInput, SoundBoard } from '../types'
 import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
 import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
 import { applyTheme, getStoredTheme, applyTextTheme, getStoredTextTheme } from '../constants/themes'
@@ -175,6 +175,19 @@ interface AppStore {
   soundboardMinimized: boolean
   setSoundboardMinimized: (v: boolean) => void
 
+  // Sound boards live in the store so the page and the floating widget always
+  // agree: a board created (or renamed/deleted) on the page shows up in the
+  // widget's switcher straight away, and a session link can resolve to it.
+  soundBoards: SoundBoard[]
+  // Bumped whenever sounds are added/edited/removed on the page, so the widget
+  // reloads the board it is showing instead of holding a stale list.
+  soundsVersion: number
+  bumpSoundsVersion: () => void
+  loadSoundBoards: (campaignId: number) => Promise<void>
+  createSoundBoard: (name: string) => Promise<SoundBoard | null>
+  updateSoundBoard: (id: number, data: Partial<SoundBoard>) => Promise<void>
+  deleteSoundBoard: (id: number) => Promise<void>
+
   // Stat block overlays
   statBlockOverlays: StatBlockOverlayEntry[]
   openStatBlockOverlay: (articleId: number, overrides?: { statblock?: string; name?: string }) => void
@@ -232,6 +245,40 @@ export const useStore = create<AppStore>((set, get) => ({
   setSoundboardOpen: (soundboardOpen) => set({ soundboardOpen }),
   soundboardMinimized: false,
   setSoundboardMinimized: (soundboardMinimized) => set({ soundboardMinimized }),
+
+  soundBoards: [],
+  soundsVersion: 0,
+  bumpSoundsVersion: () => set(s => ({ soundsVersion: s.soundsVersion + 1 })),
+
+  loadSoundBoards: async (campaignId) => {
+    set({ soundBoards: await window.api.getSoundBoards(campaignId) })
+  },
+
+  createSoundBoard: async (name) => {
+    const { currentCampaign } = get()
+    if (!currentCampaign) return null
+    const board = await window.api.createSoundBoard({ campaign_id: currentCampaign.id, name })
+    set(s => ({ soundBoards: [...s.soundBoards, board] }))
+    return board
+  },
+
+  updateSoundBoard: async (id, data) => {
+    const updated = await window.api.updateSoundBoard(id, data)
+    set(s => ({ soundBoards: s.soundBoards.map(b => b.id === id ? { ...b, ...updated } : b) }))
+  },
+
+  deleteSoundBoard: async (id) => {
+    await window.api.deleteSoundBoard(id)
+    set(s => ({
+      soundBoards: s.soundBoards.filter(b => b.id !== id),
+      // The board is gone; any session pointing at it falls back to the library.
+      sessions: s.sessions.map(x => x.soundboard_id === id ? { ...x, soundboard_id: null } : x),
+      drafts:   s.drafts.map(x   => x.soundboard_id === id ? { ...x, soundboard_id: null } : x),
+      currentSession: s.currentSession?.soundboard_id === id
+        ? { ...s.currentSession, soundboard_id: null }
+        : s.currentSession,
+    }))
+  },
 
   statBlockOverlays: [],
   openStatBlockOverlay: (articleId, overrides) => {
@@ -455,7 +502,7 @@ export const useStore = create<AppStore>((set, get) => ({
       maps: [], currentMap: null,
       pois: [], selectedPOI: null,
       articles: [], allArticles: [], currentArticle: null,
-      players: [], grants: [],
+      players: [], grants: [], soundBoards: [],
       navigationHistory: pushEntry(s.navigationHistory, {
         type: 'campaign', label: campaign.name, campaign,
       }),
@@ -465,6 +512,7 @@ export const useStore = create<AppStore>((set, get) => ({
     get().loadAllArticles()
     get().loadPlayers()
     get().loadGrants()
+    get().loadSoundBoards(campaign.id)
   },
 
   createCampaign: async (data, seedMonsters = true) => {

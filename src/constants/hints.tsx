@@ -154,9 +154,10 @@ export const HINTS: Record<string, Hint> = {
   'soundboard': {
     title: 'Building a soundboard',
     items: [
-      <>Add ambience, music, and effect sounds; the floating widget plays them live during a session.</>,
+      <>The <strong>Sound Library</strong> holds every sound — the bundled starters plus anything you import. Import into a column to add it.</>,
+      <>Custom boards pull their sounds from the library: <em>Add Sounds</em> on a board, or <em>Add to soundboard</em> on a library row.</>,
       <>Link a board to a session so it auto-loads when you open that session.</>,
-      <>Browse the bundled <strong>Default Sounds</strong> board and add any to your own.</>,
+      <>Search filters the library, a board, or the widget's pads by name.</>,
     ],
   },
 }

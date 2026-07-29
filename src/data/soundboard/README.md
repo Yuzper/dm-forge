@@ -1,8 +1,15 @@
-# Default Soundboard
+# Bundled starter sounds
 
-Audio files dropped into these folders become the bundled **Default Sounds** board,
-available in every campaign. They are read live at launch (not seeded into the DB),
-so adding/removing a file and cutting a release updates the defaults on every device.
+Audio files dropped into these folders are seeded into the app-wide **Sound Library**
+on launch — one row per file, referenced as `default:<folder>/<file>` so they resolve
+against the app dir instead of userData. Seeding is tracked per ref in
+`sound_library_seeded`, which means:
+
+- a newly shipped file appears in every user's library on their next launch;
+- a starter sound the user deleted stays deleted (it is never re-seeded);
+- renaming a file here ships it as a *new* sound (the ref changed).
+
+Everything the user imports lands in the same library and behaves identically.
 
 ## Folders → categories
 
@@ -17,7 +24,7 @@ so adding/removing a file and cutting a release updates the defaults on every de
 The sound's display name is derived from the filename:
 `dungeon_drip.ogg` → **Dungeon Drip** (extension stripped, `_`/`-` → space, title-cased).
 
-No hotkeys on defaults — users assign their own once a default is added to their board.
+No hotkeys on starters — the user assigns those in the library or per board.
 
 ## Format & licensing
 

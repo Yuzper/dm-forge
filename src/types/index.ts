@@ -447,14 +447,19 @@ export interface Sound {
   created_at: string
 }
 
-// Bundled default sound — scanned live from the app's soundboard folder.
-// Not stored in the DB; `url` is a ready-to-play file:// path,
-// `ref` is the stable `default:<folder>/<file>` reference for "Add to board".
-export interface DefaultSound {
-  category: SoundCategory
+// One entry on the app-wide sound shelf: every sound the user imported plus the
+// bundled starter sounds. `file_path` is either `sounds/<file>` (imported, under
+// userData) or `default:<folder>/<file>` (bundled, resolved against the app dir).
+export interface SoundLibraryEntry {
+  id: number
   name: string
-  url: string
-  ref: string
+  category: SoundCategory
+  file_path: string
+  hotkey: string
+  volume: number
+  loop: number        // 1 = loop, 0 = one-shot
+  sort_order: number
+  created_at: string
 }
 
 export const DEFAULT_LOOT_TABLE: LootTable = { name: 'Loot', items: [] }
@@ -603,6 +608,7 @@ export interface CreateArticleInput {
   tags?: string
   tracks?: string
   statblock?: string
+  item_block?: string
   loot_table?: string
   loot_table_id?: number | null
   cover_image?: string | null
@@ -802,7 +808,6 @@ export interface ElectronAPI {
   createSoundBoard: (data: { campaign_id: number; name: string }) => Promise<SoundBoard>
   updateSoundBoard: (id: number, data: Partial<SoundBoard>) => Promise<SoundBoard>
   deleteSoundBoard: (id: number)                => Promise<void>
-  getDefaultSounds: ()                          => Promise<DefaultSound[]>
 
   // Sounds
   getSounds:        (boardId: number)           => Promise<Sound[]>
@@ -810,6 +815,13 @@ export interface ElectronAPI {
   updateSound:      (id: number, data: Partial<Sound>) => Promise<Sound>
   deleteSound:      (id: number)                => Promise<void>
   selectAudioFile:  ()                          => Promise<string | null>
+  selectAudioFiles: ()                          => Promise<{ file_path: string; name: string }[]>
+
+  // Sound Library
+  getSoundLibrary:    ()                        => Promise<SoundLibraryEntry[]>
+  createLibrarySound: (data: { name: string; category: SoundCategory; file_path: string; hotkey?: string; volume?: number; loop?: number }) => Promise<SoundLibraryEntry>
+  updateLibrarySound: (id: number, data: Partial<SoundLibraryEntry>) => Promise<SoundLibraryEntry>
+  deleteLibrarySound: (id: number)              => Promise<void>
 
   // Players (player-facing pages)
   getPlayers:    (campaignId: number)              => Promise<Player[]>

@@ -4,10 +4,11 @@ import fs from 'fs'
 import log from 'electron-log'
 import { db } from './db'
 
-// ── Default Soundboard scan ─────────────────────────────────────────────────────
-// Bundled audio under src/data/soundboard/{ambient,music,effects} becomes a
-// read-only "Default Sounds" board. Read live (no DB seeding) so adding a file +
-// shipping a release updates defaults on every device. Name derived from filename.
+// ── Bundled starter sounds ──────────────────────────────────────────────────────
+// Audio shipped under src/data/soundboard/{ambient,music,effects} seeds the
+// central sound library on launch (see seedSoundLibrary below) — one row per file,
+// referenced as `default:<folder>/<file>` so it resolves against the app dir
+// instead of userData. Name derived from filename.
 
 const DEFAULT_SOUND_EXTS = new Set(['.mp3', '.ogg', '.wav', '.flac', '.m4a', '.aac', '.webm'])
 const DEFAULT_SOUND_FOLDERS: { folder: string; category: string }[] = [
@@ -64,7 +65,7 @@ export function buildCreatureImageMap(imagesPath: string): Record<string, string
   return map
 }
 
-function deriveSoundName(filename: string): string {
+export function deriveSoundName(filename: string): string {
   const ext  = path.extname(filename)
   return filename
     .slice(0, filename.length - ext.length)
@@ -94,6 +95,38 @@ export function scanDefaultSounds(): { category: string; name: string; url: stri
     }
   }
   return out
+}
+
+/** Offer every bundled sound to the central library, once per ref.
+ *  A ref that was seeded before is skipped, so a starter sound the user deleted
+ *  stays deleted while a newly shipped one appears on the next launch. */
+export function seedSoundLibrary() {
+  const bundled = scanDefaultSounds()
+  if (bundled.length === 0) return
+  try {
+    const seeded = new Set(
+      (db.prepare('SELECT ref FROM sound_library_seeded').all() as { ref: string }[]).map(r => r.ref)
+    )
+    const fresh = bundled.filter(s => !seeded.has(s.ref))
+    if (fresh.length === 0) return
+
+    const { m } = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM sound_library').get() as { m: number }
+    const insert = db.prepare(`
+      INSERT INTO sound_library (name, category, file_path, loop, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `)
+    const mark = db.prepare('INSERT OR IGNORE INTO sound_library_seeded (ref) VALUES (?)')
+    let order = m + 1
+    db.transaction(() => {
+      for (const s of fresh) {
+        insert.run(s.name, s.category, s.ref, s.category === 'effect' ? 0 : 1, order++)
+        mark.run(s.ref)
+      }
+    })()
+    log.info(`Sound library: seeded ${fresh.length} bundled sound(s)`)
+  } catch (e) {
+    log.warn('Sound library seeding failed:', e)
+  }
 }
 
 export function loadDefaultLootTables(): any[] {

@@ -1,16 +1,19 @@
 // path: src/pages/SoundboardPage.tsx
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useStore } from '../store/store'
 import {
   Music2, Plus, Trash2, ArrowLeft, Pencil, Check, X, FolderOpen,
-  Volume2, Repeat, Link2, Play, Square,
+  Volume2, Repeat, Link2, Play, Square, Search, Library, ListPlus,
 } from 'lucide-react'
-import type { SoundBoard, Sound, SoundCategory, DefaultSound, Session } from '../types'
+import type { SoundBoard, Sound, SoundCategory, SoundLibraryEntry, Session } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
+import Modal from '../components/Modal'
+import DropdownPortal from '../components/DropdownPortal'
 import {
   SOUND_CATEGORIES as CATEGORIES,
   soundCategoryColor as categoryColor,
   soundCategoryLabel as categoryLabel,
+  LIBRARY_BOARD_ID, LIBRARY_BOARD,
 } from '../constants/soundCategories'
 import { SECTION_ACCENTS } from '../constants/sections'
 
@@ -21,174 +24,624 @@ function basename(p: string) {
   return p.replace(/\\/g, '/').split('/').pop() ?? p
 }
 
-// Virtual, always-present bundled default board
-const DEFAULT_BOARD_ID = -1
-const defaultBoard: SoundBoard = {
-  id: DEFAULT_BOARD_ID, campaign_id: -1, name: 'Default Sounds', sort_order: -1, created_at: '',
+const matches = (q: string, ...fields: string[]) => {
+  const needle = q.trim().toLowerCase()
+  return !needle || fields.some(f => f.toLowerCase().includes(needle))
 }
 
-// ── Add / Edit Sound Row ───────────────────────────────────────────────────────
+// ── Preview button ─────────────────────────────────────────────────────────────
+// Plays a single file in place. Owns its own Audio element so several rows can be
+// auditioned without touching the widget's playback state.
 
-function SoundFormRow({ boardId, sound, onSave, onCancel }: {
-  boardId: number
-  sound?: Sound
-  onSave: (s: Sound) => void
-  onCancel: () => void
+function PreviewButton({ filePath, loop, volume = 1, color, size = 26 }: {
+  filePath: string
+  loop: boolean
+  volume?: number
+  color: string
+  size?: number
 }) {
-  const [name, setName]         = useState(sound?.name ?? '')
-  const [category, setCategory] = useState<SoundCategory>(sound?.category ?? 'effect')
-  const [filePath, setFilePath] = useState(sound?.file_path ?? '')
-  const [hotkey, setHotkey]     = useState(sound?.hotkey ?? '')
-  const [volume, setVolume]     = useState(sound?.volume ?? 1)
-  const [loop, setLoop]         = useState(sound ? !!sound.loop : category !== 'effect')
-  const [touchedLoop, setTouchedLoop] = useState(false)
-  const [saving, setSaving]     = useState(false)
+  const [previewing, setPreviewing] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  const browsFile = async () => {
-    const p = await window.api.selectAudioFile()
-    if (!p) return
-    setFilePath(p)
-    if (!name) setName(basename(p).replace(/\.[^.]+$/, ''))
-  }
+  // Stop preview on unmount, and drop the element if the file behind it changed
+  useEffect(() => () => { audioRef.current?.pause() }, [])
+  useEffect(() => {
+    audioRef.current?.pause()
+    audioRef.current = null
+    setPreviewing(false)
+  }, [filePath])
 
-  const pickCategory = (c: SoundCategory) => {
-    setCategory(c)
-    // For a new sound the user hasn't explicitly toggled, follow the category default
-    if (!sound && !touchedLoop) setLoop(c !== 'effect')
-  }
-
-  const handleSave = async () => {
-    if (!name.trim() || !filePath) return
-    setSaving(true)
-    const loopVal = loop ? 1 : 0
-    let result: Sound
-    if (sound) {
-      result = await window.api.updateSound(sound.id, { name: name.trim(), category, file_path: filePath, hotkey: hotkey.trim(), volume, loop: loopVal })
-    } else {
-      result = await window.api.createSound({ board_id: boardId, name: name.trim(), category, file_path: filePath, hotkey: hotkey.trim(), volume, loop: loopVal })
+  const toggle = async () => {
+    if (previewing) {
+      audioRef.current?.pause()
+      if (audioRef.current) audioRef.current.currentTime = 0
+      setPreviewing(false)
+      return
     }
-    onSave(result)
-    setSaving(false)
+    if (!filePath) return
+    if (!audioRef.current) {
+      const url = await window.api.getImagePath(filePath)
+      const a = new Audio(url)
+      a.onended = () => setPreviewing(false)
+      a.onerror = () => setPreviewing(false)
+      audioRef.current = a
+    }
+    audioRef.current.volume = volume
+    audioRef.current.loop = loop
+    audioRef.current.currentTime = 0
+    audioRef.current.play().then(() => setPreviewing(true)).catch(() => setPreviewing(false))
   }
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', gap: 8, padding: '8px 12px',
-      background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)',
-      border: '1px solid var(--border-light)',
-    }}>
-      {/* Row 1 — name, category, file, hotkey, actions */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 160px 1fr 72px auto',
-        gap: 8, alignItems: 'center',
-      }}>
-        <input
-          className="input"
-          style={{ fontSize: 12 }}
-          placeholder="Sound name…"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          autoFocus
-          onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onCancel() }}
-        />
+    <button
+      onClick={toggle}
+      title={previewing ? 'Stop preview' : 'Preview sound'}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: size, height: size, borderRadius: '50%', flexShrink: 0, cursor: 'pointer',
+        border: `1px solid ${previewing ? color : 'var(--border-light)'}`,
+        background: previewing ? `${color}20` : 'transparent',
+        color: previewing ? color : 'var(--text-secondary)',
+        transition: 'all 120ms ease',
+      }}
+    >
+      {previewing ? <Square size={size < 24 ? 9 : 11} /> : <Play size={size < 24 ? 9 : 11} />}
+    </button>
+  )
+}
 
-        <div style={{ display: 'flex', gap: 4 }}>
-          {CATEGORIES.map(c => (
+// ── Sound editor ───────────────────────────────────────────────────────────────
+// Shared by library entries and board copies — same fields either way, only the
+// row it writes back to differs.
+
+export interface SoundFields {
+  name: string
+  category: SoundCategory
+  hotkey: string
+  volume: number
+  loop: number
+}
+
+function SoundEditModal({ title, initial, fileLabel, onSave, onClose }: {
+  title: string
+  initial: SoundFields
+  fileLabel?: string
+  onSave: (v: SoundFields) => Promise<void> | void
+  onClose: () => void
+}) {
+  const [name, setName]         = useState(initial.name)
+  const [category, setCategory] = useState<SoundCategory>(initial.category)
+  const [hotkey, setHotkey]     = useState(initial.hotkey)
+  const [volume, setVolume]     = useState(initial.volume)
+  const [loop, setLoop]         = useState(!!initial.loop)
+  const [saving, setSaving]     = useState(false)
+
+  const save = async () => {
+    if (!name.trim() || saving) return
+    setSaving(true)
+    await onSave({ name: name.trim(), category, hotkey: hotkey.trim(), volume, loop: loop ? 1 : 0 })
+    onClose()
+  }
+
+  return (
+    <Modal title={title} onClose={onClose} style={{ width: 420 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div>
+          <label className="input-label" style={{ display: 'block', marginBottom: 6 }}>Name</label>
+          <input
+            className="input"
+            style={{ width: '100%' }}
+            value={name}
+            onChange={e => setName(e.target.value)}
+            autoFocus
+            onKeyDown={e => { if (e.key === 'Enter') save() }}
+          />
+        </div>
+
+        <div>
+          <label className="input-label" style={{ display: 'block', marginBottom: 6 }}>Category</label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {CATEGORIES.map(c => (
+              <button
+                key={c.value}
+                onClick={() => setCategory(c.value)}
+                style={{
+                  flex: 1, padding: '6px 0', borderRadius: 'var(--radius-sm)', fontSize: 12,
+                  cursor: 'pointer', border: `1px solid ${category === c.value ? c.color : 'var(--border-light)'}`,
+                  background: category === c.value ? `${c.color}20` : 'transparent',
+                  color: category === c.value ? c.color : 'var(--text-muted)',
+                  transition: 'all 120ms ease',
+                }}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+          <div style={{ width: 90 }}>
+            <label className="input-label" style={{ display: 'block', marginBottom: 6 }}>Hotkey</label>
+            <input
+              className="input"
+              style={{ width: '100%', textAlign: 'center' }}
+              placeholder="—"
+              maxLength={1}
+              value={hotkey}
+              onChange={e => setHotkey(e.target.value.toUpperCase())}
+              title="Optional single-key shortcut while the widget is open"
+            />
+          </div>
+          <button
+            onClick={() => setLoop(v => !v)}
+            title={loop ? 'Loops — click to make one-shot' : 'One-shot — click to loop'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, height: 32,
+              padding: '0 12px', borderRadius: 'var(--radius-sm)', fontSize: 12,
+              cursor: 'pointer',
+              border: `1px solid ${loop ? ACCENT : 'var(--border-light)'}`,
+              background: loop ? `${ACCENT}20` : 'transparent',
+              color: loop ? ACCENT : 'var(--text-muted)',
+              transition: 'all 120ms ease',
+            }}
+          >
+            <Repeat size={13} /> {loop ? 'Loop' : 'One-shot'}
+          </button>
+        </div>
+
+        <div>
+          <label className="input-label" style={{ display: 'block', marginBottom: 6 }}>Volume</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Volume2 size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+            <input
+              type="range" min={0} max={1} step={0.01}
+              value={volume}
+              onChange={e => setVolume(parseFloat(e.target.value))}
+              style={{ flex: 1, accentColor: ACCENT, cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 34, textAlign: 'right' }}>
+              {Math.round(volume * 100)}%
+            </span>
+          </div>
+        </div>
+
+        {fileLabel && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)' }}>
+            <FolderOpen size={12} style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fileLabel}>
+              {basename(fileLabel)}
+            </span>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={save} disabled={!name.trim() || saving}>
+            <Check size={13} /> Save
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Add-to-board control ───────────────────────────────────────────────────────
+
+function AddToBoardButton({ entry, boards, onAdded, compact }: {
+  entry: { name: string; category: SoundCategory; file_path: string; hotkey?: string; volume?: number; loop?: number }
+  boards: SoundBoard[]
+  onAdded?: () => void
+  compact?: boolean
+}) {
+  const bumpSoundsVersion = useStore(s => s.bumpSoundsVersion)
+  const [open, setOpen]   = useState(false)
+  const [added, setAdded] = useState(false)
+  const anchorRef = useRef<HTMLButtonElement>(null)
+
+  const addTo = async (boardId: number) => {
+    await window.api.createSound({
+      board_id: boardId,
+      name: entry.name,
+      category: entry.category,
+      file_path: entry.file_path,
+      hotkey: entry.hotkey ?? '',
+      volume: entry.volume ?? 1,
+      loop: entry.loop ?? (entry.category === 'effect' ? 0 : 1),
+    })
+    setOpen(false)
+    setAdded(true)
+    onAdded?.()
+    bumpSoundsVersion()
+    setTimeout(() => setAdded(false), 1500)
+  }
+
+  if (boards.length === 0) {
+    return compact ? null : (
+      <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0, fontStyle: 'italic' }}>
+        no boards
+      </span>
+    )
+  }
+
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        onClick={() => setOpen(v => !v)}
+        className="btn btn-ghost btn-sm"
+        style={{ fontSize: 11, color: added ? 'var(--success)' : 'var(--text-muted)', flexShrink: 0 }}
+        title="Add this sound to one of your soundboards"
+      >
+        {added ? <Check size={12} /> : <ListPlus size={12} />}
+        {!compact && (added ? ' Added' : ' Add to soundboard')}
+      </button>
+      {open && (
+        <DropdownPortal anchor={anchorRef.current} align="right" minWidth={170} onClose={() => setOpen(false)}>
+          <div style={{
+            padding: '6px 12px', fontSize: 9, letterSpacing: '1px', textTransform: 'uppercase',
+            color: 'var(--text-muted)', borderBottom: '1px solid var(--border)',
+          }}>
+            Add to
+          </div>
+          {boards.map(b => (
             <button
-              key={c.value}
-              onClick={() => pickCategory(c.value)}
-              title={c.label}
+              key={b.id}
+              onClick={() => addTo(b.id)}
               style={{
-                flex: 1, padding: '4px 0', borderRadius: 'var(--radius-sm)', fontSize: 10,
-                cursor: 'pointer', border: `1px solid ${category === c.value ? c.color : 'var(--border-light)'}`,
-                background: category === c.value ? `${c.color}20` : 'transparent',
-                color: category === c.value ? c.color : 'var(--text-muted)',
-                transition: 'all 120ms ease',
+                display: 'block', width: '100%', textAlign: 'left',
+                padding: '7px 12px', background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--text-secondary)', fontSize: 12, fontFamily: 'var(--font-ui)',
               }}
+              className="hover-bg"
             >
-              {c.label}
+              {b.name}
             </button>
           ))}
-        </div>
+        </DropdownPortal>
+      )}
+    </>
+  )
+}
 
-        <button
-          onClick={browsFile}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '5px 10px', background: 'transparent',
-            border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)',
-            color: filePath ? 'var(--text-secondary)' : 'var(--text-muted)',
-            fontSize: 12, cursor: 'pointer', overflow: 'hidden',
-            transition: 'border-color var(--transition)',
-            '--hover-accent': ACCENT,
-          } as React.CSSProperties}
-          className="hover-border-accent"
+// ── Library row ────────────────────────────────────────────────────────────────
+
+function LibraryRow({ entry, boards, onEdit, onDelete, onAddedToBoard }: {
+  entry: SoundLibraryEntry
+  boards: SoundBoard[]
+  onEdit: () => void
+  onDelete: () => void
+  onAddedToBoard: () => void
+}) {
+  const { confirming, trigger } = useConfirmDelete()
+  const color = categoryColor(entry.category)
+
+  return (
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', gap: 7,
+        padding: '5px 8px', borderBottom: '1px solid var(--border)',
+        transition: 'background 120ms ease',
+      }}
+      className="hover-bg"
+    >
+      <PreviewButton filePath={entry.file_path} loop={!!entry.loop} volume={entry.volume ?? 1} color={color} size={22} />
+
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span
+          style={{ fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          title={`${entry.name} · ${basename(entry.file_path)}`}
         >
-          <FolderOpen size={12} style={{ flexShrink: 0 }} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {filePath ? basename(filePath) : 'Browse…'}
-          </span>
-        </button>
-
-        <input
-          className="input"
-          style={{ fontSize: 12, textAlign: 'center' }}
-          placeholder="Key"
-          maxLength={1}
-          value={hotkey}
-          onChange={e => setHotkey(e.target.value.toUpperCase())}
-          title="Optional hotkey (single key)"
-        />
-
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={handleSave}
-            disabled={!name.trim() || !filePath || saving}
-          >
-            <Check size={12} />
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={onCancel}>
-            <X size={12} />
-          </button>
-        </div>
-      </div>
-
-      {/* Row 2 — volume + loop */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 2 }}>
-        <Volume2 size={12} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-        <input
-          type="range" min={0} max={1} step={0.01}
-          value={volume}
-          onChange={e => setVolume(parseFloat(e.target.value))}
-          style={{ width: 160, accentColor: ACCENT, cursor: 'pointer' }}
-          title="Per-sound volume"
-        />
-        <span style={{ fontSize: 10, color: 'var(--text-muted)', width: 30 }}>
-          {Math.round(volume * 100)}%
+          {entry.name}
         </span>
+        {!!entry.loop && <Repeat size={10} color="var(--text-muted)" style={{ flexShrink: 0 }} aria-label="Loops" />}
+        {entry.hotkey && (
+          <span style={{
+            fontSize: 9, color: 'var(--text-muted)', border: '1px solid var(--border-light)',
+            borderRadius: 2, padding: '0 3px', flexShrink: 0, lineHeight: '13px',
+          }}>
+            {entry.hotkey}
+          </span>
+        )}
+      </span>
 
-        <button
-          onClick={() => { setLoop(v => !v); setTouchedLoop(true) }}
-          title={loop ? 'Loops — click to make one-shot' : 'One-shot — click to loop'}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            padding: '3px 10px', borderRadius: 'var(--radius-sm)', fontSize: 11,
-            cursor: 'pointer', marginLeft: 'auto',
-            border: `1px solid ${loop ? ACCENT : 'var(--border-light)'}`,
-            background: loop ? `${ACCENT}20` : 'transparent',
-            color: loop ? ACCENT : 'var(--text-muted)',
-            transition: 'all 120ms ease',
-          }}
-        >
-          <Repeat size={12} /> {loop ? 'Loop' : 'One-shot'}
-        </button>
-      </div>
+      <AddToBoardButton entry={entry} boards={boards} onAdded={onAddedToBoard} compact />
+      <button className="btn btn-ghost btn-sm" onClick={onEdit} title="Edit" style={{ color: 'var(--text-muted)' }}>
+        <Pencil size={12} />
+      </button>
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={() => trigger(onDelete)}
+        title={confirming ? 'Click again to confirm — removes it from the library' : 'Remove from library'}
+        style={{ color: confirming ? 'var(--danger-hover)' : 'var(--text-muted)' }}
+      >
+        <Trash2 size={12} />
+      </button>
     </div>
   )
 }
 
-// ── Sound Row ──────────────────────────────────────────────────────────────────
+// ── Sound Library panel ────────────────────────────────────────────────────────
+// One shelf for every sound in the app: the bundled starters plus everything the
+// user imports. Boards pull their copies from here.
+
+function SoundLibraryPanel({ boards, entries, setEntries, onBoardsChanged }: {
+  boards: SoundBoard[]
+  entries: SoundLibraryEntry[]
+  setEntries: React.Dispatch<React.SetStateAction<SoundLibraryEntry[]>>
+  onBoardsChanged: () => void
+}) {
+  const bumpSoundsVersion = useStore(s => s.bumpSoundsVersion)
+  const [search, setSearch]   = useState('')
+  const [editing, setEditing] = useState<SoundLibraryEntry | null>(null)
+  const [importing, setImporting] = useState(false)
+
+  const importInto = async (category: SoundCategory) => {
+    if (importing) return
+    setImporting(true)
+    try {
+      const picked = await window.api.selectAudioFiles()
+      for (const p of picked) {
+        const created = await window.api.createLibrarySound({
+          name: p.name, category, file_path: p.file_path,
+        })
+        setEntries(prev => [...prev, created])
+      }
+      if (picked.length > 0) bumpSoundsVersion()
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const saveEdit = async (id: number, v: SoundFields) => {
+    const updated = await window.api.updateLibrarySound(id, v)
+    setEntries(prev => prev.map(e => e.id === id ? updated : e))
+    bumpSoundsVersion()
+  }
+
+  const remove = async (id: number) => {
+    await window.api.deleteLibrarySound(id)
+    setEntries(prev => prev.filter(e => e.id !== id))
+    bumpSoundsVersion()
+  }
+
+  const filtered = entries.filter(e => matches(search, e.name, basename(e.file_path)))
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{
+        padding: '0 20px', borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', gap: 10,
+        minHeight: 52, flexShrink: 0, background: 'var(--bg-surface)',
+      }}>
+        <Library size={14} color={ACCENT} style={{ flexShrink: 0 }} />
+        <span style={{
+          fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 500,
+          color: 'var(--text-primary)', letterSpacing: '0.03em',
+        }}>
+          Sound Library
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {entries.length} sound{entries.length === 1 ? '' : 's'}
+        </span>
+
+        <div style={{ position: 'relative', marginLeft: 'auto', width: 220 }}>
+          <Search size={12} style={{
+            position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+            color: 'var(--text-muted)', pointerEvents: 'none',
+          }} />
+          <input
+            className="input"
+            style={{ fontSize: 12, width: '100%', paddingLeft: 26 }}
+            placeholder="Search sounds…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* Three columns — one per category */}
+      <div style={{
+        flex: 1, overflow: 'hidden', display: 'grid',
+        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+      }}>
+        {CATEGORIES.map((cat, i) => {
+          const catEntries = filtered.filter(e => e.category === cat.value)
+          const total      = entries.filter(e => e.category === cat.value).length
+          return (
+            <div
+              key={cat.value}
+              style={{
+                display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                borderRight: i < CATEGORIES.length - 1 ? '1px solid var(--border)' : 'none',
+              }}
+            >
+              {/* Column header */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '9px 10px 8px', flexShrink: 0,
+                borderBottom: `1px solid ${cat.color}35`, background: 'var(--bg-elevated)',
+              }}>
+                <span style={{
+                  fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: '1.6px',
+                  textTransform: 'uppercase', color: cat.color, flex: 1,
+                }}>
+                  {cat.label}
+                  <span style={{ color: 'var(--text-muted)', letterSpacing: 0 }}>
+                    {' · '}{search ? `${catEntries.length}/${total}` : total}
+                  </span>
+                </span>
+                <button
+                  onClick={() => importInto(cat.value)}
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: 11, color: cat.color }}
+                  disabled={importing}
+                  title={`Import audio files as ${cat.label.toLowerCase()}`}
+                >
+                  <Plus size={12} /> Import
+                </button>
+              </div>
+
+              {/* Rows */}
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                {catEntries.length === 0 ? (
+                  <div style={{
+                    padding: '28px 14px', textAlign: 'center', fontSize: 12,
+                    color: 'var(--text-muted)', lineHeight: 1.6, fontStyle: 'italic',
+                  }}>
+                    {search ? 'No matches' : (
+                      <>
+                        Nothing here yet.
+                        <br />
+                        <button
+                          onClick={() => importInto(cat.value)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: cat.color, fontSize: 12, fontStyle: 'normal' }}
+                        >
+                          Import {cat.label.toLowerCase()}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ) : catEntries.map(e => (
+                  <LibraryRow
+                    key={e.id}
+                    entry={e}
+                    boards={boards}
+                    onEdit={() => setEditing(e)}
+                    onDelete={() => remove(e.id)}
+                    onAddedToBoard={onBoardsChanged}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {editing && (
+        <SoundEditModal
+          title="Edit sound"
+          initial={{ name: editing.name, category: editing.category, hotkey: editing.hotkey ?? '', volume: editing.volume ?? 1, loop: editing.loop }}
+          fileLabel={editing.file_path}
+          onSave={v => saveEdit(editing.id, v)}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Library picker ─────────────────────────────────────────────────────────────
+// How sounds get onto a board: pick any number of library entries at once.
+
+function LibraryPickerModal({ entries, existingPaths, onAdd, onClose }: {
+  entries: SoundLibraryEntry[]
+  existingPaths: Set<string>
+  onAdd: (picked: SoundLibraryEntry[]) => Promise<void>
+  onClose: () => void
+}) {
+  const [search, setSearch]     = useState('')
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [saving, setSaving]     = useState(false)
+
+  const filtered = entries.filter(e => matches(search, e.name, basename(e.file_path)))
+
+  const toggle = (id: number) => setSelected(prev => {
+    const n = new Set(prev)
+    n.has(id) ? n.delete(id) : n.add(id)
+    return n
+  })
+
+  const confirm = async () => {
+    if (selected.size === 0 || saving) return
+    setSaving(true)
+    await onAdd(entries.filter(e => selected.has(e.id)))
+    onClose()
+  }
+
+  return (
+    <Modal title="Add sounds from library" onClose={onClose} style={{ width: 520 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <input
+          className="input"
+          style={{ width: '100%', fontSize: 13 }}
+          placeholder="Search the library…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          autoFocus
+        />
+
+        <div style={{
+          maxHeight: 340, overflow: 'auto',
+          border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '24px', textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              {entries.length === 0 ? 'Your library is empty — import sounds first.' : 'No matches'}
+            </div>
+          ) : filtered.map(e => {
+            const color   = categoryColor(e.category)
+            const checked = selected.has(e.id)
+            const already = existingPaths.has(e.file_path)
+            return (
+              <div
+                key={e.id}
+                onClick={() => toggle(e.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                  padding: '6px 10px', borderBottom: '1px solid var(--border)',
+                  background: checked ? `${ACCENT}12` : 'transparent',
+                }}
+                className={checked ? '' : 'hover-bg'}
+              >
+                <span style={{
+                  width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                  border: `1px solid ${checked ? ACCENT : 'var(--border-light)'}`,
+                  background: checked ? ACCENT : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {checked && <Check size={10} color="#fff" />}
+                </span>
+                <span style={{
+                  flex: 1, fontSize: 12, color: 'var(--text-primary)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {e.name}
+                </span>
+                {already && (
+                  <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }} title="Already on this board">
+                    on board
+                  </span>
+                )}
+                <span style={{
+                  fontSize: 9, padding: '1px 6px', borderRadius: 99, flexShrink: 0,
+                  border: `1px solid ${color}50`, background: `${color}15`, color,
+                }}>
+                  {categoryLabel(e.category)}
+                </span>
+                <div onClick={ev => ev.stopPropagation()} style={{ display: 'flex' }}>
+                  <PreviewButton filePath={e.file_path} loop={!!e.loop} volume={e.volume ?? 1} color={color} size={20} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', flex: 1 }}>
+            {selected.size > 0 ? `${selected.size} selected` : 'Select one or more sounds'}
+          </span>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={confirm} disabled={selected.size === 0 || saving}>
+            <Plus size={13} /> Add{selected.size > 0 ? ` ${selected.size}` : ''}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Board sound row ────────────────────────────────────────────────────────────
 
 function SoundRow({ sound, onEdit, onDelete }: {
   sound: Sound
@@ -197,32 +650,6 @@ function SoundRow({ sound, onEdit, onDelete }: {
 }) {
   const { confirming, trigger } = useConfirmDelete()
   const color = categoryColor(sound.category)
-  const [previewing, setPreviewing] = useState(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-
-  // Stop preview on unmount
-  useEffect(() => () => { audioRef.current?.pause() }, [])
-
-  const togglePreview = async () => {
-    if (previewing) {
-      audioRef.current?.pause()
-      if (audioRef.current) audioRef.current.currentTime = 0
-      setPreviewing(false)
-      return
-    }
-    if (!sound.file_path) return
-    if (!audioRef.current) {
-      const url = await window.api.getImagePath(sound.file_path)
-      const a = new Audio(url)
-      a.volume = sound.volume ?? 1
-      a.onended = () => setPreviewing(false)
-      a.onerror = () => setPreviewing(false)
-      audioRef.current = a
-    }
-    audioRef.current.loop = !!sound.loop
-    audioRef.current.currentTime = 0
-    audioRef.current.play().then(() => setPreviewing(true)).catch(() => setPreviewing(false))
-  }
 
   return (
     <div style={{
@@ -233,20 +660,7 @@ function SoundRow({ sound, onEdit, onDelete }: {
     }}
       className="hover-bg"
     >
-      <button
-        onClick={togglePreview}
-        title={previewing ? 'Stop preview' : 'Preview sound'}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          width: 26, height: 26, borderRadius: '50%', flexShrink: 0, cursor: 'pointer',
-          border: `1px solid ${previewing ? color : 'var(--border-light)'}`,
-          background: previewing ? `${color}20` : 'transparent',
-          color: previewing ? color : 'var(--text-secondary)',
-          transition: 'all 120ms ease',
-        }}
-      >
-        {previewing ? <Square size={11} /> : <Play size={11} />}
-      </button>
+      <PreviewButton filePath={sound.file_path} loop={!!sound.loop} volume={sound.volume ?? 1} color={color} />
 
       <span style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
         <span style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -310,35 +724,34 @@ function SoundRow({ sound, onEdit, onDelete }: {
 
 // ── Board Panel ────────────────────────────────────────────────────────────────
 
-function BoardPanel({ board, onBoardUpdate, onBoardDelete }: {
+function BoardPanel({ board, library, onSoundsChanged }: {
   board: SoundBoard
-  onBoardUpdate: (b: SoundBoard) => void
-  onBoardDelete: () => void
+  library: SoundLibraryEntry[]
+  onSoundsChanged: () => void
 }) {
-  const { currentCampaign, updateSession } = useStore()
-  const [sounds, setSounds]         = useState<Sound[]>([])
+  const { sessions, drafts, updateSession, updateSoundBoard, deleteSoundBoard, bumpSoundsVersion } = useStore()
+  const [sounds, setSounds]           = useState<Sound[]>([])
   const [editingName, setEditingName] = useState(false)
-  const [name, setName]             = useState(board.name)
-  const [addingSound, setAddingSound] = useState(false)
+  const [name, setName]               = useState(board.name)
+  const [picking, setPicking]         = useState(false)
   const [editingSound, setEditingSound] = useState<Sound | null>(null)
-  const [sessions, setSessions]     = useState<Session[]>([])
-  const [linkOpen, setLinkOpen]     = useState(false)
+  const [search, setSearch]           = useState('')
+  const [linkOpen, setLinkOpen]       = useState(false)
   const [sessionSearch, setSessionSearch] = useState('')
-  const { confirming, trigger }     = useConfirmDelete()
+  const linkAnchorRef = useRef<HTMLButtonElement>(null)
+  const { confirming, trigger }       = useConfirmDelete()
 
+  // Drafts can be linked too — they run like any other session.
+  const allSessions = useMemo(() => [...sessions, ...drafts], [sessions, drafts])
   const sessionLabel = (s: Session) =>
     s.is_draft ? s.name : `Session ${s.session_number}${s.session_sub ?? ''}: ${s.name}`
-  const filteredSessions = sessions.filter(s =>
-    sessionLabel(s).toLowerCase().includes(sessionSearch.trim().toLowerCase())
-  )
-
-  const linkedSessions = sessions.filter(s => s.soundboard_id === board.id)
+  const filteredSessions = allSessions.filter(s => matches(sessionSearch, sessionLabel(s)))
+  const linkedSessions   = allSessions.filter(s => s.soundboard_id === board.id)
 
   const toggleSessionLink = async (session: Session) => {
     const next = session.soundboard_id === board.id ? null : board.id
     // Route through the store so a currently-open session's widget updates instantly
     await updateSession(session.id, { soundboard_id: next })
-    setSessions(prev => prev.map(s => s.id === session.id ? { ...s, soundboard_id: next } : s))
   }
 
   useEffect(() => {
@@ -346,33 +759,42 @@ function BoardPanel({ board, onBoardUpdate, onBoardDelete }: {
   }, [board.id])
 
   useEffect(() => {
-    if (currentCampaign) window.api.getSessions(currentCampaign.id).then(setSessions)
-  }, [currentCampaign?.id])
-
-  useEffect(() => {
     setName(board.name)
   }, [board.id, board.name])
 
   const saveName = useCallback(async () => {
     if (!name.trim() || name.trim() === board.name) { setEditingName(false); return }
-    const updated = await window.api.updateSoundBoard(board.id, { name: name.trim() })
-    onBoardUpdate(updated)
+    await updateSoundBoard(board.id, { name: name.trim() })
     setEditingName(false)
-  }, [board.id, board.name, name])
+  }, [board.id, board.name, name, updateSoundBoard])
 
-  const handleSoundSaved = (s: Sound) => {
-    setSounds(prev => {
-      const idx = prev.findIndex(x => x.id === s.id)
-      return idx >= 0 ? prev.map(x => x.id === s.id ? s : x) : [...prev, s]
-    })
-    setAddingSound(false)
-    setEditingSound(null)
+  const addFromLibrary = async (picked: SoundLibraryEntry[]) => {
+    const created: Sound[] = []
+    for (const e of picked) {
+      created.push(await window.api.createSound({
+        board_id: board.id, name: e.name, category: e.category,
+        file_path: e.file_path, hotkey: e.hotkey ?? '', volume: e.volume ?? 1, loop: e.loop,
+      }))
+    }
+    setSounds(prev => [...prev, ...created])
+    onSoundsChanged()
+    bumpSoundsVersion()
+  }
+
+  const saveSoundEdit = async (id: number, v: SoundFields) => {
+    const updated = await window.api.updateSound(id, v)
+    setSounds(prev => prev.map(s => s.id === id ? updated : s))
+    bumpSoundsVersion()
   }
 
   const handleSoundDelete = async (id: number) => {
     await window.api.deleteSound(id)
     setSounds(prev => prev.filter(s => s.id !== id))
+    onSoundsChanged()
+    bumpSoundsVersion()
   }
+
+  const filtered = sounds.filter(s => matches(search, s.name, basename(s.file_path)))
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -407,49 +829,56 @@ function BoardPanel({ board, onBoardUpdate, onBoardDelete }: {
           </button>
         )}
 
+        <div style={{ position: 'relative', width: 180 }}>
+          <Search size={12} style={{
+            position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+            color: 'var(--text-muted)', pointerEvents: 'none',
+          }} />
+          <input
+            className="input"
+            style={{ fontSize: 12, width: '100%', paddingLeft: 26 }}
+            placeholder="Search…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+
         <button
-          onClick={() => setAddingSound(true)}
+          onClick={() => setPicking(true)}
           className="btn btn-primary btn-sm"
-          disabled={addingSound}
         >
-          <Plus size={13} /> Add Sound
+          <Plus size={13} /> Add Sounds
         </button>
 
         {/* Session linker */}
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={() => setLinkOpen(v => !v)}
-            className="btn btn-ghost btn-sm"
-            style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4 }}
-            title="Link sessions — this board auto-loads when you open them"
-          >
-            <Link2 size={13} color={linkedSessions.length > 0 ? ACCENT : 'currentColor'} />
-            {linkedSessions.length > 0 ? `${linkedSessions.length} linked` : 'Link sessions'}
-          </button>
-          {linkOpen && (
-            <>
-              <div style={{ position: 'fixed', inset: 0, zIndex: 20 }} onClick={() => setLinkOpen(false)} />
-              <div style={{
-                position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 21,
-                background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
-                borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-md)',
-                width: 280, maxHeight: 360, display: 'flex', flexDirection: 'column',
-              }}>
-                <div style={{ padding: '8px 12px', fontSize: 10, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
-                  Auto-load for sessions
-                </div>
-                <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
-                  <input
-                    className="input"
-                    style={{ fontSize: 12, width: '100%' }}
-                    placeholder="Search sessions…"
-                    value={sessionSearch}
-                    onChange={e => setSessionSearch(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div style={{ overflow: 'auto' }}>
-                {sessions.length === 0 ? (
+        <button
+          ref={linkAnchorRef}
+          onClick={() => setLinkOpen(v => !v)}
+          className="btn btn-ghost btn-sm"
+          style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4 }}
+          title="Link sessions — this board auto-loads when you open them"
+        >
+          <Link2 size={13} color={linkedSessions.length > 0 ? ACCENT : 'currentColor'} />
+          {linkedSessions.length > 0 ? `${linkedSessions.length} linked` : 'Link sessions'}
+        </button>
+        {linkOpen && (
+          <DropdownPortal anchor={linkAnchorRef.current} align="right" minWidth={280} onClose={() => setLinkOpen(false)}>
+            <div style={{ width: 280, maxHeight: 360, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '8px 12px', fontSize: 10, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+                Auto-load for sessions
+              </div>
+              <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+                <input
+                  className="input"
+                  style={{ fontSize: 12, width: '100%' }}
+                  placeholder="Search sessions…"
+                  value={sessionSearch}
+                  onChange={e => setSessionSearch(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div style={{ overflow: 'auto' }}>
+                {allSessions.length === 0 ? (
                   <div style={{ padding: '12px', fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No sessions yet</div>
                 ) : filteredSessions.length === 0 ? (
                   <div style={{ padding: '12px', fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No matches</div>
@@ -486,15 +915,13 @@ function BoardPanel({ board, onBoardUpdate, onBoardDelete }: {
                     </button>
                   )
                 })}
-                </div>
               </div>
-            </>
-          )}
-        </div>
-
+            </div>
+          </DropdownPortal>
+        )}
 
         <button
-          onClick={() => trigger(onBoardDelete)}
+          onClick={() => trigger(() => deleteSoundBoard(board.id))}
           className="btn btn-ghost btn-sm"
           style={{ color: confirming ? 'var(--danger-hover)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}
           title={confirming ? 'Click again to confirm' : 'Delete board'}
@@ -517,256 +944,64 @@ function BoardPanel({ board, onBoardUpdate, onBoardDelete }: {
 
       {/* Sounds list */}
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {sounds.length === 0 && !addingSound && (
+        {sounds.length === 0 ? (
           <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-            No sounds yet.{' '}
+            No sounds on this board yet.{' '}
             <button
-              onClick={() => setAddingSound(true)}
+              onClick={() => setPicking(true)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: ACCENT, fontSize: 13 }}
             >
-              Add your first sound
+              Add some from the library
             </button>
           </div>
-        )}
-
-        {sounds.map(s =>
-          editingSound?.id === s.id ? (
-            <div key={s.id} style={{ padding: '6px 12px' }}>
-              <SoundFormRow
-                boardId={board.id}
-                sound={s}
-                onSave={handleSoundSaved}
-                onCancel={() => setEditingSound(null)}
-              />
-            </div>
-          ) : (
-            <SoundRow
-              key={s.id}
-              sound={s}
-              onEdit={() => { setAddingSound(false); setEditingSound(s) }}
-              onDelete={() => handleSoundDelete(s.id)}
-            />
-          )
-        )}
-
-        {addingSound && (
-          <div style={{ padding: '6px 12px', marginTop: sounds.length > 0 ? 4 : 0 }}>
-            <SoundFormRow
-              boardId={board.id}
-              onSave={handleSoundSaved}
-              onCancel={() => setAddingSound(false)}
-            />
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, fontStyle: 'italic' }}>
+            No sounds match “{search}”
           </div>
-        )}
+        ) : filtered.map(s => (
+          <SoundRow
+            key={s.id}
+            sound={s}
+            onEdit={() => setEditingSound(s)}
+            onDelete={() => handleSoundDelete(s.id)}
+          />
+        ))}
       </div>
-    </div>
-  )
-}
 
-// ── Default Sound Row (read-only, with preview) ────────────────────────────────
-
-function DefaultSoundRow({ sound, color, boards }: {
-  sound: DefaultSound
-  color: string
-  boards: SoundBoard[]
-}) {
-  const [previewing, setPreviewing] = useState(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-
-  useEffect(() => () => { audioRef.current?.pause() }, [])
-
-  const togglePreview = () => {
-    if (previewing) {
-      audioRef.current?.pause()
-      if (audioRef.current) audioRef.current.currentTime = 0
-      setPreviewing(false)
-      return
-    }
-    if (!audioRef.current) {
-      const a = new Audio(sound.url)
-      a.volume = 1
-      a.onended = () => setPreviewing(false)
-      a.onerror = () => setPreviewing(false)
-      audioRef.current = a
-    }
-    audioRef.current.loop = sound.category !== 'effect'
-    audioRef.current.currentTime = 0
-    audioRef.current.play().then(() => setPreviewing(true)).catch(() => setPreviewing(false))
-  }
-
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      padding: '6px 20px', borderBottom: '1px solid var(--border)',
-    }}>
-      <button
-        onClick={togglePreview}
-        title={previewing ? 'Stop preview' : 'Preview sound'}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          width: 24, height: 24, borderRadius: '50%', flexShrink: 0, cursor: 'pointer',
-          border: `1px solid ${previewing ? color : 'var(--border-light)'}`,
-          background: previewing ? `${color}20` : 'transparent',
-          color: previewing ? color : 'var(--text-secondary)',
-          transition: 'all 120ms ease',
-        }}
-      >
-        {previewing ? <Square size={10} /> : <Play size={10} />}
-      </button>
-      <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {sound.name}
-      </span>
-      <span style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }} title={sound.url}>
-        {basename(sound.url)}
-      </span>
-      <AddToBoardButton sound={sound} boards={boards} />
-    </div>
-  )
-}
-
-// ── Add-to-board control (for default sounds) ────────────────────────────────────
-
-function AddToBoardButton({ sound, boards }: { sound: DefaultSound; boards: SoundBoard[] }) {
-  const [open, setOpen]   = useState(false)
-  const [added, setAdded] = useState(false)
-
-  const addTo = async (boardId: number) => {
-    await window.api.createSound({
-      board_id: boardId,
-      name: sound.name,
-      category: sound.category,
-      file_path: sound.ref,           // reference — resolves to the bundled file
-      hotkey: '',
-      volume: 1,
-      loop: sound.category === 'effect' ? 0 : 1,
-    })
-    setOpen(false)
-    setAdded(true)
-    setTimeout(() => setAdded(false), 1500)
-  }
-
-  if (boards.length === 0) {
-    return (
-      <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0, fontStyle: 'italic' }}>
-        no boards
-      </span>
-    )
-  }
-
-  return (
-    <div style={{ position: 'relative', flexShrink: 0 }}>
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="btn btn-ghost btn-sm"
-        style={{ fontSize: 11, color: added ? 'var(--success)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4 }}
-        title="Add this default to one of your soundboards"
-      >
-        {added ? <><Check size={12} /> Added</> : <><Plus size={12} /> Add to another soundboard</>}
-      </button>
-      {open && (
-        <>
-          {/* click-away backdrop */}
-          <div style={{ position: 'fixed', inset: 0, zIndex: 20 }} onClick={() => setOpen(false)} />
-          <div style={{
-            position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 21,
-            background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
-            borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-md)',
-            minWidth: 160, maxHeight: 220, overflow: 'auto',
-          }}>
-            {boards.map(b => (
-              <button
-                key={b.id}
-                onClick={() => addTo(b.id)}
-                style={{
-                  display: 'block', width: '100%', textAlign: 'left',
-                  padding: '7px 12px', background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--text-secondary)', fontSize: 12, fontFamily: 'var(--font-ui)',
-                }}
-                className="hover-bg"
-              >
-                {b.name}
-              </button>
-            ))}
-          </div>
-        </>
+      {picking && (
+        <LibraryPickerModal
+          entries={library}
+          existingPaths={new Set(sounds.map(s => s.file_path))}
+          onAdd={addFromLibrary}
+          onClose={() => setPicking(false)}
+        />
       )}
-    </div>
-  )
-}
 
-// ── Default Board Panel (read-only) ──────────────────────────────────────────────
-
-function DefaultBoardPanel({ boards }: { boards: SoundBoard[] }) {
-  const [defaults, setDefaults] = useState<DefaultSound[]>([])
-
-  useEffect(() => {
-    window.api.getDefaultSounds().then(setDefaults)
-  }, [])
-
-  return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{
-        padding: '0 20px', borderBottom: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', gap: 10,
-        minHeight: 52, flexShrink: 0, background: 'var(--bg-surface)',
-      }}>
-        <span style={{
-          fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 500,
-          color: 'var(--text-primary)', letterSpacing: '0.03em',
-        }}>
-          Default Sounds
-        </span>
-        <span style={{
-          fontSize: 9, letterSpacing: '0.06em', textTransform: 'uppercase',
-          color: 'var(--gold-dim)', border: '1px solid var(--border-gold)',
-          borderRadius: 2, padding: '1px 5px',
-        }}>
-          bundled · read-only
-        </span>
-      </div>
-
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        {defaults.length === 0 ? (
-          <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.7, fontFamily: 'var(--font-body)' }}>
-            No default sounds bundled yet.
-            <br />
-            <span style={{ fontSize: 12 }}>
-              Drop audio files into <code style={{ color: 'var(--text-secondary)' }}>src/data/soundboard/{'{ambient,music,effects}'}</code> and relaunch.
-            </span>
-          </div>
-        ) : (
-          (['ambience', 'music', 'effect'] as SoundCategory[]).map(cat => {
-            const catSounds = defaults.filter(d => d.category === cat)
-            if (catSounds.length === 0) return null
-            const color = categoryColor(cat)
-            return (
-              <div key={cat} style={{ padding: '4px 0' }}>
-                <div style={{
-                  padding: '8px 20px 4px', fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase',
-                  fontFamily: 'var(--font-display)', color,
-                }}>
-                  {categoryLabel(cat)} <span style={{ color: 'var(--text-muted)' }}>· {catSounds.length}</span>
-                </div>
-                {catSounds.map((d, i) => (
-                  <DefaultSoundRow key={`${cat}-${i}`} sound={d} color={color} boards={boards} />
-                ))}
-              </div>
-            )
-          })
-        )}
-      </div>
+      {editingSound && (
+        <SoundEditModal
+          title="Edit sound"
+          initial={{
+            name: editingSound.name, category: editingSound.category,
+            hotkey: editingSound.hotkey ?? '', volume: editingSound.volume ?? 1, loop: editingSound.loop,
+          }}
+          fileLabel={editingSound.file_path}
+          onSave={v => saveSoundEdit(editingSound.id, v)}
+          onClose={() => setEditingSound(null)}
+        />
+      )}
     </div>
   )
 }
 
 // ── Board List Item ────────────────────────────────────────────────────────────
 
-function BoardListItem({ board, isActive, onClick }: {
+function BoardListItem({ board, isActive, count, onClick }: {
   board: SoundBoard
   isActive: boolean
+  count?: number
   onClick: () => void
 }) {
+  const isLibrary = board.id === LIBRARY_BOARD_ID
   return (
     <div
       onClick={onClick}
@@ -780,7 +1015,9 @@ function BoardListItem({ board, isActive, onClick }: {
       }}
       className={(!isActive) ? 'hover-bg' : ''}
     >
-      <Music2 size={11} style={{ color: isActive ? ACCENT : 'var(--text-muted)', flexShrink: 0 }} />
+      {isLibrary
+        ? <Library size={11} style={{ color: isActive ? ACCENT : 'var(--text-muted)', flexShrink: 0 }} />
+        : <Music2 size={11} style={{ color: isActive ? ACCENT : 'var(--text-muted)', flexShrink: 0 }} />}
       <span style={{
         flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
@@ -788,20 +1025,12 @@ function BoardListItem({ board, isActive, onClick }: {
       }}>
         {board.name}
       </span>
-      {board.id === DEFAULT_BOARD_ID ? (
-        <span style={{
-          fontSize: 8, letterSpacing: '0.06em', textTransform: 'uppercase',
-          color: 'var(--gold-dim)', border: '1px solid var(--border-gold)',
-          borderRadius: 2, padding: '0 4px', flexShrink: 0,
-        }}>
-          default
-        </span>
-      ) : (board.sound_count ?? 0) > 0 && (
+      {(count ?? 0) > 0 && (
         <span style={{
           fontSize: 9, color: 'var(--text-muted)', background: 'var(--bg-elevated)',
-          padding: '1px 5px', borderRadius: 99, border: '1px solid var(--border-light)', flexShrink: 0,
+          padding: '1px 5px', borderRadius: 99, border: `1px solid ${isLibrary ? 'var(--border-gold)' : 'var(--border-light)'}`, flexShrink: 0,
         }}>
-          {board.sound_count}
+          {count}
         </span>
       )}
     </div>
@@ -811,49 +1040,47 @@ function BoardListItem({ board, isActive, onClick }: {
 // ── Soundboard Page ────────────────────────────────────────────────────────────
 
 export default function SoundboardPage() {
-  const { currentCampaign, setView, setCampaignSubView, setHintContext } = useStore()
+  const {
+    currentCampaign, setView, setCampaignSubView, setHintContext,
+    soundBoards: boards, loadSoundBoards, createSoundBoard,
+  } = useStore()
   useEffect(() => { setHintContext('soundboard'); return () => setHintContext(null) }, [setHintContext])
-  const [boards, setBoards]             = useState<SoundBoard[]>([])
-  const [activeBoard, setActiveBoard]   = useState<SoundBoard | null>(null)
-  const [creating, setCreating]         = useState(false)
-  const [newBoardName, setNewBoardName] = useState('')
 
-  const loadBoards = useCallback(async () => {
-    if (!currentCampaign) return
-    const bs = await window.api.getSoundBoards(currentCampaign.id)
-    setBoards(bs)
-    return bs
-  }, [currentCampaign?.id])
+  const [activeBoardId, setActiveBoardId] = useState<number>(LIBRARY_BOARD_ID)
+  const [library, setLibrary]             = useState<SoundLibraryEntry[]>([])
+  const [creating, setCreating]           = useState(false)
+  const [newBoardName, setNewBoardName]   = useState('')
 
   useEffect(() => {
-    loadBoards().then(bs => {
-      if (bs && bs.length > 0 && !activeBoard) setActiveBoard(bs[0])
-    })
-  }, [currentCampaign?.id])
+    window.api.getSoundLibrary().then(setLibrary)
+  }, [])
+
+  useEffect(() => {
+    if (currentCampaign) loadSoundBoards(currentCampaign.id)
+  }, [currentCampaign?.id, loadSoundBoards])
+
+  // A deleted board falls back to the library rather than an empty pane
+  useEffect(() => {
+    if (activeBoardId !== LIBRARY_BOARD_ID && !boards.some(b => b.id === activeBoardId)) {
+      setActiveBoardId(LIBRARY_BOARD_ID)
+    }
+  }, [boards, activeBoardId])
+
+  const refreshBoards = useCallback(() => {
+    if (currentCampaign) loadSoundBoards(currentCampaign.id)
+  }, [currentCampaign?.id, loadSoundBoards])
 
   const handleCreateBoard = async () => {
-    if (!currentCampaign || !newBoardName.trim()) return
-    const b = await window.api.createSoundBoard({ campaign_id: currentCampaign.id, name: newBoardName.trim() })
-    setBoards(prev => [...prev, b])
-    setActiveBoard(b)
+    if (!newBoardName.trim()) return
+    const b = await createSoundBoard(newBoardName.trim())
+    if (b) setActiveBoardId(b.id)
     setNewBoardName('')
     setCreating(false)
   }
 
-  const handleBoardUpdate = (updated: SoundBoard) => {
-    setBoards(prev => prev.map(b => b.id === updated.id ? updated : b))
-    if (activeBoard?.id === updated.id) setActiveBoard(updated)
-  }
-
-  const handleBoardDelete = async () => {
-    if (!activeBoard) return
-    await window.api.deleteSoundBoard(activeBoard.id)
-    const remaining = boards.filter(b => b.id !== activeBoard.id)
-    setBoards(remaining)
-    setActiveBoard(remaining.length > 0 ? remaining[0] : null)
-  }
-
   if (!currentCampaign) return null
+
+  const activeBoard = boards.find(b => b.id === activeBoardId) ?? null
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -903,6 +1130,21 @@ export default function SoundboardPage() {
         }}>
           <div style={{ flex: 1, overflow: 'auto', padding: '10px 8px' }}>
 
+            {/* The shelf everything comes from — always first */}
+            <BoardListItem
+              board={LIBRARY_BOARD}
+              isActive={activeBoardId === LIBRARY_BOARD_ID}
+              count={library.length}
+              onClick={() => setActiveBoardId(LIBRARY_BOARD_ID)}
+            />
+
+            <div style={{
+              margin: '10px 2px 6px', fontSize: 9, letterSpacing: '1.4px',
+              textTransform: 'uppercase', color: 'var(--text-muted)',
+            }}>
+              Soundboards
+            </div>
+
             {/* Inline create form */}
             {creating && (
               <div style={{ marginBottom: 6, padding: '6px 8px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
@@ -926,16 +1168,9 @@ export default function SoundboardPage() {
               </div>
             )}
 
-            {/* Bundled default board — always pinned at top */}
-            <BoardListItem
-              board={defaultBoard}
-              isActive={activeBoard?.id === DEFAULT_BOARD_ID}
-              onClick={() => setActiveBoard(defaultBoard)}
-            />
-
             {boards.length === 0 && !creating ? (
-              <div style={{ padding: '20px 8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6 }}>
-                No campaign boards yet.
+              <div style={{ padding: '12px 8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6 }}>
+                No boards yet.
                 <br />
                 <button
                   onClick={() => setCreating(true)}
@@ -949,8 +1184,9 @@ export default function SoundboardPage() {
                 <BoardListItem
                   key={b.id}
                   board={b}
-                  isActive={activeBoard?.id === b.id}
-                  onClick={() => setActiveBoard(b)}
+                  isActive={activeBoardId === b.id}
+                  count={b.sound_count}
+                  onClick={() => setActiveBoardId(b.id)}
                 />
               ))
             )}
@@ -959,26 +1195,20 @@ export default function SoundboardPage() {
 
         {/* Board panel */}
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {activeBoard?.id === DEFAULT_BOARD_ID ? (
-            <DefaultBoardPanel boards={boards} />
-          ) : activeBoard ? (
+          {activeBoard ? (
             <BoardPanel
               key={activeBoard.id}
               board={activeBoard}
-              onBoardUpdate={handleBoardUpdate}
-              onBoardDelete={handleBoardDelete}
+              library={library}
+              onSoundsChanged={refreshBoards}
             />
           ) : (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--text-muted)' }}>
-              <Music2 size={40} strokeWidth={1} color="var(--border-light)" />
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 16, fontFamily: 'var(--font-display)', color: 'var(--text-secondary)', marginBottom: 4 }}>No board selected</div>
-                <div style={{ fontSize: 13 }}>Create a board and add sounds to it</div>
-              </div>
-              <button className="btn btn-primary" onClick={() => setCreating(true)}>
-                <Plus size={14} /> New Board
-              </button>
-            </div>
+            <SoundLibraryPanel
+              boards={boards}
+              entries={library}
+              setEntries={setLibrary}
+              onBoardsChanged={refreshBoards}
+            />
           )}
         </div>
       </div>

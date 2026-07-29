@@ -200,7 +200,6 @@ contextBridge.exposeInMainWorld('api', {
   createSoundBoard:  (data: any)                 => ipcRenderer.invoke('soundboards:create', data),
   updateSoundBoard:  (id: number, data: any)     => ipcRenderer.invoke('soundboards:update', id, data),
   deleteSoundBoard:  (id: number)                => ipcRenderer.invoke('soundboards:delete', id),
-  getDefaultSounds:  ()                          => ipcRenderer.invoke('soundboards:get-defaults'),
 
   // Sounds
   getSounds:         (boardId: number)           => ipcRenderer.invoke('sounds:get-all', boardId),
@@ -208,6 +207,13 @@ contextBridge.exposeInMainWorld('api', {
   updateSound:       (id: number, data: any)     => ipcRenderer.invoke('sounds:update', id, data),
   deleteSound:       (id: number)                => ipcRenderer.invoke('sounds:delete', id),
   selectAudioFile:   ()                          => ipcRenderer.invoke('sounds:select-file'),
+  selectAudioFiles:  ()                          => ipcRenderer.invoke('sounds:select-files'),
+
+  // Sound Library (app-wide shelf of sounds, seeded with the bundled ones)
+  getSoundLibrary:   ()                          => ipcRenderer.invoke('soundlib:get-all'),
+  createLibrarySound:(data: any)                 => ipcRenderer.invoke('soundlib:create', data),
+  updateLibrarySound:(id: number, data: any)     => ipcRenderer.invoke('soundlib:update', id, data),
+  deleteLibrarySound:(id: number)                => ipcRenderer.invoke('soundlib:delete', id),
 
   // Players (player-facing pages)
   getPlayers:   (campaignId: number)         => ipcRenderer.invoke('players:get-all', campaignId),

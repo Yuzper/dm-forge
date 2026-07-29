@@ -5,7 +5,7 @@ import fs from 'fs'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import log from 'electron-log'
-import { syncCreatureImages, loadDefaultLootTables } from './defaults'
+import { syncCreatureImages, loadDefaultLootTables, seedSoundLibrary } from './defaults'
 
 // Live binding — assigned once by initDatabase() at startup, imported everywhere.
 export let db!: InstanceType<typeof Database>
@@ -284,6 +284,30 @@ export function initDatabase() {
       loop       INTEGER NOT NULL DEFAULT 1,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Central, app-wide sound library: every sound the user imports plus the
+    -- bundled starter sounds (seeded once per ref). It is what the always-present
+    -- "Sound Library" board plays. Campaign boards keep their own copies in the
+    -- sounds table, so a board can carry its own hotkey/volume for the same file.
+    CREATE TABLE IF NOT EXISTS sound_library (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT    NOT NULL DEFAULT 'Untitled',
+      category   TEXT    NOT NULL DEFAULT 'effect',
+      file_path  TEXT    NOT NULL DEFAULT '',
+      hotkey     TEXT    NOT NULL DEFAULT '',
+      volume     REAL    NOT NULL DEFAULT 1.0,
+      loop       INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Bundled refs already offered to the library. Makes seeding idempotent and
+    -- lets a deleted starter sound stay deleted, while a newly shipped one still
+    -- shows up on the next launch.
+    CREATE TABLE IF NOT EXISTS sound_library_seeded (
+      ref       TEXT PRIMARY KEY,
+      seeded_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS clocks (
@@ -692,6 +716,9 @@ export function initDatabase() {
   } catch (e) {
     log.warn('Location Size/Type split migration failed:', e)
   }
+
+  // Bundled starter sounds land in the central library (idempotent, per ref).
+  seedSoundLibrary()
 
   return { userDataPath, imagesPath }
 }

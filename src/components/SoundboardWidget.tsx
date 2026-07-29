@@ -1,9 +1,10 @@
 // path: src/components/SoundboardWidget.tsx
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useStore } from '../store/store'
-import { Music2, X, Minus, ChevronDown, Volume2, SlidersHorizontal, Play, Square } from 'lucide-react'
-import type { SoundBoard, Sound, SoundCategory } from '../types'
-import { soundCategoryColor } from '../constants/soundCategories'
+import { Music2, X, Minus, ChevronDown, Volume2, SlidersHorizontal, Play, Square, Search, Library } from 'lucide-react'
+import type { Sound, SoundCategory } from '../types'
+import { soundCategoryColor, LIBRARY_BOARD_ID, LIBRARY_BOARD } from '../constants/soundCategories'
+import DropdownPortal from './DropdownPortal'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -14,16 +15,14 @@ function easeInOut(t: number) {
   return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
 }
 
-// Sentinel id for the virtual, always-present bundled default board
-const DEFAULT_BOARD_ID = -1
-const defaultBoard: SoundBoard = {
-  id: DEFAULT_BOARD_ID, campaign_id: -1, name: 'Default Sounds', sort_order: -1, created_at: '',
-}
-
 // ── Soundboard Widget ──────────────────────────────────────────────────────────
 
 export default function SoundboardWidget() {
-  const { view, currentCampaign, currentSession, soundboardMinimized, setSoundboardMinimized, setSoundboardOpen } = useStore()
+  const {
+    view, currentCampaign, currentSession, soundboardMinimized,
+    setSoundboardMinimized, setSoundboardOpen,
+    soundBoards: boards, loadSoundBoards, soundsVersion,
+  } = useStore()
 
   // Session-aware open state: expand while viewing a session, auto-minimise (but
   // keep playing) when you navigate elsewhere in the campaign. Keyed on `view`
@@ -33,12 +32,14 @@ export default function SoundboardWidget() {
     setSoundboardMinimized(view !== 'session')
   }, [view, setSoundboardMinimized])
 
-  const [boards, setBoards]             = useState<SoundBoard[]>([])
-  const [activeBoardId, setActiveBoardId] = useState<number | null>(null)
+  const [activeBoardId, setActiveBoardId] = useState<number>(LIBRARY_BOARD_ID)
   const [sounds, setSounds]             = useState<Sound[]>([])
   const [soundUrls, setSoundUrls]       = useState<Map<number, string>>(new Map())
   const [boardOpen, setBoardOpen]       = useState(false)
   const [mixer, setMixer]               = useState(false)   // per-sound volume view
+  const [search, setSearch]             = useState('')
+  const [searchOpen, setSearchOpen]     = useState(false)
+  const boardAnchorRef = useRef<HTMLButtonElement>(null)
 
   // Debounced persistence for on-the-fly per-sound volume changes
   const persistVolRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -90,15 +91,11 @@ export default function SoundboardWidget() {
     effectCloneRefs.current.forEach(c => c.pause())
   }, [cancelCrossfade])
 
-  // Load boards
+  // Boards come from the store (shared with the soundboard page), but make sure
+  // they're loaded — the widget can open before that page has ever been visited.
   useEffect(() => {
-    if (!currentCampaign) return
-    window.api.getSoundBoards(currentCampaign.id).then(bs => {
-      setBoards(bs)
-      // Pick first user board if any, else fall back to the bundled default board
-      if (!activeBoardId) setActiveBoardId(bs.length > 0 ? bs[0].id : DEFAULT_BOARD_ID)
-    })
-  }, [currentCampaign?.id])
+    if (currentCampaign) loadSoundBoards(currentCampaign.id)
+  }, [currentCampaign?.id, loadSoundBoards])
 
   // Auto-select a session's linked board. Keyed on the (session, board) pair:
   // applies on session entry AND instantly when the link changes for the current
@@ -114,9 +111,15 @@ export default function SoundboardWidget() {
     }
   }, [currentSession?.id, currentSession?.soundboard_id, boards])
 
-  // Load sounds + resolve URLs when board changes
+  // A board deleted elsewhere leaves the widget on the library rather than empty
   useEffect(() => {
-    if (activeBoardId === null) return
+    if (activeBoardId !== LIBRARY_BOARD_ID && !boards.some(b => b.id === activeBoardId)) {
+      setActiveBoardId(LIBRARY_BOARD_ID)
+    }
+  }, [boards, activeBoardId])
+
+  // Switching board silences whatever the old one was playing
+  useEffect(() => {
     cancelCrossfade()
     fadeRefs.current.forEach(h => cancelAnimationFrame(h))
     fadeRefs.current.clear()
@@ -129,30 +132,46 @@ export default function SoundboardWidget() {
     setPlayingEffects(new Set())
     setLoopingEffects(new Set())
     setErroredSounds(new Set())
+    setSearch('')
+  }, [activeBoardId, cancelCrossfade])
 
-    if (activeBoardId === DEFAULT_BOARD_ID) {
-      // Virtual default board — scanned live from the bundled folder.
-      // Synthesise Sound rows with negative ids and ready-to-play urls.
-      window.api.getDefaultSounds().then(defaults => {
-        const synthesised: Sound[] = defaults.map((d, i) => ({
-          id: -(i + 1), board_id: DEFAULT_BOARD_ID, name: d.name,
-          category: d.category, file_path: d.url, hotkey: '',
-          volume: 1, loop: d.category === 'effect' ? 0 : 1, sort_order: i, created_at: '',
-        }))
-        setSounds(synthesised)
-        setSoundUrls(new Map(synthesised.map(s => [s.id, s.file_path])))
-      })
-      return
-    }
+  // Load sounds + resolve URLs. Also re-runs when sounds are edited on the page,
+  // which must NOT interrupt playback — only entries that disappeared are stopped.
+  useEffect(() => {
+    let cancelled = false
+    // The library plays like a board — its entries just live in their own table.
+    const load = activeBoardId === LIBRARY_BOARD_ID
+      ? window.api.getSoundLibrary().then(entries => entries.map(e => ({ ...e, board_id: LIBRARY_BOARD_ID })) as Sound[])
+      : window.api.getSounds(activeBoardId)
 
-    window.api.getSounds(activeBoardId).then(async loaded => {
+    load.then(async loaded => {
+      if (cancelled) return
       setSounds(loaded)
-      const entries = await Promise.all(
+      const urls = await Promise.all(
         loaded.map(async s => [s.id, await window.api.getImagePath(s.file_path)] as [number, string])
       )
-      setSoundUrls(new Map(entries))
+      if (cancelled) return
+      setSoundUrls(new Map(urls))
+
+      const live = new Set(loaded.map(s => s.id))
+      audioRefs.current.forEach((a, id) => {
+        if (live.has(id)) return
+        a.pause()
+        audioRefs.current.delete(id)
+      })
+      effectCloneRefs.current.forEach((c, id) => {
+        if (live.has(id)) return
+        c.pause()
+        effectCloneRefs.current.delete(id)
+      })
+      const prune = (s: Set<number>) => new Set([...s].filter(id => live.has(id)))
+      setPlayingAmbience(prev => prev !== null && !live.has(prev) ? null : prev)
+      setPlayingMusic(prev => prev !== null && !live.has(prev) ? null : prev)
+      setPlayingEffects(prune)
+      setLoopingEffects(prune)
     })
-  }, [activeBoardId, cancelCrossfade])
+    return () => { cancelled = true }
+  }, [activeBoardId, soundsVersion])
 
   // Effective volume = master × per-sound volume
   const effVol = useCallback((s: Sound) => volume * (s.volume ?? 1), [volume])
@@ -169,15 +188,17 @@ export default function SoundboardWidget() {
     })
   }, [volume, soundsById])
 
-  // Adjust a single sound's volume on the fly — applies live (via the effect above)
-  // and persists to the DB (debounced) for real sounds; defaults are in-memory only.
+  // Adjust a single sound's volume on the fly — applies live (via the effect
+  // above) and persists (debounced) to whichever table the row came from.
   const setSoundVolume = useCallback((id: number, vol: number) => {
     setSounds(prev => prev.map(s => s.id === id ? { ...s, volume: vol } : s))
-    if (id > 0) {
-      if (persistVolRef.current) clearTimeout(persistVolRef.current)
-      persistVolRef.current = setTimeout(() => { window.api.updateSound(id, { volume: vol }) }, 400)
-    }
-  }, [])
+    const isLibrary = activeBoardId === LIBRARY_BOARD_ID
+    if (persistVolRef.current) clearTimeout(persistVolRef.current)
+    persistVolRef.current = setTimeout(() => {
+      if (isLibrary) window.api.updateLibrarySound(id, { volume: vol })
+      else window.api.updateSound(id, { volume: vol })
+    }, 400)
+  }, [activeBoardId])
 
   // ── Audio helpers ─────────────────────────────────────────────────────────────
 
@@ -400,10 +421,12 @@ export default function SoundboardWidget() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
-  // Default board is pinned at the top, ahead of the campaign's own boards
-  const allBoards   = [defaultBoard, ...boards]
+  // The library is pinned at the top, ahead of the campaign's own boards
+  const allBoards   = [LIBRARY_BOARD, ...boards]
   const activeBoard = allBoards.find(b => b.id === activeBoardId)
-  const byCategory  = (cat: SoundCategory) => sounds.filter(s => s.category === cat)
+  const needle      = search.trim().toLowerCase()
+  const visible     = needle ? sounds.filter(s => s.name.toLowerCase().includes(needle)) : sounds
+  const byCategory  = (cat: SoundCategory) => visible.filter(s => s.category === cat)
   const isPlaying   = (s: Sound) =>
     s.category === 'ambience' ? playingAmbience === s.id :
     s.category === 'music'    ? playingMusic    === s.id :
@@ -463,6 +486,9 @@ export default function SoundboardWidget() {
       ref={widgetRef}
       style={{
         ...widgetStyle, width: WIDGET_W,
+        // The library board can hold a lot of pads — cap the height and let the
+        // pad area scroll instead of running off the screen.
+        maxHeight: 'min(70vh, 640px)',
         background: 'var(--bg-surface)', border: '1px solid var(--border-gold)',
         borderRadius: 'var(--radius-md)',
         boxShadow: 'var(--shadow-lg), 0 0 0 1px rgba(200,168,75,0.06)',
@@ -479,71 +505,65 @@ export default function SoundboardWidget() {
       }}>
         <Music2 size={13} color="var(--gold-dim)" style={{ flexShrink: 0 }} />
 
-        {allBoards.length > 1 ? (
-          <div style={{ position: 'relative', flex: 1 }}>
-            <button
-              onClick={() => setBoardOpen(v => !v)}
-              title="Click to switch soundboard"
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 6,
-                background: boardOpen ? 'var(--bg-hover)' : 'var(--bg-surface)',
-                border: '1px solid var(--border-gold)', borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer', padding: '3px 8px',
-                color: 'var(--gold)', fontSize: 12, textAlign: 'left',
-                fontFamily: 'var(--font-display)', letterSpacing: '0.04em',
-                transition: 'background var(--transition)',
-              }}
-              className="hover-bg"
-            >
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                {activeBoard?.name ?? '—'}
-              </span>
-              <ChevronDown size={13} color="var(--gold-dim)" style={{ flexShrink: 0, transform: boardOpen ? 'rotate(180deg)' : 'none', transition: 'transform var(--transition)' }} />
-            </button>
-            {boardOpen && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, marginTop: 4,
-                background: 'var(--bg-elevated)', border: '1px solid var(--border-gold)',
-                borderRadius: 'var(--radius-sm)', zIndex: 10, minWidth: 160,
-                boxShadow: 'var(--shadow-md)',
-              }}>
-                {allBoards.map(b => (
-                  <button key={b.id}
-                    onClick={() => { setActiveBoardId(b.id); setBoardOpen(false) }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left',
-                      padding: '7px 12px',
-                      background: b.id === activeBoardId ? 'var(--gold-glow)' : 'none',
-                      border: 'none', cursor: 'pointer',
-                      color: b.id === activeBoardId ? 'var(--gold)' : 'var(--text-secondary)',
-                      fontFamily: 'var(--font-ui)', fontSize: 12,
-                    }}
-                    className={(b.id !== activeBoardId) ? 'hover-bg' : ''}
-                  >
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
-                    {b.id === DEFAULT_BOARD_ID && (
-                      <span style={{
-                        fontSize: 8, letterSpacing: '0.06em', textTransform: 'uppercase',
-                        color: 'var(--gold-dim)', border: '1px solid var(--border-gold)',
-                        borderRadius: 2, padding: '0 4px', flexShrink: 0,
-                      }}>
-                        default
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <span style={{
-            flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            fontFamily: 'var(--font-display)', color: 'var(--gold)', letterSpacing: '0.04em',
-          }}>
+        {/* Board switcher — the menu is portalled so the widget's own
+            overflow:hidden can't clip the boards below the first one. */}
+        <button
+          ref={boardAnchorRef}
+          onClick={() => setBoardOpen(v => !v)}
+          title="Click to switch soundboard"
+          style={{
+            flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6,
+            background: boardOpen ? 'var(--bg-hover)' : 'var(--bg-surface)',
+            border: '1px solid var(--border-gold)', borderRadius: 'var(--radius-sm)',
+            cursor: 'pointer', padding: '3px 8px',
+            color: 'var(--gold)', fontSize: 12, textAlign: 'left',
+            fontFamily: 'var(--font-display)', letterSpacing: '0.04em',
+            transition: 'background var(--transition)',
+          }}
+          className="hover-bg"
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
             {activeBoard?.name ?? 'Soundboard'}
           </span>
+          <ChevronDown size={13} color="var(--gold-dim)" style={{ flexShrink: 0, transform: boardOpen ? 'rotate(180deg)' : 'none', transition: 'transform var(--transition)' }} />
+        </button>
+        {boardOpen && (
+          <DropdownPortal anchor={boardAnchorRef.current} align="left" minWidth={200} onClose={() => setBoardOpen(false)}>
+            <div style={{ maxHeight: 300, overflow: 'auto' }}>
+              {allBoards.map(b => (
+                <button key={b.id}
+                  onClick={() => { setActiveBoardId(b.id); setBoardOpen(false) }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left',
+                    padding: '7px 12px',
+                    background: b.id === activeBoardId ? 'var(--gold-glow)' : 'none',
+                    border: 'none', cursor: 'pointer',
+                    color: b.id === activeBoardId ? 'var(--gold)' : 'var(--text-secondary)',
+                    fontFamily: 'var(--font-ui)', fontSize: 12,
+                  }}
+                  className={(b.id !== activeBoardId) ? 'hover-bg' : ''}
+                >
+                  {b.id === LIBRARY_BOARD_ID && <Library size={11} style={{ flexShrink: 0, opacity: 0.8 }} />}
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
+                  {currentSession?.soundboard_id === b.id && (
+                    <span style={{
+                      fontSize: 8, letterSpacing: '0.06em', textTransform: 'uppercase',
+                      color: 'var(--gold-dim)', border: '1px solid var(--border-gold)',
+                      borderRadius: 2, padding: '0 4px', flexShrink: 0,
+                    }}>
+                      linked
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </DropdownPortal>
         )}
 
+        <button onClick={() => { setSearchOpen(v => !v); if (searchOpen) setSearch('') }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: searchOpen ? 'var(--gold)' : 'var(--text-muted)', padding: 2, display: 'flex', flexShrink: 0, transition: 'color var(--transition)' }}
+          className={(!searchOpen) ? 'hover-text-secondary' : ''}
+          title="Search sounds"><Search size={13} /></button>
         <button onClick={() => setMixer(v => !v)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: mixer ? 'var(--gold)' : 'var(--text-muted)', padding: 2, display: 'flex', flexShrink: 0, transition: 'color var(--transition)' }}
           className={(!mixer) ? 'hover-text-secondary' : ''}
@@ -558,8 +578,26 @@ export default function SoundboardWidget() {
           title="Close"><X size={13} /></button>
       </div>
 
+      {/* Search — filters the current board's pads by name */}
+      {searchOpen && (
+        <div style={{ padding: '8px 10px 0', flexShrink: 0 }}>
+          <input
+            className="input"
+            style={{ width: '100%', fontSize: 12 }}
+            placeholder="Search sounds…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            autoFocus
+            onKeyDown={e => {
+              if (e.key === 'Escape') { setSearch(''); setSearchOpen(false) }
+              e.stopPropagation()
+            }}
+          />
+        </div>
+      )}
+
       {/* Sound buttons */}
-      <div style={{ padding: '10px 10px 6px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ padding: '10px 10px 6px', display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto' }}>
         {(['ambience', 'music', 'effect'] as SoundCategory[]).map(cat => {
           const catSounds = byCategory(cat)
           if (catSounds.length === 0) return null
@@ -669,13 +707,15 @@ export default function SoundboardWidget() {
           )
         })}
 
-        {sounds.length === 0 && (
+        {visible.length === 0 && (
           <div style={{
             padding: '14px 0', textAlign: 'center',
             fontSize: 12, color: 'var(--text-muted)',
             fontFamily: 'var(--font-body)', fontStyle: 'italic',
           }}>
-            No sounds in this board
+            {sounds.length === 0
+              ? (activeBoardId === LIBRARY_BOARD_ID ? 'Your sound library is empty' : 'No sounds in this board')
+              : `No sounds match “${search}”`}
           </div>
         )}
       </div>

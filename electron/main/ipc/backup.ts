@@ -67,11 +67,15 @@ function collectCampaignMedia(src: InstanceType<typeof Database>, userDataPath: 
   for (const r of src.prepare('SELECT content FROM dm_notes_pages').all() as any[]) inlineImagePaths(r.content, imagesDir).forEach(addImage)
   for (const r of src.prepare('SELECT notes FROM sessions').all() as any[]) inlineImagePaths(r.notes || '', imagesDir).forEach(addImage)
 
-  for (const r of src.prepare('SELECT file_path FROM sounds').all() as any[]) {
-    const p = r.file_path as string
-    if (!p || p.startsWith('default:')) continue
-    const abs = path.join(userDataPath, p)
-    if (fs.existsSync(abs)) sounds.add(abs)
+  // Board copies plus the whole library shelf — the library is app-wide, so an
+  // exported campaign carries the user's imported audio with it.
+  for (const table of ['sounds', 'sound_library']) {
+    for (const r of src.prepare(`SELECT file_path FROM ${table}`).all() as any[]) {
+      const p = r.file_path as string
+      if (!p || p.startsWith('default:')) continue
+      const abs = path.join(userDataPath, p)
+      if (fs.existsSync(abs)) sounds.add(abs)
+    }
   }
 
   return { images, sounds }
@@ -228,6 +232,11 @@ export function registerBackupIPC() {
         const srcCampaigns = src.prepare('SELECT * FROM campaigns').all() as any[]
         if (srcCampaigns.length === 0) return { success: false, error: 'Backup contains no campaigns' }
 
+        // The sound library is app-wide, so it merges once regardless of how many
+        // campaigns the backup holds. Entries already on this machine (same file)
+        // are left as they are; older backups have no library table at all.
+        importSoundLibrary(src)
+
         for (const srcCampaign of srcCampaigns) {
           // Duplicate detection: uuid is the stable identity; pre-uuid backups
           // fall back to a case-insensitive name match.
@@ -268,6 +277,46 @@ export function registerBackupIPC() {
       return { success: false, error: err.message }
     }
   })
+}
+
+// ── Sound library merge ─────────────────────────────────────────────────────────
+// Additive: an entry whose file is already on the shelf is skipped, so importing
+// the same backup twice doesn't duplicate rows. Bundled `default:` refs are
+// skipped too — they're seeded from the app itself on every launch.
+
+function importSoundLibrary(src: InstanceType<typeof Database>) {
+  try {
+    const hasTable = src.prepare(
+      "SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'table' AND name = 'sound_library'"
+    ).get() as { c: number }
+    if (hasTable.c === 0) return
+
+    const existing = new Set(
+      (db.prepare('SELECT file_path FROM sound_library').all() as any[]).map(r => r.file_path)
+    )
+    const rows = (src.prepare('SELECT * FROM sound_library').all() as any[])
+      .filter(r => r.file_path && !r.file_path.startsWith('default:') && !existing.has(r.file_path))
+    if (rows.length === 0) return
+
+    const { m } = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM sound_library').get() as { m: number }
+    const insert = db.prepare(`
+      INSERT INTO sound_library (name, category, file_path, hotkey, volume, loop, sort_order)
+      VALUES (@name, @category, @file_path, @hotkey, @volume, @loop, @sort_order)
+    `)
+    let order = m + 1
+    db.transaction(() => {
+      for (const r of rows) {
+        insert.run({
+          name: r.name, category: r.category, file_path: r.file_path,
+          hotkey: r.hotkey ?? '', volume: r.volume ?? 1, loop: r.loop ?? 0,
+          sort_order: order++,
+        })
+      }
+    })()
+    log.info(`Backup import: merged ${rows.length} sound library entr(ies)`)
+  } catch (e) {
+    log.warn('Sound library import failed:', e)
+  }
 }
 
 // ── Campaign merge import ───────────────────────────────────────────────────────
