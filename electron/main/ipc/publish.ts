@@ -67,6 +67,14 @@ export function registerPublishIPC() {
       ).map(m => ({
         ...m,
         pois: db.prepare('SELECT * FROM pois WHERE map_id = ? AND layer_id IS NULL').all(m.id) as any[],
+        // Shapes on hidden layers are the DM's working state, so they never
+        // leave the app; the rest are filtered by linked-article visibility in
+        // buildPlayerBundle, exactly like POIs.
+        shapes: db.prepare(`
+          SELECT s.* FROM map_shapes s
+          LEFT JOIN map_shape_layers l ON l.id = s.layer_id
+          WHERE s.map_id = ? AND (s.layer_id IS NULL OR l.visible = 1)
+        `).all(m.id) as any[],
       }))
 
       const imageAbs = new Map<string, string>()

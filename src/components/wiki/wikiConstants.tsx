@@ -102,7 +102,7 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
   },
   item: {
     Status:   ['Found', 'Lost', 'Destroyed', 'Unknown'],
-    Category: ['Weapon', 'Armor', 'Potion', 'Scroll', 'Wand', 'Ring', 'Rod', 'Staff', 'Wondrous', 'Tool', 'Gear', 'Treasure'],
+    Type:     ['Weapon', 'Armor', 'Potion', 'Scroll', 'Wand', 'Ring', 'Rod', 'Staff', 'Wondrous', 'Tool', 'Gear', 'Treasure'],
     Rarity:   ['Common', 'Uncommon', 'Rare', 'Very Rare', 'Legendary', 'Artifact'],
     Location: [],
   },

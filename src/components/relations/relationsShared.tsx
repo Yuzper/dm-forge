@@ -177,7 +177,7 @@ export const ARTICLE_TRACKS: Partial<Record<string, Record<string, string[]>>> =
   location: { State: [], Size: [], Type: [], Government: [], 'Ruler/Leader': [], Controlled_By: [], Plane: [], Within: [] },
   faction:  { Status: [], Type: [], Scale: [], Leader: [], HQ: [], Allies: [], Rivals: [] },
   quest: { Status: [], Type: [], Difficulty: [] },
-  item:  { Status: [], Category: [], Rarity: [], Location: [] },
+  item:  { Status: [], Type: [], Rarity: [], Location: [] },
   event: { Status: [], Type: [], Scale: [], Location: [] },
   culture:  { Status: [] },
   religion: { Status: [], Domains: [], Leader: [], Holy_Symbol: [], Follower_Count: [], Allies: [], Rivals: [], Sacred_Sites: [] },

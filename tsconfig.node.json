@@ -4,8 +4,6 @@
   "compilerOptions": {
     "composite": true,
     "types": ["electron-vite/node"],
-    "paths": { "@/*": ["src/*"] },
     "ignoreDeprecations": "5.0"
-
   }
 }

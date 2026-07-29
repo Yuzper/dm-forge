@@ -262,6 +262,90 @@ export function registerMapIPC(imagesPath: string) {
     for (const p of pois) extractInlineImagePaths(p.content, userDataPath).forEach(safeUnlink)
   })
 
+  // ── Drawing layers & shapes ──────────────────────────────────────────────────
+  // Shapes are POI-like: percent coords, hub_links to articles/sessions, and a
+  // click-to-open popup. They differ in carrying a geometry (`points`) instead
+  // of a single point, and in grouping under hand-made shape layers rather than
+  // the session-owned visit layers above.
+
+  ipcMain.handle('shape-layers:get-all', (_e, mapId: number) => {
+    return db.prepare(`
+      SELECT l.*, (SELECT COUNT(*) FROM map_shapes s WHERE s.layer_id = l.id) AS shape_count
+      FROM map_shape_layers l WHERE l.map_id = ?
+      ORDER BY l.sort_order ASC, l.created_at ASC
+    `).all(mapId)
+  })
+
+  ipcMain.handle('shape-layers:create', (_e, mapId: number, name?: string) => {
+    const { m } = db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) AS m FROM map_shape_layers WHERE map_id = ?'
+    ).get(mapId) as { m: number }
+    const r = db.prepare(
+      'INSERT INTO map_shape_layers (map_id, name, sort_order) VALUES (?, ?, ?)'
+    ).run(mapId, name?.trim() || 'Layer', m + 1)
+    return db.prepare('SELECT *, 0 AS shape_count FROM map_shape_layers WHERE id = ?').get(r.lastInsertRowid)
+  })
+
+  ipcMain.handle('shape-layers:update', (_e, id: number, data: any) => {
+    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
+    if (fields) db.prepare(`UPDATE map_shape_layers SET ${fields} WHERE id = @id`).run({ ...data, id })
+    return db.prepare('SELECT * FROM map_shape_layers WHERE id = ?').get(id)
+  })
+
+  // Shapes on the layer cascade away with it.
+  ipcMain.handle('shape-layers:delete', (_e, id: number) => {
+    db.prepare('DELETE FROM map_shape_layers WHERE id = ?').run(id)
+  })
+
+  ipcMain.handle('shapes:get-all', (_e, mapId: number) => {
+    return db.prepare(
+      'SELECT * FROM map_shapes WHERE map_id = ? ORDER BY sort_order ASC, created_at ASC'
+    ).all(mapId)
+  })
+
+  ipcMain.handle('shapes:create', (_e, data: any) => {
+    const { m } = db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) AS m FROM map_shapes WHERE map_id = ?'
+    ).get(data.map_id) as { m: number }
+    const result = db.prepare(`
+      INSERT INTO map_shapes (
+        map_id, layer_id, label, shape_type, points,
+        fill_color, fill_opacity, stroke_color, stroke_width, stroke_style,
+        content, hub_links, show_label, sort_order
+      ) VALUES (
+        @map_id, @layer_id, @label, @shape_type, @points,
+        @fill_color, @fill_opacity, @stroke_color, @stroke_width, @stroke_style,
+        @content, @hub_links, @show_label, @sort_order
+      )
+    `).run({
+      layer_id: null,
+      label: '',
+      shape_type: 'polygon',
+      points: '[]',
+      fill_color: '#c8a84b',
+      fill_opacity: 0.2,
+      stroke_color: '#c8a84b',
+      stroke_width: 2,
+      stroke_style: 'solid',
+      content: '{"type":"doc","content":[]}',
+      hub_links: '[]',
+      show_label: 1,
+      sort_order: m + 1,
+      ...data,
+    })
+    return db.prepare('SELECT * FROM map_shapes WHERE id = ?').get(result.lastInsertRowid)
+  })
+
+  ipcMain.handle('shapes:update', (_e, id: number, data: any) => {
+    const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
+    if (fields) db.prepare(`UPDATE map_shapes SET ${fields} WHERE id = @id`).run({ ...data, id })
+    return db.prepare('SELECT * FROM map_shapes WHERE id = ?').get(id)
+  })
+
+  ipcMain.handle('shapes:delete', (_e, id: number) => {
+    db.prepare('DELETE FROM map_shapes WHERE id = ?').run(id)
+  })
+
   // ── POIs ──────────────────────────────────────────────────────────────────────
 
   ipcMain.handle('pois:get-all', (_e, mapId: number) => {

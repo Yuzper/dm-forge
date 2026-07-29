@@ -27,11 +27,29 @@ export interface PPoi {
   content: string            // redacted TipTap JSON
 }
 
+// A drawn region (kingdom border, district…). Geometry is in the same percent
+// space as PPoi; 'ellipse' carries two bbox corners, 'polygon' its vertices.
+export interface PShape {
+  id: number
+  label: string
+  shape_type: 'polygon' | 'ellipse'
+  points: string             // JSON [{x,y}] percent coords
+  fill_color: string
+  fill_opacity: number
+  stroke_color: string
+  stroke_width: number
+  stroke_style: 'solid' | 'dashed'
+  show_label: number
+  articleId: number | null   // linked visible article, opened on click
+  content: string            // redacted TipTap JSON
+}
+
 export interface PMap {
   id: number
   name: string
   image: string        // relative "images/…" path
   pois: PPoi[]
+  shapes?: PShape[]    // absent in bundles published before drawing layers
 }
 
 export interface Bundle {

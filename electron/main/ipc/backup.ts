@@ -304,6 +304,13 @@ function importOneCampaign(
       return Number(stmt.run(clean).lastInsertRowid)
     }
     const all = (table: string) => src.prepare(`SELECT * FROM ${table}`).all() as any[]
+    // Same, but yields nothing when the source predates the table entirely.
+    const allOptional = (table: string): any[] => {
+      const exists = src.prepare(
+        `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`
+      ).get(table)
+      return exists ? all(table) : []
+    }
     const mine = (table: string) =>
       src.prepare(`SELECT * FROM ${table} WHERE campaign_id = ?`).all(srcCampaign.id) as any[]
 
@@ -402,6 +409,25 @@ function importOneCampaign(
           hub_links: remapHubLinks(r.hub_links),
           content: rewriteDocImagePaths(r.content, imagesDir),
         }))
+      }
+
+      // Drawing layers + shapes. Backups predating the shapes feature have no
+      // such tables, so read through allOptional rather than crashing the import.
+      const shapeLayerMap = new Map<number, number>()
+      for (const r of allOptional('map_shape_layers')) {
+        const mapId = mapMap.get(r.map_id)
+        if (mapId != null) shapeLayerMap.set(r.id, insertRow('map_shape_layers', { ...r, map_id: mapId }))
+      }
+      for (const r of allOptional('map_shapes')) {
+        const mapId = mapMap.get(r.map_id)
+        if (mapId == null) continue
+        insertRow('map_shapes', {
+          ...r,
+          map_id: mapId,
+          layer_id: r.layer_id != null ? shapeLayerMap.get(r.layer_id) ?? null : null,
+          hub_links: remapHubLinks(r.hub_links),
+          content: rewriteDocImagePaths(r.content, imagesDir),
+        })
       }
 
       // Session↔map visit links — all three ends must have remapped.

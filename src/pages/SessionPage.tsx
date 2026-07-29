@@ -1,7 +1,7 @@
 // path: src/pages/SessionPage.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
-import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft, FileText, FilePlus, BookOpen, Link2, Layers, Plus, Search, Unlink, Eye, EyeOff } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft, FileText, FilePlus, BookOpen, Link2, Layers, Plus, Search, Unlink } from 'lucide-react'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
 import RichEditor from '../components/RichEditor'
@@ -163,7 +163,7 @@ function AttachMapModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Attach map from wiki" onClose={onClose} style={{ maxWidth: 520 }}>
       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
-        Run a location's map in this session. Continue an earlier visit to keep its POIs, or start a new visit with a fresh layer — the place's own POIs can be toggled in from the Layers control.
+        Run a location's map in this session. Continue an earlier visit to keep its POIs, or start a new visit with a fresh layer — the place's own POIs can be toggled in from the map's Contents panel.
       </div>
       <div style={{ position: 'relative', marginBottom: 10 }}>
         <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -240,105 +240,6 @@ function AttachMapModal({ onClose }: { onClose: () => void }) {
         <button className="btn" onClick={onClose}>Cancel</button>
       </div>
     </Modal>
-  )
-}
-
-// ── Layers control ────────────────────────────────────────────────────────────
-// Floats over an attached map: shows base + all visit layers, current one
-// pinned on, others toggleable as ghosts. Available in read mode too.
-
-function LayersControl({ map }: { map: GameMap }) {
-  const { ghostLayerIds, toggleGhostLayer, showBaseLayer, toggleBaseLayer } = useStore()
-  const [open, setOpen] = useState(false)
-  const [layers, setLayers] = useState<MapLayer[] | null>(null)
-  const ref = useRef<HTMLDivElement>(null)
-  useMenuClose(open, ref, setOpen)
-
-  useEffect(() => {
-    if (open) window.api.getMapLayers(map.id).then(setLayers)
-  }, [open, map.id])
-
-  const others = (layers ?? []).filter(l => l.id !== map.layer_id)
-
-  return (
-    <div ref={ref} style={{ position: 'absolute', top: 12, left: 12, zIndex: 30 }}>
-      <button
-        onClick={() => setOpen(v => !v)}
-        title="Map layers"
-        style={{
-          display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
-          background: 'rgba(21,18,14,0.85)', border: `1px solid ${open ? 'var(--border-gold)' : 'var(--border-light)'}`,
-          borderRadius: 4, backdropFilter: 'blur(8px)', cursor: 'pointer',
-          color: open || showBaseLayer || ghostLayerIds.length > 0 ? 'var(--gold)' : 'var(--text-secondary)',
-          fontSize: 11, transition: 'all var(--transition)',
-        }}
-        className={open ? '' : 'hover-gold'}
-      >
-        <Layers size={12} /> Layers{(() => {
-          const extra = ghostLayerIds.length + (showBaseLayer ? 1 : 0)
-          return extra > 0 ? ` +${extra}` : ''
-        })()}
-      </button>
-
-      {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', left: 0, minWidth: 210,
-          background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
-          borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', padding: '6px 0',
-        }}>
-          <div style={{ padding: '4px 12px 6px', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            {map.article_title ?? 'Map'} — layers
-          </div>
-          {/* The place's own POIs — hidden by default so tonight's view starts clean */}
-          <button
-            onClick={toggleBaseLayer}
-            title={showBaseLayer ? "Hide the place's POIs" : "Show the place's POIs"}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px',
-              background: 'none', border: 'none', cursor: 'pointer', fontSize: 12,
-              color: showBaseLayer ? 'var(--text-primary)' : 'var(--text-muted)', textAlign: 'left',
-            }}
-            className="hover-bg"
-          >
-            {showBaseLayer
-              ? <Eye size={12} style={{ color: 'var(--gold-dim)', flexShrink: 0 }} />
-              : <EyeOff size={12} style={{ flexShrink: 0 }} />}
-            Place (base)
-          </button>
-          {map.layer_id != null && layers && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', fontSize: 12, color: 'var(--text-secondary)' }}>
-              <Eye size={12} style={{ color: 'var(--gold)', flexShrink: 0 }} />
-              {layerLabel(layers.find(l => l.id === map.layer_id) ?? { id: 0, map_id: map.id, name: 'This visit', created_at: '' })}
-              <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--gold-dim)' }}>current</span>
-            </div>
-          )}
-          {layers === null ? (
-            <div style={{ padding: '5px 12px', fontSize: 11, color: 'var(--text-muted)' }}>Loading…</div>
-          ) : others.length === 0 ? (
-            <div style={{ padding: '5px 12px 7px', fontSize: 11, color: 'var(--text-muted)' }}>No other visits yet</div>
-          ) : (
-            others.map(l => {
-              const on = ghostLayerIds.includes(l.id)
-              return (
-                <button key={l.id} onClick={() => toggleGhostLayer(l.id)}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px',
-                    background: 'none', border: 'none', cursor: 'pointer', fontSize: 12,
-                    color: on ? 'var(--text-primary)' : 'var(--text-muted)', textAlign: 'left',
-                  }}
-                  className="hover-bg"
-                  title={on ? 'Hide this visit' : 'Show this visit (ghosted)'}
-                >
-                  {on ? <Eye size={12} style={{ flexShrink: 0 }} /> : <EyeOff size={12} style={{ flexShrink: 0 }} />}
-                  {layerLabel(l)}
-                  <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)' }}>{l.poi_count ?? 0}</span>
-                </button>
-              )
-            })
-          )}
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -931,9 +832,10 @@ export default function SessionPage() {
           <SceneView key={currentMap.id} map={currentMap} readMode={sessionReadMode} />
         ) : (
           <StoreMapProvider>
+            {/* Visit layers used to have their own floating control here; they
+                are a section of the canvas's Contents panel now. */}
             <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
               <MapCanvas readMode={sessionReadMode} />
-              {currentMap?.attached ? <LayersControl map={currentMap} /> : null}
             </div>
             <POIPanel readMode={sessionReadMode} />
           </StoreMapProvider>

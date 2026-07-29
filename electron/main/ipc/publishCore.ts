@@ -143,12 +143,14 @@ export function projectContent(
   return { content: JSON.stringify(out), linkTitles }
 }
 
-// A campaign world map plus its base-layer POIs, as read from the DB.
+// A campaign world map plus its base-layer POIs and visible drawing shapes,
+// as read from the DB.
 export interface WorldMapInput {
   id: number
   name: string
   image_path: string
   pois: any[]
+  shapes?: any[]
 }
 
 // Build one player's bundle from the DM's articles. `visibleIds` is the already
@@ -248,18 +250,24 @@ export function buildPlayerBundle(
   // World maps: a POI is shown only if it links to an article this player can
   // see (deny-by-default). Its loot/combat/hub internals are never exported —
   // only label, position, style, redacted content, and the article link.
+  // First visible linked article, or null when the feature links to nothing the
+  // player may see. Shared by pins and shapes so both deny by default.
+  const firstVisibleArticle = (hubLinks: string): number | null => {
+    try {
+      for (const l of JSON.parse(hubLinks || '[]')) {
+        if (l?.type === 'wiki' && typeof l.article_id === 'number' && visibleIds.has(l.article_id)) {
+          return l.article_id
+        }
+      }
+    } catch { /* malformed hub_links → treat as no link */ }
+    return null
+  }
+
   const maps: any[] = []
   for (const wm of worldMaps) {
     const outPois: any[] = []
     for (const poi of wm.pois) {
-      let articleId: number | null = null
-      try {
-        for (const l of JSON.parse(poi.hub_links || '[]')) {
-          if (l?.type === 'wiki' && typeof l.article_id === 'number' && visibleIds.has(l.article_id)) {
-            articleId = l.article_id; break
-          }
-        }
-      } catch { /* malformed hub_links → treat as no link */ }
+      const articleId = firstVisibleArticle(poi.hub_links)
       if (articleId == null) continue
       const { content } = projectContent(poi.content, visibleTitlesLower, imageAbs, userImagesDir)
       outPois.push({
@@ -275,10 +283,35 @@ export function buildPlayerBundle(
         content,
       })
     }
-    if (outPois.length === 0) continue // no visible pins → don't ship the map
+    // Drawing shapes follow the same deny-by-default rule: a border ships only
+    // if it links to an article this player can see. Geometry and style travel;
+    // layer membership and DM-side ordering don't.
+    const outShapes: any[] = []
+    for (const shape of wm.shapes ?? []) {
+      const articleId = firstVisibleArticle(shape.hub_links)
+      if (articleId == null) continue
+      const { content } = projectContent(shape.content, visibleTitlesLower, imageAbs, userImagesDir)
+      outShapes.push({
+        id: shape.id,
+        label: shape.label,
+        shape_type: shape.shape_type,
+        points: shape.points,
+        fill_color: shape.fill_color,
+        fill_opacity: shape.fill_opacity,
+        stroke_color: shape.stroke_color,
+        stroke_width: shape.stroke_width,
+        stroke_style: shape.stroke_style,
+        show_label: shape.show_label,
+        articleId,
+        content,
+      })
+    }
+
+    // Nothing the player may see on this map → don't ship it at all.
+    if (outPois.length === 0 && outShapes.length === 0) continue
     const image = addRef(wm.image_path)
     if (!image) continue
-    maps.push({ id: wm.id, name: wm.name, image, pois: outPois })
+    maps.push({ id: wm.id, name: wm.name, image, pois: outPois, shapes: outShapes })
   }
 
   return {

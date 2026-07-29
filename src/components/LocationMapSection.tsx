@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Map, Upload, MoreHorizontal, Pencil, Trash2, History, Eye, EyeOff, Image as ImageIcon } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Pencil, Trash2, Image as ImageIcon } from 'lucide-react'
 import { MapContext } from '../context/MapContext'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
 import type { GameMap, MapLayer, POI } from '../types'
 import type { MapContextValue } from '../context/MapContext'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
-import { useMenuClose } from '../hooks/useMenuClose'
-import { layerLabel } from '../utils/visitLayers'
+import { useMapCollection } from '../hooks/useMapCollection'
+import { ARTICLE_SCOPE, loadVisitView, saveVisitView } from '../utils/visitLayers'
 import Modal from './Modal'
 
 // ── Small inline rename modal (mirrors MapTabMenu in SessionPage) ─────────────
@@ -97,110 +97,69 @@ function MapTabMenu({ map: _map, onRename, onReplaceImage, onDelete }: {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function LocationMapSection({ articleId, readMode }: { articleId: number; readMode: boolean; campaignId?: number }) {
-  const [maps, setMaps] = useState<GameMap[]>([])
-  const [currentMap, setCurrentMap] = useState<GameMap | null>(null)
   const [pois, setPois] = useState<POI[]>([])
   const [selectedPOI, setSelectedPOI] = useState<POI | null>(null)
   const [poiPanelOpen, setPoiPanelOpen] = useState(false)
-  const [importing, setImporting] = useState(false)
   const [renamingMap, setRenamingMap] = useState<GameMap | null>(null)
-  // Visit history: session layers on this map, shown ghosted when toggled on.
-  // The article itself always edits the base layer.
+  // Visit history: session layers on this map, shown ghosted when toggled on
+  // from the canvas's Contents panel. The article itself always edits the base
+  // layer.
   const [layers, setLayers] = useState<MapLayer[]>([])
   const [ghostLayerIds, setGhostLayerIds] = useState<number[]>([])
-  const [visitsOpen, setVisitsOpen] = useState(false)
-  const [renamingLayer, setRenamingLayer] = useState<{ id: number; draft: string } | null>(null)
-  const visitsRef = useRef<HTMLDivElement>(null)
-  useMenuClose(visitsOpen, visitsRef, setVisitsOpen)
+  // The selected map's id, readable from callbacks declared before the
+  // collection hook that owns it.
+  const currentMapRef = useRef<number | null>(null)
 
-  const saveLayerName = async () => {
-    if (!renamingLayer) return
-    const name = renamingLayer.draft.trim()
-    await window.api.updateMapLayer(renamingLayer.id, { name })
-    setLayers(prev => prev.map(l => l.id === renamingLayer.id ? { ...l, name } : l))
-    setRenamingLayer(null)
-  }
-
-  const editMode = !readMode
-
-  // ── Load maps on mount / article change ────────────────────────────────────
-  const loadPOIs = useCallback(async (mapId: number) => {
-    const p = await window.api.getPOIs(mapId)
-    setPois(p)
-    setGhostLayerIds([])
-    window.api.getMapLayers(mapId).then(setLayers)
-  }, [])
-
-  useEffect(() => {
-    window.api.getMapsForArticle(articleId).then(fetched => {
-      setMaps(fetched)
-      const first = fetched[0] ?? null
-      setCurrentMap(first)
-      setPois([])
-      setSelectedPOI(null)
-      setPoiPanelOpen(false)
-      if (first) loadPOIs(first.id)
-    })
-  }, [articleId, loadPOIs])
-
-  // ── Map selection ──────────────────────────────────────────────────────────
-  const handleSelectMap = useCallback((map: GameMap) => {
-    setCurrentMap(map)
-    setPois([])
-    setSelectedPOI(null)
-    setPoiPanelOpen(false)
-    loadPOIs(map.id)
-  }, [loadPOIs])
-
-  // ── Import ─────────────────────────────────────────────────────────────────
-  const handleImport = async (result: { path: string; name: string }) => {
-    setImporting(true)
-    const map = await window.api.createMap({ article_id: articleId, name: result.name, image_path: result.path })
-    setMaps(prev => [...prev, map])
-    handleSelectMap(map)
-    setImporting(false)
-  }
-
-  const handleUploadNew = async () => {
-    setImporting(true)
-    const result = await window.api.importMapForArticle(articleId)
-    if (result) await handleImport(result)
-    setImporting(false)
-  }
-
-  // ── Map rename / replace image / delete ────────────────────────────────────
-  const handleRenameMap = async (name: string) => {
-    if (!renamingMap || !name) return
-    const updated = await window.api.updateMap(renamingMap.id, { name })
-    setMaps(prev => prev.map(m => m.id === updated.id ? updated : m))
-    if (currentMap?.id === updated.id) setCurrentMap(updated)
-    setRenamingMap(null)
-  }
-
-  // Swap the image but keep the map row — POIs, layers and visits are all keyed
-  // to the map id, so they survive the swap (same behaviour as the world map).
-  const handleReplaceMapImage = async (map: GameMap) => {
-    const result = await window.api.replaceMapImage(map.id)
-    if (!result) return
-    const updated = await window.api.updateMap(map.id, { image_path: result.path })
-    setMaps(prev => prev.map(m => m.id === updated.id ? updated : m))
-    if (currentMap?.id === updated.id) setCurrentMap(updated)
-  }
-
-  const handleDeleteMap = async (id: number) => {
-    await window.api.deleteMap(id)
-    setMaps(prev => {
-      const next = prev.filter(m => m.id !== id)
-      if (currentMap?.id === id) {
-        const fallback = next[0] ?? null
-        setCurrentMap(fallback)
-        setPois([])
-        setSelectedPOI(null)
-        setPoiPanelOpen(false)
-        if (fallback) loadPOIs(fallback.id)
+  // Which visits are showing is remembered per map, exactly as it is for a
+  // session's map tabs — see loadVisitView.
+  const toggleGhostLayer = useCallback((id: number) => {
+    setGhostLayerIds(ids => {
+      const next = ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]
+      if (currentMapRef.current) {
+        saveVisitView(ARTICLE_SCOPE, currentMapRef.current, { ghostLayerIds: next, showBaseLayer: false })
       }
       return next
     })
+  }, [])
+
+  // An empty name is meaningful: the layer falls back to its derived label.
+  const renameVisitLayer = useCallback(async (id: number, draft: string) => {
+    const name = draft.trim()
+    await window.api.updateMapLayer(id, { name })
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, name } : l))
+  }, [])
+
+  const editMode = !readMode
+
+  // ── Maps owned by this article ─────────────────────────────────────────────
+  // Selecting a map reloads its pins and visit layers; the collection hook
+  // itself is only responsible for the list and its lifecycle.
+  const {
+    maps, currentMap, importing,
+    selectMap: handleSelectMap, addMap: handleUploadNew,
+    renameMap, replaceImage, deleteMap: handleDeleteMap, patchMap,
+  } = useMapCollection({
+    owner: { kind: 'article', id: articleId },
+    onSelect: map => {
+      setPois([])
+      setSelectedPOI(null)
+      setPoiPanelOpen(false)
+      setLayers([])
+      currentMapRef.current = map?.id ?? null
+      // Pick up the visits this map was last left showing.
+      setGhostLayerIds(map ? loadVisitView(ARTICLE_SCOPE, map.id).ghostLayerIds : [])
+      if (!map) return
+      window.api.getPOIs(map.id).then(setPois)
+      window.api.getMapLayers(map.id).then(setLayers)
+    },
+  })
+
+  const handleReplaceMapImage = (map: GameMap) => replaceImage(map)
+
+  const handleRenameMap = async (name: string) => {
+    if (!renamingMap) return
+    await renameMap(renamingMap, name)
+    setRenamingMap(null)
   }
 
   // ── Context actions ────────────────────────────────────────────────────────
@@ -237,7 +196,8 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
   // ── Build context value ────────────────────────────────────────────────────
   const ctxValue: MapContextValue = {
     currentMap, pois, selectedPOI, poiPanelOpen, editMode,
-    activeLayerId: null, ghostLayerIds,
+    activeLayerId: null, ghostLayerIds, patchMap,
+    visitLayers: layers, toggleGhostLayer, renameVisitLayer,
     selectPOI, createPOI, updatePOI, deletePOI, optimisticMovePOI,
   }
 
@@ -315,87 +275,6 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
             <Upload size={11} />
             {importing ? 'Importing…' : maps.length === 0 ? 'Import Map Image' : 'Add Map'}
           </button>
-        )}
-
-        {/* Visit history — sessions that ran this map; toggle their POI layers */}
-        {currentMap && layers.length > 0 && (
-          <div ref={visitsRef} style={{ position: 'relative', marginLeft: 'auto', display: 'flex' }}>
-            <button
-              onClick={() => setVisitsOpen(v => !v)}
-              title="Session visits to this map"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '0 12px', background: 'transparent', border: 'none',
-                borderLeft: '1px solid var(--border)', height: 36,
-                color: visitsOpen || ghostLayerIds.length > 0 ? 'var(--gold)' : 'var(--text-muted)',
-                fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-                transition: 'color var(--transition)',
-              }}
-              className={visitsOpen ? '' : 'hover-gold'}
-            >
-              <History size={12} /> Visits ({layers.length})
-            </button>
-            {visitsOpen && (
-              <div style={{
-                position: 'absolute', top: 'calc(100% + 4px)', right: 0, minWidth: 210,
-                background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
-                borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)',
-                padding: '6px 0', zIndex: 60,
-              }}>
-                <div style={{ padding: '2px 12px 6px', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  Show visit POIs (ghosted)
-                </div>
-                {layers.map(l => {
-                  const on = ghostLayerIds.includes(l.id)
-                  if (renamingLayer?.id === l.id) {
-                    return (
-                      <div key={l.id} style={{ padding: '3px 12px' }}>
-                        <input
-                          className="input" autoFocus value={renamingLayer.draft}
-                          placeholder={layerLabel({ ...l, name: '' })}
-                          onChange={e => setRenamingLayer({ id: l.id, draft: e.target.value })}
-                          onBlur={saveLayerName}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') saveLayerName()
-                            if (e.key === 'Escape') setRenamingLayer(null)
-                          }}
-                          style={{ fontSize: 12, padding: '3px 8px' }}
-                        />
-                      </div>
-                    )
-                  }
-                  return (
-                    <div key={l.id} style={{ display: 'flex', alignItems: 'center' }}>
-                      <button
-                        onClick={() => setGhostLayerIds(ids => on ? ids.filter(id => id !== l.id) : [...ids, l.id])}
-                        style={{
-                          flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0 5px 12px',
-                          background: 'none', border: 'none', cursor: 'pointer', fontSize: 12,
-                          color: on ? 'var(--text-primary)' : 'var(--text-muted)', textAlign: 'left', minWidth: 0,
-                        }}
-                        className="hover-bg"
-                      >
-                        {on ? <Eye size={12} style={{ flexShrink: 0 }} /> : <EyeOff size={12} style={{ flexShrink: 0 }} />}
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{layerLabel(l)}</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{l.poi_count ?? 0}</span>
-                      </button>
-                      <button
-                        onClick={() => setRenamingLayer({ id: l.id, draft: l.name })}
-                        title="Rename visit"
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)',
-                          display: 'flex', padding: '5px 12px 5px 6px', flexShrink: 0, transition: 'color var(--transition)',
-                        }}
-                        className="hover-text"
-                      >
-                        <Pencil size={11} />
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
         )}
       </div>
 

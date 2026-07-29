@@ -1,13 +1,27 @@
 // path: src/components/MapCanvas.tsx
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useMapContext } from '../context/MapContext'
-import { MapPin, Maximize } from 'lucide-react'
-import { getPoiColor, getPoiIcon } from '../constants/POITypes'
-import type { POI } from '../types'
+import { MapPin, Maximize, List } from 'lucide-react'
+import type { MapShape, MapTool, POI } from '../types'
+import { isShapeTool } from '../types'
+import { useStore } from '../store/store'
+import MapPOIMarker, { poiColor } from './map/MapPOIMarker'
+import MapShapeLayer from './map/MapShapeLayer'
+import MeasureOverlay from './map/MeasureOverlay'
+import MapContentsPanel, { type VisitsSection } from './map/MapContentsPanel'
+import TravelMeasurePanel from './map/TravelMeasurePanel'
+import MapToolbar, { toolHint } from './map/MapToolbar'
+import ShapePopup from './map/ShapePopup'
+import ShapeEditModal from './map/ShapeEditModal'
+import { useMapShapes } from '../hooks/useMapShapes'
+import { useMapViewport } from '../hooks/useMapViewport'
+import { useMapMeasure } from '../hooks/useMapMeasure'
+import { useShapeDrawing } from '../hooks/useShapeDrawing'
+import { centroidOf, parsePoints } from '../utils/mapShapeGeometry'
+import { parseHubLinks } from '../utils/hubLinks'
 
-const MIN_SCALE = 0.2
-const MAX_SCALE = 8
-const ZOOM_SPEED = 0.001
+// Fixed pin diameter on article and session maps.
+const POI_MARKER_SIZE = 28
 
 function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef, ghost }: {
   poi: POI; onSelect: (p: POI) => void; isSelected: boolean; editMode: boolean; scale: number
@@ -17,11 +31,9 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef, g
   ghost?: boolean
 }) {
   const { updatePOI, optimisticMovePOI } = useMapContext()
-  const [showLabel, setShowLabel] = useState(false)
 
   const dragStart = useRef<{ mouseX: number; mouseY: number; poiX: number; poiY: number } | null>(null)
   const hasDragged = useRef(false)
-  const containerRef = useRef<HTMLDivElement>(null)
   const onMoveRef = useRef<((e: MouseEvent) => void) | null>(null)
   const onUpRef = useRef<((e: MouseEvent) => void) | null>(null)
 
@@ -32,15 +44,12 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef, g
     }
   }, [])
 
-  const Icon = getPoiIcon(poi.poi_type)
-  const color = getPoiColor(poi.poi_type)
-
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!editMode || ghost) return
     e.stopPropagation()
     e.preventDefault()
 
-    const outer = containerRef.current?.closest('[data-map-outer]') as HTMLElement
+    const outer = (e.currentTarget as HTMLElement).closest('[data-map-outer]') as HTMLElement
     if (!outer) return
     const rect = outer.getBoundingClientRect()
 
@@ -93,36 +102,21 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef, g
     hasDragged.current = false
   }
 
-  return (
-    <div
-      ref={containerRef}
-      onMouseDown={handleMouseDown}
-      onClick={handleClick}
-      onMouseEnter={() => setShowLabel(true)}
-      onMouseLeave={() => setShowLabel(false)}
-      style={{
-        position: 'absolute',
-        left: `${poi.x}%`,
-        top: `${poi.y}%`,
-        transform: `translate(-50%, -50%) scale(${1 / scale})`,
-        zIndex: ghost ? 5 : isSelected ? 20 : 10,
-        cursor: ghost ? 'default' : editMode ? 'grab' : 'pointer',
-        opacity: ghost ? 0.45 : 1,
-      }}
-    >
-      <div style={{
-        width: isSelected ? 34 : 28, height: isSelected ? 34 : 28,
-        borderRadius: '50%',
-        background: 'hsla(0, 0%, 0%, 0.90)',
-        border: `2px solid ${color}`,
-        boxShadow: isSelected ? `0 0 0 3px ${color}66, 0 4px 12px rgba(0,0,0,0.7)` : `0 2px 8px rgba(0,0,0,0.5)`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        transition: 'width 150ms ease, height 150ms ease, box-shadow 150ms ease',
-        pointerEvents: 'none',
-      }}>
-        <Icon size={isSelected ? 14 : 12} color={color} strokeWidth={2} />
-      </div>
+  const color = poiColor(poi)
 
+  return (
+    <MapPOIMarker
+      poi={poi}
+      // Article and session maps use one fixed pin size: these are floor plans,
+      // not a world map, so per-pin sizing would just be noise.
+      size={POI_MARKER_SIZE}
+      scale={scale}
+      selected={isSelected}
+      ghost={ghost}
+      draggable={editMode && !ghost}
+      onSelect={(_p, e) => handleClick(e)}
+      onMouseDown={(_p, e) => handleMouseDown(e)}
+    >
       {isSelected && (
         <div style={{
           position: 'absolute', inset: -6, borderRadius: '50%',
@@ -130,26 +124,14 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef, g
           animation: 'pulse 2s infinite', pointerEvents: 'none',
         }} />
       )}
-
-      {(showLabel || isSelected) && (
-        <div style={{
-          position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'var(--bg-elevated)', border: `1px solid ${color}44`,
-          borderRadius: 4, padding: '3px 8px',
-          fontSize: 11, fontFamily: 'var(--font-ui)', fontWeight: 600,
-          color: 'var(--text-primary)', whiteSpace: 'nowrap',
-          boxShadow: 'var(--shadow-sm)', pointerEvents: 'none',
-        }}>
-          {poi.label}
-        </div>
-      )}
-    </div>
+    </MapPOIMarker>
   )
 }
 
 export default function MapCanvas({ readMode }: { readMode?: boolean }) {
-  const { currentMap, pois, selectedPOI, selectPOI, createPOI, activeLayerId, ghostLayerIds, showBaseLayer } = useMapContext()
+  const { currentMap, pois, selectedPOI, selectPOI, createPOI, patchMap,
+          activeLayerId, ghostLayerIds, showBaseLayer,
+          visitLayers, toggleGhostLayer, toggleBaseLayer, renameVisitLayer } = useMapContext()
   const editMode = !readMode
 
   // Visit-layer visibility: the active layer is live; base POIs (layer_id
@@ -160,150 +142,158 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
   const showBase = showBaseLayer ?? true
   const livePois = pois.filter(p => p.layer_id == null ? showBase : p.layer_id === active)
   const ghostPois = pois.filter(p => p.layer_id != null && p.layer_id !== active && ghosts.includes(p.layer_id))
+  // The Contents list indexes what's on the canvas, so hiding a visit takes its
+  // pins out of the list too — same rule the sidebar uses, extended to ghosts.
+  const visiblePois = [...livePois, ...ghostPois]
+
+  // The Contents panel's Visits section. Absent unless a session has run this
+  // map (or there's a base layer to hide, which only attached maps have).
+  const visits: VisitsSection | null =
+    toggleGhostLayer && ((visitLayers?.length ?? 0) > 0 || toggleBaseLayer)
+      ? {
+          layers: visitLayers ?? [],
+          ghostLayerIds: ghosts,
+          onToggleGhost: toggleGhostLayer,
+          currentLayerId: active,
+          base: toggleBaseLayer
+            ? { label: 'Place (base)', shown: showBase, onToggle: toggleBaseLayer }
+            : undefined,
+          onRename: renameVisitLayer,
+        }
+      : null
+  // Mirrors the old Layers button's badge: how many extra layers are showing.
+  const extraLayersOn = ghosts.length + (toggleBaseLayer && showBase ? 1 : 0)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imageLoaded, setImageLoaded] = useState(false)
 
-  const [scale, setScaleState] = useState(1)
-  const [offset, setOffsetState] = useState({ x: 0, y: 0 })
-  const scaleRef = useRef(1)
-  const offsetRef = useRef({ x: 0, y: 0 })
+  // Pan, zoom, image fitting and viewport persistence all live in the shared
+  // hook — this surface has no tab strip, so no top inset.
+  const vp = useMapViewport({ mapId: currentMap?.id ?? null, storagePrefix: 'map-view' })
+  const {
+    containerRef: outerRef, scale, offset, scaleRef, offsetRef,
+    imgBounds, imgBoundsRef, onImageLoad, containerSize,
+    zoomIn, zoomOut, resetView, centreOn, toPercent, toContainerPoint, imgNatural,
+  } = vp
 
-  // Simple setters — no save logic here (avoids stale closure issues)
-  const setScale = (v: number) => { scaleRef.current = v; setScaleState(v) }
-  const setOffset = (v: { x: number; y: number }) => { offsetRef.current = v; setOffsetState(v) }
-
-  // Save viewport to localStorage whenever scale or offset state changes.
-  // Flush synchronously in cleanup so navigating away never cancels an unsaved position.
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => {
-    if (!currentMap) return
-    const id = currentMap.id
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(() => {
-      localStorage.setItem(`map-view-${id}`, JSON.stringify({ scale, offset }))
-      saveTimerRef.current = null
-    }, 300)
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current)
-        saveTimerRef.current = null
-        localStorage.setItem(`map-view-${id}`, JSON.stringify({ scale, offset }))
-      }
-    }
-  }, [scale, offset, currentMap?.id])
-
-  const panStart = useRef<{ mouseX: number; mouseY: number; ox: number; oy: number } | null>(null)
-  const hasPanned = useRef(false)
-  const isPanning = useRef(false)
   const [cursorStyle, setCursorStyle] = useState('grab')
 
-  const outerRef = useRef<HTMLDivElement>(null)
+  // ── Drawing shapes (districts, zones, wards…) ─────────────────────────────
+  const { currentCampaign, sessions, navigateToArticleByTitle, navigateToSessionById } = useStore()
+  // One tool owns canvas clicks, matching the world map. 'select' is the
+  // resting state — which is what finally makes a drawn region clickable on an
+  // article map, where POI placement used to be permanently armed.
+  const [tool, setTool] = useState<MapTool>('select')
+  const backToSelect = useCallback(() => setTool('select'), [])
+  // One panel lists everything on the map: pins, session visits, drawing layers.
+  // Whether it's open is remembered, like its individual sections.
+  const [showContents, setShowContents] = useState(() => localStorage.getItem('map-contents') === 'true')
+  const setContentsOpen = (open: boolean) => {
+    localStorage.setItem('map-contents', String(open))
+    setShowContents(open)
+  }
+  const [selectedShape, setSelectedShape] = useState<MapShape | null>(null)
+  const [shapePopupPos, setShapePopupPos] = useState<{ top: number; left: number } | null>(null)
+  const [editingShape, setEditingShape] = useState<MapShape | null>(null)
+  const [hoveredShapeId, setHoveredShapeId] = useState<number | null>(null)
+  const [articleList, setArticleList] = useState<{ id: number; title: string }[]>([])
+  const [poiListFilter, setPoiListFilter] = useState('')
+  const [hoveredPoiId, setHoveredPoiId] = useState<number | null>(null)
 
-  // ── Image-relative POI positioning ────────────────────────────────────────
-  const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null)
-  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
+  // Measuring works the same here as on the world map; a city or dungeon map
+  // just needs its own scale calibrating first.
+  const measure = useMapMeasure({ map: currentMap, onMapPatched: patchMap })
+  const measureMode = tool === 'measure'
+
+  // Only fetched when the link picker can actually be opened.
+  useEffect(() => {
+    if (!editingShape || !currentCampaign) return
+    window.api.getArticlesList({ campaignId: currentCampaign.id }).then(list =>
+      setArticleList(list.map(a => ({ id: a.id, title: a.title }))))
+  }, [editingShape, currentCampaign?.id])
+
+  const shapeStore = useMapShapes(currentMap?.id ?? null)
+
+  const drawing = useShapeDrawing({
+    mapId: currentMap?.id ?? null,
+    activeLayerId: shapeStore.activeLayerId,
+    setShapes: shapeStore.setShapes,
+    box: imgBounds,
+    scale,
+    tool,
+    enabled: editMode,
+    defaultFill: '#c8a84b',
+    defaultStroke: '#c8a84b',
+    onCreated: shape => setEditingShape(shape),
+    onToolFinished: backToSelect,
+  })
+
+  useEffect(() => { drawing.setToPercent(toPercent) }, [drawing.setToPercent, toPercent])
+
+  // Read mode never draws; leaving the map or entering read mode drops the tools.
+  useEffect(() => { if (readMode) setTool('select') }, [readMode])
+
+  // Every tool that places something gets the crosshair; Select still pans.
+  const placing = editMode && tool !== 'select'
 
   useEffect(() => {
-    const el = outerRef.current
-    if (!el) return
-    const ro = new ResizeObserver(entries => {
-      const { width, height } = entries[0].contentRect
-      setContainerSize({ w: width, h: height })
-    })
-    ro.observe(el)
-    setContainerSize({ w: el.clientWidth, h: el.clientHeight })
-    return () => ro.disconnect()
-  }, [])
+    setCursorStyle(placing ? 'crosshair' : 'grab')
+  }, [placing])
 
-  const imgBounds = useMemo(() => {
-    if (!imgNatural || containerSize.w === 0 || containerSize.h === 0) return null
-    const s = Math.min(containerSize.w / imgNatural.w, containerSize.h / imgNatural.h)
-    const w = imgNatural.w * s
-    const h = imgNatural.h * s
-    return { left: (containerSize.w - w) / 2, top: (containerSize.h - h) / 2, w, h }
-  }, [imgNatural, containerSize])
+  const lockedLayerIds = shapeStore.layers.filter(l => l.locked === 1).map(l => l.id)
+  // Same rule as the hub map: shapes take clicks when viewing or selecting, but
+  // never while a draw tool is armed or POIs are being placed.
+  const shapesInteractive = tool === 'select'
 
-  const imgBoundsRef = useRef(imgBounds)
-  imgBoundsRef.current = imgBounds
-
-  // Restore saved viewport when switching maps, or default to 1/{0,0}
+  // The hook restores the saved viewport on map change; this only loads the image.
   useEffect(() => {
     setImageLoaded(false)
-    setImgNatural(null)
     if (!currentMap) { setImageUrl(null); return }
-    const saved = localStorage.getItem(`map-view-${currentMap.id}`)
-    if (saved) {
-      try {
-        const { scale: s, offset: o } = JSON.parse(saved)
-        scaleRef.current = s; setScaleState(s)
-        offsetRef.current = o; setOffsetState(o)
-      } catch {
-        scaleRef.current = 1; setScaleState(1)
-        offsetRef.current = { x: 0, y: 0 }; setOffsetState({ x: 0, y: 0 })
-      }
-    } else {
-      scaleRef.current = 1; setScaleState(1)
-      offsetRef.current = { x: 0, y: 0 }; setOffsetState({ x: 0, y: 0 })
-    }
     window.api.getImagePath(currentMap.image_path).then(setImageUrl)
   }, [currentMap?.id, currentMap?.image_path])
 
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault()
-    const outer = outerRef.current
-    if (!outer) return
-    const rect = outer.getBoundingClientRect()
-    const cx = e.clientX - rect.left
-    const cy = e.clientY - rect.top
-    const currentScale = scaleRef.current
-    const rawDelta = -e.deltaY * ZOOM_SPEED
-    const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, currentScale * (1 + rawDelta)))
-    const zoomFactor = newScale / currentScale
-    const currentOffset = offsetRef.current
-    setScale(newScale)
-    setOffset({
-      x: cx - zoomFactor * (cx - currentOffset.x),
-      y: cy - zoomFactor * (cy - currentOffset.y),
-    })
-  }, [])
-
-  useEffect(() => {
-    const el = outerRef.current
-    if (!el) return
-    el.addEventListener('wheel', handleWheel, { passive: false })
-    return () => el.removeEventListener('wheel', handleWheel)
-  }, [handleWheel])
-
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return
-    panStart.current = { mouseX: e.clientX, mouseY: e.clientY, ox: offsetRef.current.x, oy: offsetRef.current.y }
-    hasPanned.current = false
-    isPanning.current = false
+    // A box tool claims this drag for the shape it's drawing.
+    const pt = toPercent(e.clientX, e.clientY)
+    if (pt && drawing.handleCanvasMouseDown(pt, e)) return
+    vp.panDown(e)
     setCursorStyle('grabbing')
   }
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!panStart.current) return
-    const dx = e.clientX - panStart.current.mouseX
-    const dy = e.clientY - panStart.current.mouseY
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-      hasPanned.current = true
-      isPanning.current = true
+    if (drawing.tool === 'polygon') {
+      const pt = toPercent(e.clientX, e.clientY)
+      if (pt) drawing.handleCanvasMouseMove(pt)
     }
-    if (isPanning.current) {
-      setOffset({ x: panStart.current.ox + dx, y: panStart.current.oy + dy })
-    }
+    vp.panMove(e)
   }
 
   const handleMouseUp = () => {
-    panStart.current = null
-    isPanning.current = false
-    setCursorStyle(editMode ? 'crosshair' : 'grab')
+    vp.panUp()
+    setCursorStyle(placing ? 'crosshair' : 'grab')
+  }
+
+  // Canvas-space position of a pin, for snapping a measure click onto it.
+  const nearestPoi = (px: number, py: number, thresh: number): POI | null => {
+    let best: POI | null = null
+    let bestD = thresh
+    for (const poi of pois) {
+      const p = toContainerPoint(poi)
+      const d = Math.hypot(p.x - px, p.y - py)
+      if (d < bestD) { bestD = d; best = poi }
+    }
+    return best
+  }
+
+  const focusPOIFromList = (poi: POI) => {
+    centreOn(poi)
+    // Ghosted pins belong to another visit and aren't clickable on the canvas
+    // either — centre on one, but don't open it for editing.
+    if (livePois.some(p => p.id === poi.id)) selectPOI(poi)
   }
 
   const handleClick = useCallback(async (e: React.MouseEvent) => {
-    if (hasPanned.current) { hasPanned.current = false; return }
-    if (!editMode || readMode) return
+    if (vp.consumePan()) return
     const outer = outerRef.current
     if (!outer || !imgBoundsRef.current) return
     const rect = outer.getBoundingClientRect()
@@ -315,32 +305,90 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     const x = (innerX - iL) / iW * 100
     const y = (innerY - iT) / iH * 100
     if (x < 0 || x > 100 || y < 0 || y > 100) return
-    await createPOI(x, y)
-  }, [editMode, createPOI])
 
-  const zoomCenter = () => {
+    if (measureMode) {
+      // Snap onto a pin if the click lands near one, so room-to-room measuring
+      // starts from the marker rather than approximately near it.
+      let mx = x, my = y
+      const snap = nearestPoi(cx, cy, 16)
+      if (snap) { mx = snap.x; my = snap.y }
+      measure.addPoint(mx, my, snap?.label)
+      return
+    }
+
+    // A shape tool takes the click to place a vertex.
+    if (drawing.handleCanvasClick({ x, y })) return
+
+    if (tool === 'pin') {
+      if (!editMode || readMode) return
+      await createPOI(x, y)
+      // The new pin opens in the sidebar, so hand the canvas back to Select.
+      backToSelect()
+      return
+    }
+
+    // Select: reaching here means the click missed everything. Shape clicks
+    // stop propagating before this.
+    if (tool === 'select') {
+      drawing.setSelectedId(null)
+      if (selectedShape) { setSelectedShape(null); setShapePopupPos(null) }
+    }
+  }, [editMode, readMode, createPOI, tool, drawing, selectedShape, backToSelect, measureMode, measure])
+
+  // ── Shape interactions ────────────────────────────────────────────────────
+  // The popup opens where the pointer landed, clamped inside the canvas. A
+  // region has no single obvious anchor the way a pin does, and the click point
+  // is the part of it the user was actually looking at.
+  const popupPosFromClick = (clientX: number, clientY: number) => {
     const outer = outerRef.current
-    if (!outer) return { cx: 0, cy: 0 }
-    return { cx: outer.offsetWidth / 2, cy: outer.offsetHeight / 2 }
+    if (!outer) return { top: 12, left: 12 }
+    const rect = outer.getBoundingClientRect()
+    const popW = 224, popH = 200
+    let left = clientX - rect.left + 12
+    let top = clientY - rect.top - 12
+    if (left + popW > rect.width - 4) left = Math.max(4, clientX - rect.left - popW - 12)
+    if (top + popH > rect.height - 8) top = Math.max(4, rect.height - popH - 8)
+    return { top, left }
   }
 
-  const zoomIn = () => {
-    const { cx, cy } = zoomCenter()
-    const newScale = Math.min(MAX_SCALE, scaleRef.current * 1.25)
-    const zf = newScale / scaleRef.current
-    setOffset({ x: cx - zf * (cx - offsetRef.current.x), y: cy - zf * (cy - offsetRef.current.y) })
-    setScale(newScale)
+  const handleShapeClick = (shape: MapShape, e: React.MouseEvent) => {
+    // The click that ends a drag was a move, not a selection.
+    if (drawing.consumeSuppressedClick()) return
+    // Clicking the already-open shape closes it again.
+    if (selectedShape?.id === shape.id) {
+      drawing.setSelectedId(null)
+      setSelectedShape(null)
+      setShapePopupPos(null)
+      return
+    }
+    drawing.setSelectedId(shape.id)
+    setSelectedShape(shape)
+    setShapePopupPos(popupPosFromClick(e.clientX, e.clientY))
   }
 
-  const zoomOut = () => {
-    const { cx, cy } = zoomCenter()
-    const newScale = Math.max(MIN_SCALE, scaleRef.current * 0.8)
-    const zf = newScale / scaleRef.current
-    setOffset({ x: cx - zf * (cx - offsetRef.current.x), y: cy - zf * (cy - offsetRef.current.y) })
-    setScale(newScale)
+  const handleSaveShape = async (result: Parameters<typeof shapeStore.updateShape>[1]) => {
+    if (!editingShape) return
+    const updated = await shapeStore.updateShape(editingShape.id, result)
+    setSelectedShape(prev => prev?.id === updated.id ? updated : prev)
+    setEditingShape(null)
   }
 
-  const resetView = () => { setScale(1); setOffset({ x: 0, y: 0 }) }
+  const handleDeleteShape = async () => {
+    if (!editingShape) return
+    await drawing.deleteShape(editingShape.id)
+    setEditingShape(null)
+    setSelectedShape(null)
+  }
+
+  // Recentre the viewport on a shape chosen from the layer panel.
+  const focusShape = (shape: MapShape) => {
+    const centre = centroidOf(shape.shape_type, parsePoints(shape.points))
+    if (centre) centreOn(centre)
+    drawing.setSelectedId(shape.id)
+    setSelectedShape(shape)
+    // Focused from the list, so the shape is now centred — anchor there.
+    setShapePopupPos({ top: containerSize.h / 2 - 16, left: containerSize.w / 2 + 12 })
+  }
 
   if (!currentMap) {
     return (
@@ -356,6 +404,125 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+
+      {/* Tool strip — top-left, clear of the zoom cluster on the right. Read
+          mode gets no tools, only the layer switchboard. */}
+      <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 30, display: 'flex', alignItems: 'flex-start', gap: 6 }}
+        onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+        {editMode && (
+          <MapToolbar
+            tool={tool}
+            available={['select', 'pin', 'polygon', 'rect', 'triangle', 'ellipse', 'measure']}
+            onPick={next => {
+              setTool(next)
+              if (isShapeTool(next)) setContentsOpen(true)
+              if (next !== 'select') { setSelectedShape(null); setShapePopupPos(null) }
+            }}
+          />
+        )}
+        <button
+          onClick={() => setContentsOpen(!showContents)}
+          title={showContents ? 'Hide contents' : 'Everything on this map: points, visits, layers'}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            background: showContents ? 'rgba(200,115,58,0.2)' : 'rgba(21,18,14,0.85)',
+            border: `1px solid ${showContents ? 'rgba(200,115,58,0.4)' : 'var(--border-light)'}`,
+            color: showContents ? '#c8733a' : 'var(--text-secondary)',
+            borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer',
+            backdropFilter: 'blur(8px)', transition: 'all var(--transition)',
+          }}
+        >
+          <List size={12} /> Contents{extraLayersOn > 0 ? ` +${extraLayersOn}` : ''}
+        </button>
+      </div>
+
+      {showContents && (
+        <div style={{ position: 'absolute', top: 46, left: 12, zIndex: 29, maxHeight: 'calc(100% - 92px)', display: 'flex' }}>
+          <MapContentsPanel
+            stacked
+            onClose={() => setContentsOpen(false)}
+            pois={visiblePois}
+            selectedPoiId={selectedPOI?.id ?? null}
+            hoveredPoiId={hoveredPoiId}
+            poiFilter={poiListFilter}
+            onPoiFilterChange={setPoiListFilter}
+            onPoiHover={setHoveredPoiId}
+            onPoiFocus={focusPOIFromList}
+            visits={visits}
+            layers={shapeStore.layers}
+            shapes={shapeStore.shapes}
+            activeLayerId={shapeStore.activeLayerId}
+            editable={editMode}
+            onSetActiveLayer={shapeStore.setActiveLayerId}
+            onToggleLayerVisible={shapeStore.toggleLayerVisible}
+            onToggleLayerLocked={shapeStore.toggleLayerLocked}
+            onRenameLayer={shapeStore.renameLayer}
+            onDeleteLayer={shapeStore.deleteLayer}
+            onCreateLayer={() => shapeStore.createLayer()}
+            onSelectShape={focusShape}
+          />
+        </div>
+      )}
+
+      {/* Travel panel — top-right, clear of the left column and the zoom cluster */}
+      {measureMode && (
+        <div style={{ position: 'absolute', top: 46, right: 12, zIndex: 31 }}
+          onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+          <TravelMeasurePanel
+            scale={measure.mapScale}
+            natural={imgNatural}
+            waypoints={measure.waypoints}
+            isCalibrating={measure.isCalibrating}
+            calibDraft={measure.calibDraft}
+            onExit={() => { backToSelect(); measure.reset() }}
+            onBeginCalibrate={measure.beginCalibrate}
+            onCancelCalibrate={measure.cancelCalibrate}
+            onCommitScale={measure.commitScale}
+            onUndoPoint={measure.undoPoint}
+            onClearRoute={measure.clearRoute}
+          />
+        </div>
+      )}
+
+      {/* Shape popup, positioned in canvas space above the transform */}
+      {selectedShape && shapePopupPos && !editingShape && (
+        <div style={{ position: 'absolute', top: shapePopupPos.top, left: shapePopupPos.left, zIndex: 31 }}
+          onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+          <ShapePopup
+            shape={selectedShape}
+            links={parseHubLinks(selectedShape.hub_links)}
+            editMode={editMode}
+            onClose={() => { setSelectedShape(null); setShapePopupPos(null) }}
+            onEdit={() => setEditingShape(selectedShape)}
+            onNavigateWiki={title => navigateToArticleByTitle(title)}
+            onNavigateSession={id => navigateToSessionById(id)}
+          />
+        </div>
+      )}
+
+      {/* One hint, driven by the active tool */}
+      {editMode && (
+        <div style={{ position: 'absolute', bottom: 10, left: 12, fontSize: 10, color: 'var(--text-muted)', pointerEvents: 'none', userSelect: 'none', zIndex: 30, maxWidth: 380, lineHeight: 1.5 }}>
+          {measureMode
+            ? measure.hint
+            : isShapeTool(tool) && shapeStore.layers.length === 0
+              ? 'Add a drawing layer in the Layers panel, then draw onto it'
+              : toolHint(tool, drawing.isDrawing)}
+        </div>
+      )}
+
+      {editingShape && (
+        <ShapeEditModal
+          shape={editingShape}
+          links={parseHubLinks(editingShape.hub_links)}
+          layers={shapeStore.layers}
+          sessions={sessions}
+          articles={articleList}
+          onSave={handleSaveShape}
+          onDelete={handleDeleteShape}
+          onClose={() => setEditingShape(null)}
+        />
+      )}
 
       {/* Zoom controls */}
       <div style={{
@@ -395,7 +562,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
             <img
               src={imageUrl}
               alt={currentMap.name}
-              onLoad={e => { setImageLoaded(true); setImgNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight }) }}
+              onLoad={e => { setImageLoaded(true); onImageLoad(e) }}
               style={{
                 width: '100%', height: '100%', objectFit: 'contain', display: 'block',
                 opacity: imageLoaded ? 1 : 0, transition: 'opacity 300ms ease',
@@ -407,6 +574,35 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
 
           {imageLoaded && imgBounds && (
             <div style={{ position: 'absolute', left: imgBounds.left, top: imgBounds.top, width: imgBounds.w, height: imgBounds.h }}>
+              {measureMode && (
+                <MeasureOverlay
+                  scale={scale}
+                  mapScale={measure.mapScale}
+                  waypoints={measure.waypoints}
+                  isCalibrating={measure.isCalibrating}
+                  calibPts={measure.calibPts}
+                />
+              )}
+              {/* Regions paint under the pins so a district never hides a marker. */}
+              <MapShapeLayer
+                shapes={shapeStore.shapes}
+                layers={shapeStore.layers}
+                box={imgBounds}
+                scale={scale}
+                interactive={shapesInteractive}
+                lockedLayerIds={lockedLayerIds}
+                selectedId={drawing.selectedId ?? selectedShape?.id ?? null}
+                hoveredId={hoveredShapeId}
+                showHandles={drawing.editing}
+                draft={drawing.draft}
+                livePoints={drawing.livePoints}
+                onShapeClick={handleShapeClick}
+                onShapeHover={setHoveredShapeId}
+                onBodyDown={drawing.onBodyDown}
+                onVertexDown={drawing.onVertexDown}
+                onVertexContextMenu={drawing.onVertexContextMenu}
+                onMidpointDown={drawing.onMidpointDown}
+              />
               {ghostPois.map(poi => (
                 <POIMarker
                   key={poi.id}

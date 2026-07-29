@@ -6,6 +6,7 @@ import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014
 import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
 import { applyTheme, getStoredTheme, applyTextTheme, getStoredTextTheme } from '../constants/themes'
 import type { ThemeKey, TextThemeKey } from '../constants/themes'
+import { loadVisitView, saveVisitView, sessionScope } from '../utils/visitLayers'
 
 function getStarterMonsters(system: string) {
   if (system === 'D&D 5e 2014') return MONSTERS_2014
@@ -104,6 +105,8 @@ interface AppStore {
   detachMapFromSession: (mapId: number) => Promise<void>
   ghostLayerIds: number[]
   toggleGhostLayer: (layerId: number) => void
+  // Persist the current map's layer visibility for this session tab.
+  rememberVisitView: () => void
   // On attached maps the place's base POIs start hidden — tonight's view stays
   // clean; the Layers control toggles them in.
   showBaseLayer: boolean
@@ -698,12 +701,21 @@ export const useStore = create<AppStore>((set, get) => ({
 
   loadMaps: async (sessionId) => {
     const maps = await window.api.getMaps(sessionId)
-    set({ maps, currentMap: maps[0] || null })
+    // Without this the first tab would inherit whatever layers the previously
+    // viewed map had showing.
+    const view = maps[0]
+      ? loadVisitView(sessionScope(sessionId), maps[0].id)
+      : { ghostLayerIds: [], showBaseLayer: false }
+    set({ maps, currentMap: maps[0] || null, ...view })
     if (maps[0]) get().loadPOIs(maps[0].id)
   },
 
   selectMap: (map) => {
-    set({ currentMap: map, pois: [], selectedPOI: null, poiPanelOpen: false, ghostLayerIds: [], showBaseLayer: false })
+    set({
+      currentMap: map, pois: [], selectedPOI: null, poiPanelOpen: false,
+      // Restore the layers this map was last left showing in this session.
+      ...loadVisitView(sessionScope(get().currentSession?.id), map.id),
+    })
     get().loadPOIs(map.id)
   },
 
@@ -783,22 +795,36 @@ export const useStore = create<AppStore>((set, get) => ({
   ghostLayerIds: [],
   showBaseLayer: false,
 
-  toggleGhostLayer: (layerId) => set(s => ({
-    ghostLayerIds: s.ghostLayerIds.includes(layerId)
-      ? s.ghostLayerIds.filter(id => id !== layerId)
-      : [...s.ghostLayerIds, layerId],
-  })),
+  // Both toggles persist the resulting view, so returning to this map tab —
+  // or to this session tomorrow — finds the same layers showing.
+  rememberVisitView: () => {
+    const { currentMap, currentSession, ghostLayerIds, showBaseLayer } = get()
+    if (!currentMap) return
+    saveVisitView(sessionScope(currentSession?.id), currentMap.id, { ghostLayerIds, showBaseLayer })
+  },
 
-  toggleBaseLayer: () => set(s => {
-    const showing = !s.showBaseLayer
-    // Hiding the base layer while one of its POIs is open would leave the
-    // panel editing an invisible pin — deselect instead.
-    const hidingSelected = !showing && s.selectedPOI?.layer_id == null && s.currentMap?.attached
-    return {
-      showBaseLayer: showing,
-      ...(hidingSelected ? { selectedPOI: null, poiPanelOpen: false } : {}),
-    }
-  }),
+  toggleGhostLayer: (layerId) => {
+    set(s => ({
+      ghostLayerIds: s.ghostLayerIds.includes(layerId)
+        ? s.ghostLayerIds.filter(id => id !== layerId)
+        : [...s.ghostLayerIds, layerId],
+    }))
+    get().rememberVisitView()
+  },
+
+  toggleBaseLayer: () => {
+    set(s => {
+      const showing = !s.showBaseLayer
+      // Hiding the base layer while one of its POIs is open would leave the
+      // panel editing an invisible pin — deselect instead.
+      const hidingSelected = !showing && s.selectedPOI?.layer_id == null && s.currentMap?.attached
+      return {
+        showBaseLayer: showing,
+        ...(hidingSelected ? { selectedPOI: null, poiPanelOpen: false } : {}),
+      }
+    })
+    get().rememberVisitView()
+  },
 
   attachMapToSession: async (mapId, layerId) => {
     const { currentSession, currentCampaign } = get()

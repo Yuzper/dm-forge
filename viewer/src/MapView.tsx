@@ -3,7 +3,21 @@
 // non-transformed overlay). Pan by dragging, zoom with the wheel/buttons;
 // clicking a pin opens its linked article.
 import { useRef, useState } from 'react'
-import type { Bundle } from './types'
+import type { Bundle, PShape } from './types'
+
+// Percent coords → screen coords, matching the pin maths below.
+function screenPoints(shape: PShape, nat: { w: number; h: number }, t: { k: number; x: number; y: number }) {
+  try {
+    const pts = JSON.parse(shape.points || '[]')
+    if (!Array.isArray(pts)) return []
+    return pts.map((p: any) => ({
+      x: t.x + (p.x / 100 * nat.w) * t.k,
+      y: t.y + (p.y / 100 * nat.h) * t.k,
+    }))
+  } catch {
+    return []
+  }
+}
 
 export default function MapView({ bundle, onOpen }: {
   bundle: Bundle
@@ -72,6 +86,65 @@ export default function MapView({ bundle, onOpen }: {
           style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.k})`, transformOrigin: '0 0' }} />
         {nat && (
           <div className="map-overlay">
+            {/* Regions paint under the pins. Largest first, so a district drawn
+                inside a kingdom stays clickable on top of it. */}
+            {(map.shapes ?? []).length > 0 && (
+              <svg className="map-shapes" width="100%" height="100%" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                {[...(map.shapes ?? [])]
+                  .map(s => ({ s, pts: screenPoints(s, nat, t) }))
+                  .filter(({ s, pts }) => pts.length >= (s.shape_type === 'ellipse' ? 2 : 3))
+                  .sort((a, b) => {
+                    const area = (pts: { x: number; y: number }[]) => {
+                      const xs = pts.map(p => p.x), ys = pts.map(p => p.y)
+                      return (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys))
+                    }
+                    return area(b.pts) - area(a.pts)
+                  })
+                  .map(({ s, pts }) => {
+                    const xs = pts.map(p => p.x), ys = pts.map(p => p.y)
+                    const clickable = s.articleId != null
+                    const common = {
+                      fill: s.fill_color,
+                      fillOpacity: s.fill_opacity,
+                      stroke: s.stroke_color,
+                      strokeWidth: s.stroke_width,
+                      strokeDasharray: s.stroke_style === 'dashed' ? '7 5' : undefined,
+                      strokeLinejoin: 'round' as const,
+                      style: {
+                        pointerEvents: (clickable ? 'all' : 'none') as 'all' | 'none',
+                        cursor: clickable ? 'pointer' : undefined,
+                      },
+                      onClick: clickable ? () => onOpen(s.articleId!) : undefined,
+                    }
+                    const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+                    const cy = (Math.min(...ys) + Math.max(...ys)) / 2
+                    return (
+                      <g key={s.id}>
+                        {s.shape_type === 'ellipse'
+                          ? <ellipse cx={cx} cy={cy}
+                              rx={(Math.max(...xs) - Math.min(...xs)) / 2}
+                              ry={(Math.max(...ys) - Math.min(...ys)) / 2}
+                              {...common}><title>{s.label}</title></ellipse>
+                          : <polygon points={pts.map(p => `${p.x},${p.y}`).join(' ')} {...common}>
+                              <title>{s.label}</title>
+                            </polygon>}
+                        {s.show_label === 1 && s.label && (
+                          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+                            pointerEvents="none"
+                            style={{
+                              fontSize: 13, fontFamily: 'var(--font-ui)', fontWeight: 600,
+                              fill: '#fff', paintOrder: 'stroke',
+                              stroke: 'rgba(0,0,0,0.75)', strokeWidth: 3, strokeLinejoin: 'round',
+                              userSelect: 'none',
+                            }}>
+                            {s.label}
+                          </text>
+                        )}
+                      </g>
+                    )
+                  })}
+              </svg>
+            )}
             {map.pois.map(p => {
               const sx = t.x + (p.x / 100 * nat.w) * t.k
               const sy = t.y + (p.y / 100 * nat.h) * t.k

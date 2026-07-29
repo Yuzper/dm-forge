@@ -37,6 +37,20 @@ import {
 import { ArticleRelationsPanel, RelationWebsSection, MemberCountSection, AffiliationsSection, GeographySection } from './ArticleRelationsPanel'
 import { ClocksSection } from '../clocks/ClocksSection'
 
+// Item Type/Rarity live in the item stat block; the sidebar tracks are just a
+// mirror for quick display, so reseed them from the stat block on every load
+// rather than trusting whatever was last persisted in the tracks JSON.
+function withItemTracks(article: Article): Record<string, string> {
+  let tracks: Record<string, string> = {}
+  try { tracks = JSON.parse(article.tracks) } catch { /* ignore */ }
+  if (article.article_type === 'item') {
+    const ib = parseItemStatBlock(article.item_block)
+    if (ib.category) tracks = { ...tracks, Type: ib.category }
+    if (ib.rarity) tracks = { ...tracks, Rarity: ib.rarity }
+  }
+  return tracks
+}
+
 // ─── Track Row ─────────────────────────────────────────────────────────────────
 
 function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions, visControl }: {
@@ -527,7 +541,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const [title, setTitle]             = useState(article.title)
   const [content, setContent]         = useState(article.content)
   const [articleType, setArticleType] = useState<ArticleType>(article.article_type as ArticleType)
-  const [tracks, setTracks]           = useState<Record<string, string>>(() => { try { return JSON.parse(article.tracks) } catch { return {} } })
+  const [tracks, setTracks]           = useState<Record<string, string>>(() => withItemTracks(article))
   // Per-field player visibility. DM-only metadata, so it saves straight away
   // through the store (not via the article's dirty/save cycle).
   const [trackVis, setTrackVis]       = useState<TrackVisibility>(() => { try { return JSON.parse(article.track_visibility || '{}') } catch { return {} } })
@@ -568,8 +582,8 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const hasMap       = articleType === 'location'
   const hasQuest     = articleType === 'quest'
 
-  const pendingRef = useRef({ title, content, articleType, tracks, statblock, variants, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, reward })
-  pendingRef.current = { title, content, articleType, tracks, statblock, variants, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, reward }
+  const pendingRef = useRef({ title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, reward })
+  pendingRef.current = { title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, reward }
 
   useEffect(() => {
     return () => {
@@ -578,6 +592,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
         title: p.title, content: p.content, article_type: p.articleType,
         tracks: JSON.stringify(p.tracks),
         statblock: p.articleType === 'creature' ? JSON.stringify(p.variants) : JSON.stringify(p.statblock),
+        item_block: JSON.stringify(p.itemBlock),
         loot_table: p.lootTableJson, loot_table_id: p.lootTableId,
         tags: JSON.stringify(p.tags), cover_image: p.coverImage, portrait_image: p.portraitImage,
         substeps: JSON.stringify(p.substeps),
@@ -589,7 +604,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   useEffect(() => {
     setTitle(article.title); setContent(article.content)
     setArticleType(article.article_type as ArticleType)
-    setTracks(() => { try { return JSON.parse(article.tracks) } catch { return {} } })
+    setTracks(() => withItemTracks(article))
     setTrackVis(() => { try { return JSON.parse(article.track_visibility || '{}') } catch { return {} } })
     setStatblock(parseStatBlock(article.statblock))
     setVariants(parseCreatureVariants(article.statblock))
@@ -674,7 +689,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
     if (!dirty) return
     const t = setTimeout(save, 1500)
     return () => clearTimeout(t)
-  }, [dirty, title, content, articleType, tracks, statblock, variants, lootTableJson, lootTableId, tags, coverImage, portraitImage])
+  }, [dirty, title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage])
 
   const pickImage = async (setter: (v: string | null) => void) => {
     const path = await window.api.selectImageFile()
@@ -833,12 +848,12 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                       </div>
                 ) : <ItemStatBlockEditor value={itemBlock} onChange={ib => {
                       setItemBlock(ib)
-                      // Mirror the item-block rarity into the article's Rarity track —
-                      // it drives the hover card, timeline and relation styling, and
-                      // there's no separate input for it. Keep the auto-tags in sync too.
+                      // Mirror the item-block Type/Rarity into the article's Type/Rarity
+                      // tracks — they drive the hover card, timeline and relation styling,
+                      // and there's no separate input for them. Keep auto-tags in sync too.
                       setTracks(prev => {
-                        if ((prev.Rarity ?? '') === ib.rarity) return prev
-                        const updated = { ...prev, Rarity: ib.rarity }
+                        if ((prev.Type ?? '') === ib.category && (prev.Rarity ?? '') === ib.rarity) return prev
+                        const updated = { ...prev, Type: ib.category, Rarity: ib.rarity }
                         const oldTrackTags = getTrackTags(prev)
                         const newTrackTags = getTrackTags(updated)
                         setTags(prevTags => {
@@ -1030,16 +1045,16 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                   </div>
                 ) : (
                   currentTypeTracks.map(([trackName, options]) => {
-                    // Item rarity is owned by the Item Stats block — show it read-only here
-                    if (articleType === 'item' && trackName === 'Rarity') {
-                      const val = tracks['Rarity']
+                    // Item Type and Rarity are owned by the Item Stats block — show them read-only here
+                    if (articleType === 'item' && (trackName === 'Type' || trackName === 'Rarity')) {
+                      const val = tracks[trackName]
                       return (
                         <div key={articleType + trackName} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>Rarity</span>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>{trackName}</span>
                           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                             <span style={{ fontSize: 12, color: val ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{val || '—'}</span>
                             <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>set in Item Stats</span>
-                            <span style={{ marginLeft: 'auto' }}>{renderVis('Rarity')}</span>
+                            <span style={{ marginLeft: 'auto' }}>{renderVis(trackName)}</span>
                           </div>
                         </div>
                       )

@@ -90,6 +90,47 @@ export function initDatabase() {
       created_at TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Drawing layers for map shapes (kingdom borders, city districts…). These
+    -- are deliberately NOT map_layers: those are per-visit POI layers owned by
+    -- sessions (see session_maps below), created implicitly when a session
+    -- attaches a map. Shape layers are named, hand-made and purely cartographic,
+    -- so they live apart rather than polluting the visit picker.
+    CREATE TABLE IF NOT EXISTS map_shape_layers (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      map_id     INTEGER NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+      name       TEXT    NOT NULL DEFAULT 'Layer',
+      visible    INTEGER NOT NULL DEFAULT 1,
+      locked     INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- One drawn shape. points is JSON [{x,y}] in the same 0–100 percentage
+    -- space POIs use, so shapes track the image through pan/zoom identically.
+    -- Only two primitives exist: 'polygon' (n points) and 'ellipse' (2 points =
+    -- the bounding box). Rectangles and triangles are polygon presets, which
+    -- keeps one vertex-editing path for everything and lets a rectangle be
+    -- dragged out of square. Storing an ellipse as its bbox rather than a
+    -- radius makes it survive non-square images without aspect correction.
+    CREATE TABLE IF NOT EXISTS map_shapes (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      map_id       INTEGER NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+      layer_id     INTEGER REFERENCES map_shape_layers(id) ON DELETE CASCADE,
+      label        TEXT    NOT NULL DEFAULT '',
+      shape_type   TEXT    NOT NULL DEFAULT 'polygon',
+      points       TEXT    NOT NULL DEFAULT '[]',
+      fill_color   TEXT    NOT NULL DEFAULT '#c8a84b',
+      fill_opacity REAL    NOT NULL DEFAULT 0.2,
+      stroke_color TEXT    NOT NULL DEFAULT '#c8a84b',
+      stroke_width REAL    NOT NULL DEFAULT 2,
+      stroke_style TEXT    NOT NULL DEFAULT 'solid',
+      content      TEXT    NOT NULL DEFAULT '{"type":"doc","content":[]}',
+      hub_links    TEXT    NOT NULL DEFAULT '[]',
+      show_label   INTEGER NOT NULL DEFAULT 1,
+      sort_order   INTEGER NOT NULL DEFAULT 0,
+      created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- A session "runs" an article-owned map on a specific layer. Several
     -- sessions may share one layer (a visit spanning multiple sessions);
     -- a later revisit links the same map with a fresh layer.
@@ -297,6 +338,8 @@ export function initDatabase() {
       WHERE player_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_grants_campaign ON visibility_grants(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_players_campaign ON players(campaign_id);
+    CREATE INDEX IF NOT EXISTS idx_shape_layers_map ON map_shape_layers(map_id);
+    CREATE INDEX IF NOT EXISTS idx_shapes_map ON map_shapes(map_id);
   `)
 
   // ── Migrations for existing databases ────────────────────────────────────────

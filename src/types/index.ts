@@ -61,7 +61,24 @@ export type TravelPace = 'fast' | 'normal' | 'slow'
 export interface MapScale {
   x1: number; y1: number; x2: number; y2: number
   distance: number            // real-world length of that line, in `unit`
-  unit: 'mi' | 'km'
+  unit: DistanceUnit
+}
+
+// Overland units (mi/km) and local ones (ft/m). A world map is calibrated in
+// the former, a city or dungeon map in the latter — which is why travel time
+// only makes sense for the overland pair.
+export type DistanceUnit = 'mi' | 'km' | 'ft' | 'm'
+
+export const DISTANCE_UNITS: { value: DistanceUnit; label: string }[] = [
+  { value: 'mi', label: 'miles' },
+  { value: 'km', label: 'km' },
+  { value: 'ft', label: 'feet' },
+  { value: 'm',  label: 'metres' },
+]
+
+/** Local scales measure a room or a street, not a journey. */
+export function isLocalUnit(unit: DistanceUnit): boolean {
+  return unit === 'ft' || unit === 'm'
 }
 
 // A visit layer on a map: the POIs made for one visit to the location (which
@@ -79,6 +96,64 @@ export interface MapLayer {
 export interface AttachableMap extends GameMap {
   article_title: string
   layers: MapLayer[]
+}
+
+// A hand-made drawing layer on a map (kingdom borders, city districts…).
+// Unrelated to MapLayer above, which is a session's visit layer for POIs.
+export interface MapShapeLayer {
+  id: number
+  map_id: number
+  name: string
+  visible: number   // 0/1 — SQLite has no boolean
+  locked: number    // 0/1 — locked layers can't be selected or edited on canvas
+  sort_order: number
+  created_at: string
+  shape_count?: number
+}
+
+// Two primitives only. Rectangles and triangles are polygon presets, so vertex
+// editing has a single code path and a rectangle can be dragged out of square.
+export type MapShapeType = 'polygon' | 'ellipse'
+
+// Preset picked in the toolbar. All but 'ellipse' produce a polygon.
+export type ShapeTool = 'polygon' | 'rect' | 'triangle' | 'ellipse'
+
+// What a click on the map surface does. One enum replaces the old trio of
+// mutually exclusive mode booleans (editMode/measureMode/shapeMode), which each
+// had to remember to switch the others off — a standing source of bugs. Exactly
+// one tool is active, and it owns canvas clicks.
+export type MapTool = 'select' | 'pin' | 'measure' | ShapeTool
+
+// 'select' is the resting state: nothing is placed, and POIs and shapes are
+// both clickable to open their details.
+export const SHAPE_TOOLS: ShapeTool[] = ['polygon', 'rect', 'triangle', 'ellipse']
+
+export function isShapeTool(tool: MapTool): tool is ShapeTool {
+  return (SHAPE_TOOLS as MapTool[]).includes(tool)
+}
+
+export interface ShapePoint { x: number; y: number }
+
+export interface MapShape {
+  id: number
+  map_id: number
+  layer_id: number | null   // null = unfiled, always visible
+
+  label: string
+  shape_type: MapShapeType
+  // JSON ShapePoint[] in the same 0–100 space as POI x/y. For 'ellipse' the two
+  // points are opposite corners of the bounding box, not centre + radius.
+  points: string
+  fill_color: string
+  fill_opacity: number
+  stroke_color: string
+  stroke_width: number
+  stroke_style: 'solid' | 'dashed'
+  content: string     // TipTap doc, same plain-description convention as hub POIs
+  hub_links: string   // JSON: HubLink[] — identical shape to a POI's
+  show_label: number  // 0/1
+  sort_order: number
+  created_at: string
 }
 
 export interface POI {
@@ -495,6 +570,22 @@ export interface CreatePOIInput {
   loot_table_id?: number | null
 }
 
+export interface CreateMapShapeInput {
+  map_id: number
+  layer_id?: number | null
+  label?: string
+  shape_type?: MapShapeType
+  points?: string
+  fill_color?: string
+  fill_opacity?: number
+  stroke_color?: string
+  stroke_width?: number
+  stroke_style?: 'solid' | 'dashed'
+  content?: string
+  hub_links?: string
+  show_label?: number
+}
+
 export interface ArticleFilter {
   campaignId?: number
   type?: ArticleType
@@ -610,6 +701,16 @@ export interface ElectronAPI {
   createPOI:       (data: CreatePOIInput)          => Promise<POI>
   updatePOI:       (id: number, data: Partial<CreatePOIInput & { content: string; loot_table: string; loot_table_id: number | null }>) => Promise<POI>
   deletePOI:       (id: number)                    => Promise<void>
+
+  getShapeLayers:     (mapId: number)              => Promise<MapShapeLayer[]>
+  createShapeLayer:   (mapId: number, name?: string) => Promise<MapShapeLayer>
+  updateShapeLayer:   (id: number, data: Partial<Pick<MapShapeLayer, 'name' | 'visible' | 'locked' | 'sort_order'>>) => Promise<MapShapeLayer>
+  deleteShapeLayer:   (id: number)                 => Promise<void>
+
+  getMapShapes:    (mapId: number)                 => Promise<MapShape[]>
+  createMapShape:  (data: CreateMapShapeInput)     => Promise<MapShape>
+  updateMapShape:  (id: number, data: Partial<Omit<MapShape, 'id' | 'map_id' | 'created_at'>>) => Promise<MapShape>
+  deleteMapShape:  (id: number)                    => Promise<void>
 
   getArticles:         (filter?: ArticleFilter)    => Promise<Article[]>
   getArticlesList:     (filter?: ArticleFilter)    => Promise<ArticleSummary[]>

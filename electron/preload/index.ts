@@ -56,6 +56,17 @@ contextBridge.exposeInMainWorld('api', {
   updatePOI:       (id: number, data: any) => ipcRenderer.invoke('pois:update', id, data),
   deletePOI:       (id: number)   => ipcRenderer.invoke('pois:delete', id),
 
+  // Drawing layers (kingdom borders, districts…) and the shapes on them
+  getShapeLayers:     (mapId: number) => ipcRenderer.invoke('shape-layers:get-all', mapId),
+  createShapeLayer:   (mapId: number, name?: string) => ipcRenderer.invoke('shape-layers:create', mapId, name),
+  updateShapeLayer:   (id: number, data: any) => ipcRenderer.invoke('shape-layers:update', id, data),
+  deleteShapeLayer:   (id: number) => ipcRenderer.invoke('shape-layers:delete', id),
+
+  getMapShapes:    (mapId: number) => ipcRenderer.invoke('shapes:get-all', mapId),
+  createMapShape:  (data: any) => ipcRenderer.invoke('shapes:create', data),
+  updateMapShape:  (id: number, data: any) => ipcRenderer.invoke('shapes:update', id, data),
+  deleteMapShape:  (id: number) => ipcRenderer.invoke('shapes:delete', id),
+
   // Articles — full rows
   getArticles:         (filter?: any)  => ipcRenderer.invoke('articles:get-all', filter),
   // Articles — lean rows

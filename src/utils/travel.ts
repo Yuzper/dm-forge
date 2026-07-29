@@ -9,7 +9,7 @@
 //    exhaustion.
 //  • Mounts (PHB "Mounted Combat" / DMG): a mount can gallop at double speed for
 //    ~1 hour, then travels at a normal pace.
-import type { MapScale, TravelPace } from '../types'
+import type { DistanceUnit, MapScale, TravelPace } from '../types'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -21,21 +21,36 @@ export const PACES: Record<TravelPace, { mph: number; perDay: number; label: str
 
 export const HOURS_PER_DAY = 8   // a normal (non-forced) travel day
 export const MI_PER_KM = 1.609344
+export const FT_PER_MI = 5280
+export const M_PER_MI = 1609.344
 
 // ── Unit conversion ──────────────────────────────────────────────────────────
+// Miles stay the internal currency — every 5E travel rule is expressed in them —
+// and each supported unit declares how many miles one of it is worth.
 
-export function toMiles(distance: number, unit: 'mi' | 'km'): number {
-  return unit === 'km' ? distance / MI_PER_KM : distance
+const MILES_PER_UNIT: Record<DistanceUnit, number> = {
+  mi: 1,
+  km: 1 / MI_PER_KM,
+  ft: 1 / FT_PER_MI,
+  m:  1 / M_PER_MI,
 }
 
-export function fromMiles(miles: number, unit: 'mi' | 'km'): number {
-  return unit === 'km' ? miles * MI_PER_KM : miles
+export function toMiles(distance: number, unit: DistanceUnit): number {
+  return distance * MILES_PER_UNIT[unit]
 }
 
-// Human-friendly distance in the requested display unit.
-export function formatDistance(miles: number, unit: 'mi' | 'km'): string {
+export function fromMiles(miles: number, unit: DistanceUnit): number {
+  return miles / MILES_PER_UNIT[unit]
+}
+
+// Human-friendly distance in the requested display unit. Local units get whole
+// numbers once they're past single figures — "120 ft" reads better than
+// "120.4 ft" — while overland units keep a decimal until they're large.
+export function formatDistance(miles: number, unit: DistanceUnit): string {
   const v = fromMiles(miles, unit)
-  const rounded = v >= 100 ? Math.round(v) : Math.round(v * 10) / 10
+  const local = unit === 'ft' || unit === 'm'
+  const threshold = local ? 10 : 100
+  const rounded = v >= threshold ? Math.round(v) : Math.round(v * 10) / 10
   return `${rounded} ${unit}`
 }
 

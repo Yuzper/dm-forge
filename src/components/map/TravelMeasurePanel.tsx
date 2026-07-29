@@ -5,7 +5,8 @@
 // the waypoints and the calibration flow.
 import { useState } from 'react'
 import { Ruler, X, Undo2, Trash2, Footprints, AlertTriangle } from 'lucide-react'
-import type { MapScale, TravelPace } from '../../types'
+import type { DistanceUnit, MapScale, TravelPace } from '../../types'
+import { DISTANCE_UNITS, isLocalUnit } from '../../types'
 import {
   PACES, pathMiles, computeTravel, forcedMarchSaves,
   formatDistance, formatDuration, HOURS_PER_DAY,
@@ -20,7 +21,7 @@ export default function TravelMeasurePanel({
   scale, natural, waypoints,
   isCalibrating, calibDraft,
   onExit, onBeginCalibrate, onCancelCalibrate, onCommitScale,
-  onUndoPoint, onClearRoute,
+  onUndoPoint, onClearRoute, canCalibrate = true,
 }: {
   scale: MapScale | null
   natural: { w: number; h: number } | null
@@ -30,19 +31,27 @@ export default function TravelMeasurePanel({
   onExit: () => void
   onBeginCalibrate: () => void
   onCancelCalibrate: () => void
-  onCommitScale: (distance: number, unit: 'mi' | 'km') => void
+  onCommitScale: (distance: number, unit: DistanceUnit) => void
+  /**
+   * Calibrating writes to the map row, so it's an edit — surfaces that are
+   * merely being browsed pass false and still get read-only measuring.
+   */
+  canCalibrate?: boolean
   onUndoPoint: () => void
   onClearRoute: () => void
 }) {
   const [pace, setPace] = useState<TravelPace>('normal')
   const [mounted, setMounted] = useState(false)
-  const [displayUnit, setDisplayUnit] = useState<'mi' | 'km'>(scale?.unit ?? 'mi')
+  const [displayUnit, setDisplayUnit] = useState<DistanceUnit>(scale?.unit ?? 'mi')
   const [calibValue, setCalibValue] = useState('')
-  const [calibUnit, setCalibUnit] = useState<'mi' | 'km'>(scale?.unit ?? 'mi')
+  const [calibUnit, setCalibUnit] = useState<DistanceUnit>(scale?.unit ?? 'mi')
 
   const { segments, total } = scale && natural
     ? pathMiles(waypoints, scale, natural)
     : { segments: [] as number[], total: 0 }
+
+  // A scale in feet or metres describes a building, not a journey.
+  const localScale = !!scale && isLocalUnit(scale.unit)
 
   const travel = computeTravel({ miles: total, pace, mounted })
   const march = forcedMarchSaves(travel.hours)
@@ -74,6 +83,8 @@ export default function TravelMeasurePanel({
 
   return (
     <div style={wrap}
+      // The route list scrolls; the map must not zoom out from under it.
+      data-map-overlay
       onMouseDown={e => e.stopPropagation()}
       onClick={e => e.stopPropagation()}
     >
@@ -108,7 +119,7 @@ export default function TravelMeasurePanel({
                   placeholder="e.g. 40"
                   style={{ flex: 1, height: 26, fontSize: 12, padding: '0 8px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 4, color: '#fff', outline: 'none' }}
                 />
-                <UnitToggle value={calibUnit} onChange={setCalibUnit} />
+                <UnitSelect value={calibUnit} onChange={setCalibUnit} />
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={commitScale} disabled={!(parseFloat(calibValue) > 0)}
@@ -128,13 +139,19 @@ export default function TravelMeasurePanel({
               <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
                 Reference = <strong>{scale.distance} {scale.unit}</strong>
               </span>
-              <button onClick={onBeginCalibrate} style={{ ...smallBtn, marginLeft: 'auto' }}>Recalibrate</button>
+              {canCalibrate && (
+                <button onClick={onBeginCalibrate} style={{ ...smallBtn, marginLeft: 'auto' }}>Recalibrate</button>
+              )}
             </div>
-          ) : (
+          ) : canCalibrate ? (
             <button onClick={onBeginCalibrate}
               style={{ ...smallBtn, width: '100%', justifyContent: 'center', padding: '6px 8px', background: 'rgba(200,115,58,0.18)', borderColor: 'rgba(200,115,58,0.4)', color: ACCENT }}>
               <Ruler size={12} /> Set map scale
             </button>
+          ) : (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontStyle: 'italic', lineHeight: 1.5 }}>
+              No scale set — switch to Edit to calibrate this map.
+            </div>
           )}
         </div>
 
@@ -145,7 +162,7 @@ export default function TravelMeasurePanel({
             <div style={{ marginBottom: 12 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
                 <span style={sectionLabel}>Route</span>
-                <UnitToggle value={displayUnit} onChange={setDisplayUnit} small />
+                <UnitSelect value={displayUnit} onChange={setDisplayUnit} small />
               </div>
               {waypoints.length < 2 ? (
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic' }}>
@@ -170,8 +187,15 @@ export default function TravelMeasurePanel({
               )}
             </div>
 
-            {/* Travel */}
-            {waypoints.length >= 2 && (
+            {/* Travel — 5E pace is miles per hour, so it only means anything on
+                an overland scale. A room measured in feet gets the distance and
+                nothing else. */}
+            {localScale && waypoints.length >= 2 && (
+              <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic', lineHeight: 1.5 }}>
+                Travel time is shown for maps calibrated in miles or km.
+              </div>
+            )}
+            {!localScale && waypoints.length >= 2 && (
               <div>
                 <div style={sectionLabel}>Travel</div>
 
@@ -258,22 +282,30 @@ function modeBtn(active: boolean): React.CSSProperties {
   }
 }
 
-// Compact mi/km segmented toggle.
-function UnitToggle({ value, onChange, small }: {
-  value: 'mi' | 'km'; onChange: (u: 'mi' | 'km') => void; small?: boolean
+// Four units is past what a segmented toggle can carry, so this is a select.
+// Used both to state what the reference line measures and to re-read a route in
+// a different unit afterwards.
+function UnitSelect({ value, onChange, small }: {
+  value: DistanceUnit; onChange: (u: DistanceUnit) => void; small?: boolean
 }) {
   return (
-    <div style={{ display: 'flex', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 4, overflow: 'hidden' }}>
-      {(['mi', 'km'] as const).map(u => (
-        <button key={u} onClick={() => onChange(u)}
-          style={{
-            padding: small ? '1px 7px' : '0 9px', height: small ? 18 : 26, fontSize: 10.5, cursor: 'pointer', border: 'none',
-            background: value === u ? 'rgba(200,115,58,0.28)' : 'transparent',
-            color: value === u ? '#c8733a' : 'rgba(255,255,255,0.5)',
-          }}>
-          {u}
-        </button>
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value as DistanceUnit)}
+      style={{
+        height: small ? 20 : 26, fontSize: 10.5, cursor: 'pointer',
+        padding: small ? '0 4px' : '0 6px',
+        background: 'rgba(255,255,255,0.06)',
+        border: '1px solid rgba(255,255,255,0.14)', borderRadius: 4,
+        color: 'rgba(255,255,255,0.75)', outline: 'none',
+      }}
+    >
+      {DISTANCE_UNITS.map(u => (
+        // The options render on the OS menu, so they need a solid background.
+        <option key={u.value} value={u.value} style={{ background: '#1b1712', color: '#eee' }}>
+          {u.label}
+        </option>
       ))}
-    </div>
+    </select>
   )
 }

@@ -58,16 +58,10 @@ export default function ItemStatBlockEditor({ value, onChange }: {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <div className="input-group">
           <label className="input-label">Type</label>
-          <input
-            className="input"
-            list="item-categories"
-            placeholder="Wondrous item, Weapon (any sword)…"
-            value={value.category}
-            onChange={e => set('category', e.target.value)}
-          />
-          <datalist id="item-categories">
-            {ITEM_CATEGORIES.map(c => <option key={c} value={c} />)}
-          </datalist>
+          <select className="input" value={value.category} onChange={e => set('category', e.target.value)}>
+            <option value="">—</option>
+            {ITEM_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
         <div className="input-group">
           <label className="input-label">Rarity</label>
