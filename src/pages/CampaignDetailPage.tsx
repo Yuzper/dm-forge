@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/store'
 import { Scroll, Map, Users } from 'lucide-react'
-import TimelineEmbed from '../components/TimelineEmbed'
 import HubWorldMap from '../components/campaign/HubWorldMap'
 import MapHubView from '../components/campaign/MapHub'
 import SessionsView from '../components/campaign/SessionsView'
@@ -219,13 +218,6 @@ export default function CampaignDetailPage() {
             </div>
           )}
         </div>
-
-        {/* Timeline full-width */}
-        {hubPanels.sessionTimeline && (
-          <div style={{ marginBottom: 8 }}>
-            <TimelineEmbed />
-          </div>
-        )}
       </div>
 
       {/* Nav dock */}

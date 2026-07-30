@@ -3,6 +3,7 @@ out/
 dist/
 dist-viewer/
 .harness-preview/
+*.tsbuildinfo
 *.msi
 *.dmg
 *.exe

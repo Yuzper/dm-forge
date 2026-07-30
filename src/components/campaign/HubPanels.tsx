@@ -21,11 +21,11 @@ const bareEmptyStyle: React.CSSProperties = {
 
 // ── Hub Settings ──────────────────────────────────────────────────────────────
 
-export type HubPanelKey = 'worldMap' | 'recentlyUpdated' | 'articlesByType' | 'sessionTimeline' | 'activeQuests' | 'wikiHealth' | 'clocks'
+export type HubPanelKey = 'worldMap' | 'recentlyUpdated' | 'articlesByType' | 'activeQuests' | 'wikiHealth' | 'clocks'
 
 
 export const HUB_PANEL_DEFAULTS: Record<HubPanelKey, boolean> = {
-  worldMap: true, recentlyUpdated: true, articlesByType: true, sessionTimeline: true, activeQuests: true, wikiHealth: true, clocks: true,
+  worldMap: true, recentlyUpdated: true, articlesByType: true, activeQuests: true, wikiHealth: true, clocks: true,
 }
 
 export function loadHubPanels(campaignId: number): Record<HubPanelKey, boolean> {
@@ -44,7 +44,6 @@ const PANEL_LABELS: Record<HubPanelKey, string> = {
   worldMap: 'World map',
   recentlyUpdated: 'Recently updated',
   articlesByType: 'Articles by type',
-  sessionTimeline: 'Session timeline',
   activeQuests: 'Active quests',
   wikiHealth: 'Needs attention',
   clocks: 'Ticking clocks',

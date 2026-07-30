@@ -1,5 +1,6 @@
 // path: src/utils/timelineGeometry.ts
-// Pure coordinate math shared by TimelinePage, TimelineEmbed, and InWorldDatePicker.
+// Pure coordinate math: the campaign calendar (shared by every timeline view) and
+// the axis geometry, which now only the InWorldDatePicker's mini timeline uses.
 
 export const DEFAULT_BASE_YEAR = 1507
 
@@ -225,7 +226,6 @@ export interface AxisGeo {
 }
 
 // px per world year in campaign zone, per zoom level
-const PAGE_PPY: Record<ZoomLevel, number> = { full: 14, decade: 30, year: 90, day: 0 }
 const PICK_PPY: Record<ZoomLevel, number> = { full: 14, decade: 22, year: 90, day: 0 }
 
 function buildAxisGeo(
@@ -259,10 +259,6 @@ function buildAxisGeo(
 
   return { dx, xToDay, worldYearToX, canvasWidth, campaignOffX, pxPerYear }
 }
-
-export const makePageAxisGeo = (
-  zoom: ZoomLevel, padL: number, minDay: number, pxPerDay: number, cal: CampaignCalendar,
-): AxisGeo => buildAxisGeo(zoom, padL, minDay, pxPerDay, cal, 200, 80, PAGE_PPY)
 
 export const makePickerAxisGeo = (
   zoom: ZoomLevel, padL: number, minDay: number, pxPerDay: number, cal: CampaignCalendar,

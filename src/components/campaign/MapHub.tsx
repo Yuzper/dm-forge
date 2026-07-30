@@ -1,15 +1,14 @@
 // path: src/components/campaign/MapHub.tsx
 // Full-bleed map-first campaign hub: the world map fills the view and the hub
-// panels, nav dock and timeline float above it as collapsible overlays.
+// panels and nav dock float above it as collapsible overlays.
 
 import { useState } from 'react'
 import { useStore } from '../../store/store'
 import {
-  ChevronDown, ChevronUp, X, Clock, LayoutGrid,
+  ChevronDown, ChevronUp, LayoutGrid,
   Scroll, BookOpen, Sparkles, ShoppingBag, Network, Music2, Users,
 } from 'lucide-react'
 import HubWorldMap from './HubWorldMap'
-import TimelineEmbed from '../TimelineEmbed'
 import { CLOCKS_INFO } from '../clocks/ClocksSection'
 import { InfoHint } from '../InfoHint'
 import {
@@ -20,10 +19,10 @@ import { SECTION_ACCENTS } from '../../constants/sections'
 
 // ── Overlay open/collapsed persistence ─────────────────────────────────────────
 
-type OverlayKey = 'activeQuests' | 'wikiHealth' | 'recentlyUpdated' | 'articlesByType' | 'timeline' | 'clocks'
+type OverlayKey = 'activeQuests' | 'wikiHealth' | 'recentlyUpdated' | 'articlesByType' | 'clocks'
 
 const OVERLAY_DEFAULTS: Record<OverlayKey, boolean> = {
-  activeQuests: true, wikiHealth: true, recentlyUpdated: false, articlesByType: false, timeline: false, clocks: true,
+  activeQuests: true, wikiHealth: true, recentlyUpdated: false, articlesByType: false, clocks: true,
 }
 
 function loadOverlayState(campaignId: number): Record<OverlayKey, boolean> {
@@ -158,63 +157,6 @@ function NavDock({ stats }: { stats: MapHubStats }) {
   )
 }
 
-// ── Timeline Chip ──────────────────────────────────────────────────────────────
-
-function TimelineChip({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  const { sessions } = useStore()
-  const latest = sessions.reduce<typeof sessions[number] | null>(
-    (best, s) => (!best || s.session_number > best.session_number ? s : best), null
-  )
-
-  if (!open) {
-    return (
-      <button
-        onClick={onToggle}
-        style={{
-          ...glassStyle,
-          position: 'absolute', left: 14, bottom: 14, zIndex: 15,
-          display: 'flex', alignItems: 'center', gap: 7,
-          padding: '5px 12px', borderRadius: 99,
-          fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-ui)',
-          cursor: 'pointer', maxWidth: 260,
-        }}
-        className="hover-gold"
-      >
-        <Clock size={12} style={{ color: SECTION_ACCENTS['timeline'], flexShrink: 0 }} />
-        {latest ? (
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <span style={{ color: 'var(--text-primary)' }}>Session {latest.session_number}{latest.session_sub}</span>
-            {latest.name ? ` · ${latest.name}` : ''}
-          </span>
-        ) : (
-          <span>Timeline</span>
-        )}
-        <ChevronUp size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-      </button>
-    )
-  }
-
-  return (
-    <div style={{
-      ...glassStyle,
-      position: 'absolute', left: 14, right: 14, bottom: 60, zIndex: 15,
-      borderRadius: 'var(--radius-md)', padding: '8px 12px 10px',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontSize: 10, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600, fontFamily: 'var(--font-ui)' }}>
-          Session timeline
-        </span>
-        <button onClick={onToggle}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}
-          title="Collapse">
-          <X size={13} />
-        </button>
-      </div>
-      <TimelineEmbed />
-    </div>
-  )
-}
-
 // ── Map Hub View ───────────────────────────────────────────────────────────────
 
 export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, onSwitchLayout, stats }: {
@@ -319,10 +261,6 @@ export default function MapHubView({ panels, onTogglePanel, onHasMapsChange, onS
           </FloatingPanel>
         )}
       </div>
-
-      {panels.sessionTimeline && (
-        <TimelineChip open={overlays.timeline} onToggle={() => toggleOverlay('timeline')} />
-      )}
 
       <NavDock stats={stats} />
     </div>
