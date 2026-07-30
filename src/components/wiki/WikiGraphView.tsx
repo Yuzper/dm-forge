@@ -173,19 +173,45 @@ const GRAPH_NODE_TYPES = { wikiNode: WikiGraphNode }
 
 type EdgeKind = 'real' | 'ghost' | 'mention'
 
-function edgeStyle(kind: EdgeKind, dim: boolean, hot: boolean): React.CSSProperties {
-  const base: React.CSSProperties = { transition: 'opacity 120ms ease' }
+// How loudly an edge is drawn:
+//   normal — resting state
+//   hot    — touches the hovered node (transient, follows the cursor)
+//   match  — runs *between two surviving nodes* while a search or filter is
+//            narrowing the graph. The whole point of a search is to see how the
+//            survivors connect, so these are the loudest: full opacity, thicker,
+//            and glowing, which reads even against a field of dimmed edges.
+type EdgeEmphasis = 'normal' | 'hot' | 'match'
+
+// Each kind glows in its own color so emphasis never costs an edge its meaning
+// (a highlighted broken link is still tan, a highlighted suggestion still teal).
+const glowFor = (color: string) => `drop-shadow(0 0 3px color-mix(in srgb, ${color} 55%, transparent))`
+
+// An SVG filter per edge is not free. A half-typed query ("e" on the way to
+// "ember") can leave most of the graph matching, so past this many matched edges
+// the glow is dropped — width, color and opacity still carry the emphasis, and
+// by then a glow on nearly everything wouldn't distinguish anything anyway.
+const GLOW_EDGE_LIMIT = 60
+
+function edgeStyle(kind: EdgeKind, dim: boolean, emphasis: EdgeEmphasis, glow = true): React.CSSProperties {
+  const hot = emphasis === 'hot', match = emphasis === 'match'
+  const lit = !dim && match && glow
+  const base: React.CSSProperties = { transition: 'opacity 120ms ease, stroke-width 120ms ease' }
   if (kind === 'ghost') return {
-    ...base, stroke: hot ? GHOST_COLOR : GHOST_COLOR, strokeWidth: 1,
-    strokeDasharray: '4 3', opacity: dim ? 0.05 : hot ? 0.75 : 0.35,
+    ...base, stroke: GHOST_COLOR, strokeWidth: match ? 1.75 : 1,
+    strokeDasharray: '4 3', opacity: dim ? 0.05 : match ? 1 : hot ? 0.75 : 0.35,
+    filter: lit ? glowFor(GHOST_COLOR) : undefined,
   }
   if (kind === 'mention') return {
-    ...base, stroke: '#3fa89b', strokeWidth: 1,
-    strokeDasharray: '1 4', strokeLinecap: 'round', opacity: dim ? 0.05 : hot ? 0.85 : 0.4,
+    ...base, stroke: '#3fa89b', strokeWidth: match ? 1.75 : 1,
+    strokeDasharray: '1 4', strokeLinecap: 'round',
+    opacity: dim ? 0.05 : match ? 1 : hot ? 0.85 : 0.4,
+    filter: lit ? glowFor('#3fa89b') : undefined,
   }
   return {
-    ...base, stroke: hot ? 'var(--gold)' : 'var(--border-light)',
-    strokeWidth: hot ? 1.5 : 1, opacity: dim ? 0.06 : hot ? 0.9 : 0.45,
+    ...base, stroke: hot || match ? 'var(--gold)' : 'var(--border-light)',
+    strokeWidth: match ? 2.25 : hot ? 1.5 : 1,
+    opacity: dim ? 0.06 : match ? 1 : hot ? 0.9 : 0.45,
+    filter: lit ? glowFor('var(--gold)') : undefined,
   }
 }
 
@@ -498,8 +524,8 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
       source: String(e.from),
       target: String(e.to),
       type: 'straight',
-      data: { kind, dim: false, hot: false },
-      style: edgeStyle(kind, false, false),
+      data: { kind, dim: false, emphasis: 'normal' as EdgeEmphasis },
+      style: edgeStyle(kind, false, 'normal'),
     })
     setRfEdges([
       ...links.map((e, i) => mk(e, i, 'real')),
@@ -513,7 +539,15 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
     // Ghosts carry no tags, so a tags-only search dims them all — which is right:
     // an article that doesn't exist yet has nothing tagged.
     const matches = (n: LayoutNode) => matchesQuery(n, q, searchFields)
+    // Is anything actually narrowing the graph? Without this, "both endpoints
+    // survived" would be true of every edge at rest and the whole graph would
+    // glow gold.
+    const narrowing = !!q || typeFilter !== 'all' || orphanOnly
     const dimById = new Map<number, boolean>()
+    // Dimmed by the filters alone, ignoring hover and focus — this is the set an
+    // edge consults to decide whether it links two *survivors*. Hover and focus
+    // are transient lenses and shouldn't turn matched links on and off.
+    const filterDimById = new Map<number, boolean>()
     for (const n of layout) {
       let dim: boolean
       if (n.ghost) {
@@ -524,6 +558,7 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
         const orphanDim = orphanOnly && n.degree > 0
         dim = filteredOut || orphanDim
       }
+      filterDimById.set(n.id, dim)
       const hoverDim = hoverId != null && n.id !== hoverId && !(neighbors.get(hoverId)?.has(n.id))
       const focusDim = focusSet != null && !focusSet.has(n.id)
       dimById.set(n.id, dim || hoverDim || focusDim)
@@ -535,12 +570,25 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
       if (n.data.dim === dim && n.data.highlight === highlight) return n
       return { ...n, data: { ...n.data, dim, highlight } }
     }))
-    setRfEdges(prev => prev.map((e: any) => {
-      const dim = (dimById.get(Number(e.source)) ?? false) || (dimById.get(Number(e.target)) ?? false)
-      const hot = hoverId != null && (Number(e.source) === hoverId || Number(e.target) === hoverId)
-      if (e.data?.dim === dim && e.data?.hot === hot) return e
-      return { ...e, data: { ...e.data, dim, hot }, style: edgeStyle(e.data.kind, dim, hot) }
-    }))
+    const linksSurvivors = (e: any) => narrowing
+      && !filterDimById.get(Number(e.source)) && !filterDimById.get(Number(e.target))
+    setRfEdges(prev => {
+      const glow = prev.filter(linksSurvivors).length <= GLOW_EDGE_LIMIT
+      return prev.map((e: any) => {
+        const from = Number(e.source), to = Number(e.target)
+        const dim = (dimById.get(from) ?? false) || (dimById.get(to) ?? false)
+        const hot = hoverId != null && (from === hoverId || to === hoverId)
+        // A link between two survivors outranks a hover: it's the answer to the
+        // question the search asked, so it stays loudest even under the cursor.
+        const emphasis: EdgeEmphasis = linksSurvivors(e) ? 'match' : hot ? 'hot' : 'normal'
+        if (e.data?.dim === dim && e.data?.emphasis === emphasis && e.data?.glow === glow) return e
+        return {
+          ...e,
+          data: { ...e.data, dim, emphasis, glow },
+          style: edgeStyle(e.data.kind, dim, emphasis, glow),
+        }
+      })
+    })
   }, [layout, neighbors, typeFilter, search, searchFields, hoverId, orphanOnly, focusSet, recencyOn, recencyRank])
 
   const articleNodes = useMemo(() => layout.filter(n => !n.ghost), [layout])
