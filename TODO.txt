@@ -14,8 +14,6 @@ Remember for presentation:
 
 I have a few bigger features/things to do
 
-Redo timeline layout, I feel the timeline layout is outdated and not too user friendly.
-
 Also I was considering to make the articles, and all pages into a tabs system so I can have multiple open like a browser/code editor and have two next to eachother. I know this is likely a major overall as this was not orignally the intended use.
 
  ---------
