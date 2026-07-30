@@ -20,7 +20,7 @@ import LootTableView from '../LootTableView'
 import { parseLootTable } from '../../types'
 import SectionDivider from '../SectionDivider'
 import { InWorldDatePicker } from '../InWorldDatePicker'
-import { TIMELINE_DATE_FIELDS, parseMilestones, type Milestone } from '../../constants/timelineDates'
+import { TIMELINE_DATE_FIELDS, DATE_IMPLIES_TRACK, parseMilestones, type Milestone } from '../../constants/timelineDates'
 import LocationMapSection from '../LocationMapSection'
 import AudienceControl from '../AudienceControl'
 import TrackVisibilityControl, { effectiveTrackMode, trackModePlayers } from './TrackVisibilityControl'
@@ -449,12 +449,52 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
   // Inline player-visibility eye for a date field / milestone (edit mode only).
   renderVis?: (key: string, isMilestone: boolean) => React.ReactNode
 }) {
-  // Skip semantic fields already shown in Details (e.g. character Death_Date).
+  // Skip semantic fields already shown in Details.
   const typeTracks = ARTICLE_TRACKS[articleType] || {}
-  const fields = (TIMELINE_DATE_FIELDS[articleType] ?? []).filter(f => !(f.key in typeTracks))
+  const allFields = TIMELINE_DATE_FIELDS[articleType] ?? []
+  const fields = allFields.filter(f => !(f.key in typeTracks))
   const milestones = parseMilestones(tracks.Timeline_Milestones)
 
-  const setField = (key: string, v: string) => { setTracks(prev => ({ ...prev, [key]: v })); setDirty(true) }
+  // Pair lookup uses the unfiltered list so the rule still holds when one half of
+  // the pair is rendered elsewhere.
+  const startField = allFields.find(f => f.role === 'start')
+  const endField   = allFields.find(f => f.role === 'end')
+  const [pairError, setPairError] = useState<{ key: string; msg: string } | null>(null)
+
+  const dayOf = (raw: string | undefined) => {
+    if (!raw) return null
+    try { const d = JSON.parse(raw); return typeof d.day === 'number' ? d.day : null } catch { return null }
+  }
+
+  // A start/end pair can only be set in order — an end before its start (or a
+  // start after its end) is rejected rather than stored. Milestones are freeform
+  // by design and get no ordering rule.
+  const setField = (key: string, v: string) => {
+    const day = dayOf(v)
+    if (day != null && startField && endField) {
+      const otherDay = key === startField.key ? dayOf(tracks[endField.key])
+                     : key === endField.key   ? dayOf(tracks[startField.key])
+                     : null
+      if (otherDay != null) {
+        if (key === startField.key && day > otherDay) {
+          setPairError({ key, msg: `${startField.label} can't be after ${endField.label.toLowerCase()}` })
+          return
+        }
+        if (key === endField.key && day < otherDay) {
+          setPairError({ key, msg: `${endField.label} can't be before ${startField.label.toLowerCase()}` })
+          return
+        }
+      }
+    }
+    setPairError(null)
+    setTracks(prev => {
+      const updated = { ...prev, [key]: v }
+      const implied = v ? DATE_IMPLIES_TRACK[key] : undefined
+      if (implied) updated[implied.track] = implied.value
+      return updated
+    })
+    setDirty(true)
+  }
   const setMilestones = (list: Milestone[]) => { setTracks(prev => ({ ...prev, Timeline_Milestones: JSON.stringify(list) })); setDirty(true) }
   const addMilestone = () => setMilestones([...milestones, { id: `ms_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, label: '', date: '' }])
   const updateMilestone = (id: string, patch: Partial<Milestone>) => setMilestones(milestones.map(m => m.id === id ? { ...m, ...patch } : m))
@@ -486,6 +526,9 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
                 {renderVis?.(f.key, false)}
               </div>
               <InWorldDatePicker value={tracks[f.key] || ''} onChange={v => setField(f.key, v)} label="" baseYear={baseYear} />
+              {pairError?.key === f.key && (
+                <div style={{ fontSize: 10, color: 'var(--danger)', marginTop: 4 }}>{pairError.msg}</div>
+              )}
             </div>
           ))}
           <div>
@@ -1018,14 +1061,11 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                     {currentTypeTracks.map(([trackName]) => {
                       const val = tracks[trackName]
                       if (!val) return null
-                      if (trackName === 'In_World_Date' || trackName === 'Death_Date') {
+                      if (trackName === 'In_World_Date') {
                         let display = val
                         try { const d = JSON.parse(val); display = `Day ${d.day}, Year ${d.year}` } catch {}
-                        const dateColor = trackName === 'Death_Date' ? '#9b7de8' : 'var(--gold)'
-                        const dateBg = trackName === 'Death_Date' ? 'rgba(155,125,232,0.1)' : 'rgba(200,168,75,0.1)'
-                        const dateBorder = trackName === 'Death_Date' ? 'rgba(155,125,232,0.3)' : 'rgba(200,168,75,0.3)'
                         return (
-                          <div key={trackName} style={{ fontSize: 11, fontWeight: 600, color: dateColor, padding: '3px 10px', borderRadius: 99, border: `1px solid ${dateBorder}`, background: dateBg }}>
+                          <div key={trackName} style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold)', padding: '3px 10px', borderRadius: 99, border: '1px solid rgba(200,168,75,0.3)', background: 'rgba(200,168,75,0.1)' }}>
                             <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{formatTrackName(trackName)}: </span>{display}
                           </div>
                         )
@@ -1059,7 +1099,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                         </div>
                       )
                     }
-                    if (trackName === 'In_World_Date' || trackName === 'Death_Date') {
+                    if (trackName === 'In_World_Date') {
                       return (
                         <div key={articleType + trackName} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                           <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>{formatTrackName(trackName)}</span>
@@ -1067,17 +1107,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                           <div style={{ flex: 1 }}>
                             <InWorldDatePicker
                               value={tracks[trackName] || ''}
-                              onChange={v => {
-                                setTracks(prev => {
-                                  const updated = { ...prev, [trackName]: v }
-                                  // Auto-set Vitality to Dead when Death_Date is given
-                                  if (trackName === 'Death_Date' && v) {
-                                    updated['Vitality'] = 'Dead'
-                                  }
-                                  return updated
-                                })
-                                setDirty(true)
-                              }}
+                              onChange={v => { setTracks(prev => ({ ...prev, [trackName]: v })); setDirty(true) }}
                               label=""
                             />
                           </div>

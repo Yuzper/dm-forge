@@ -8,6 +8,12 @@
       "port": 5500
     },
     {
+      "name": "timeline-harness",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-p", "5501", ".harness-preview"],
+      "port": 5501
+    },
+    {
       "name": "player-viewer",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["vite", "--config", "viewer/vite.config.ts"],

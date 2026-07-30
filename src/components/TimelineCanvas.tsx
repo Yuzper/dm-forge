@@ -101,8 +101,11 @@ export default function TimelineCanvas({
   // ── Lifespan bands (founding→destruction etc.; behind everything) ───────────
   // dx() maps a day to x in both year and day modes, so this works at any zoom.
   const lifespanBands = (showLifespans && lifespans ? lifespans : []).map(ls => {
-    const x1 = dx(ls.startDay), x2 = dx(ls.endDay), w = x2 - x1
-    if (w <= 0) return null
+    // Same-day (and, at coarse zooms, sub-pixel) spans still get a visible tick —
+    // mirrors the minimum width arc tubes already use.
+    const x1 = dx(ls.startDay), x2 = dx(ls.endDay)
+    if (x2 < x1) return null
+    const w = Math.max(x2 - x1, 3)
     return (
       <g key={`ls-${ls.id}-${ls.startDay}`} pointerEvents="none">
         <rect x={x1} y={0} width={w} height={axisY} fill={ls.color + '0d'} stroke={ls.color + '33'} strokeWidth="1" />

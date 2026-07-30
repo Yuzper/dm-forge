@@ -1,7 +1,7 @@
 // path: src/pages/TimelinePage.tsx
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useStore } from '../store/store'
-import { Clock, Plus, ArrowLeft, Filter, ZoomIn, ZoomOut, Settings, X } from 'lucide-react'
+import { Clock, Plus, ArrowLeft, Filter, ZoomIn, ZoomOut, Settings, X, ListTree, AlertTriangle } from 'lucide-react'
 import { parseInWorldDate, InWorldDatePicker } from '../components/InWorldDatePicker'
 import type { ArticleType, Session, Article } from '../types'
 import { buildArticleTimeline, type Lifespan } from '../constants/timelineDates'
@@ -15,6 +15,10 @@ import {
   yearLength, formatCalendarDay,
   type TimelineEventItem, type ClusterItem, type SessionRenderItem, type BinChip, type Era,
 } from '../utils/timelineGeometry'
+
+import { TimelineOutline } from '../components/TimelineOutline'
+import { ChronologyPanel } from '../components/ChronologyPanel'
+import { auditChronology, type AuditArticle, type ChronologyIssue } from '../utils/chronologyAudit'
 
 import { SECTION_ACCENTS } from '../constants/sections'
 import { TimelineFilterPanel as FilterPanel, DEFAULT_TIMELINE_FILTERS as DEFAULT_FILTERS, type TimelineFilters } from '../components/TimelineFilterPanel'
@@ -323,6 +327,7 @@ export default function TimelinePage() {
   useEffect(() => { setHintContext('timeline'); return () => setHintContext(null) }, [setHintContext])
   const scrollRef = useRef<HTMLDivElement>(null)
   const filterRef = useRef<HTMLDivElement>(null)
+  const issuesRef = useRef<HTMLDivElement>(null)
   const clusterPickerRef = useRef<HTMLDivElement>(null)
   const scrollToBinRef = useRef<number | null>(null)
 
@@ -343,6 +348,9 @@ export default function TimelinePage() {
   const [clusterPicker, setClusterPicker] = useState<{ items: ClusterItem[]; x: number; y: number } | null>(null)
   const [embeddedArticle, setEmbeddedArticle] = useState<Article | null>(null)
   const [createDateRaw, setCreateDateRaw] = useState('')
+  const [mode, setMode] = useState<'axis' | 'outline'>('axis')
+  const [rawArticles, setRawArticles] = useState<AuditArticle[]>([])
+  const [showIssues, setShowIssues] = useState(false)
 
   const pxPerDay = DAY_ZOOM_LEVELS[dayZoomIdx]
 
@@ -357,6 +365,12 @@ export default function TimelinePage() {
     const h = (e: MouseEvent) => { if (filterRef.current && !filterRef.current.contains(e.target as Node)) setShowFilter(false) }
     document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h)
   }, [showFilter])
+
+  useEffect(() => {
+    if (!showIssues) return
+    const h = (e: MouseEvent) => { if (issuesRef.current && !issuesRef.current.contains(e.target as Node)) setShowIssues(false) }
+    document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h)
+  }, [showIssues])
 
   useEffect(() => {
     if (currentCampaign) setFilters(loadFilters(currentCampaign.id))
@@ -402,6 +416,9 @@ export default function TimelinePage() {
       } catch {}
     })
     setItems(result); setUndatedEvents(undated); setLifespans(spans)
+    // Kept raw so the chronology audit can look at dates the parser rejected —
+    // those never make it into `items`.
+    setRawArticles(list.map((a: any) => ({ id: a.id, title: a.title, article_type: a.article_type, tracks: a.tracks ?? null })))
   }, [currentCampaign?.id])
 
   useEffect(() => { loadItems() }, [loadItems])
@@ -409,6 +426,17 @@ export default function TimelinePage() {
   const arcMap = Object.fromEntries(arcs.map(a => [a.id, a]))
   const datedSessions = sessions.filter(s => s.in_world_day)
   const undatedSessions = sessions.filter(s => !s.in_world_day).map(s => ({ ...s, _arcColor: arcMap[s.arc_id ?? 0]?.color ?? '#8a8a8a' }))
+
+  const issues = useMemo(() => auditChronology(
+    rawArticles,
+    sessions.map(s => ({
+      id: s.id, name: s.name, session_number: s.session_number,
+      session_sub: s.session_sub, in_world_day: s.in_world_day ?? null,
+    })),
+    parseInWorldDate,
+    day => formatCalendarDay(day, cal),
+  ), [rawArticles, sessions, cal])
+  const errorCount = issues.filter(i => i.severity === 'error').length
 
   const allDays = [
     ...datedSessions.flatMap(s => [s.in_world_day!, s.in_world_day_end ?? s.in_world_day!]),
@@ -560,6 +588,19 @@ export default function TimelinePage() {
     if (article) setEmbeddedArticle(article)
   }, [handleOpenSession])
 
+  // Jump from an audit row to the thing it's complaining about: sessions open
+  // their page, articles embed below, and the axis scrolls to the offending day.
+  const handleSelectIssue = useCallback(async (issue: ChronologyIssue) => {
+    setShowIssues(false)
+    if (issue.sessionId != null) { handleOpenSession(issue.sessionId); return }
+    if (issue.articleId == null) return
+    if (issue.day != null && mode === 'axis' && scrollRef.current) {
+      scrollRef.current.scrollLeft = Math.max(0, dx(issue.day) - scrollRef.current.clientWidth / 2)
+    }
+    const article = await window.api.getArticle(issue.articleId)
+    if (article) setEmbeddedArticle(article)
+  }, [handleOpenSession, mode, dx])
+
   const activeFilterCount = Object.values(filters).filter(v => !v).length
 
   const zoomBtnStyle: React.CSSProperties = {
@@ -593,7 +634,32 @@ export default function TimelinePage() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Axis / outline mode */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2, borderRight: '1px solid var(--border)', paddingRight: 10, marginRight: 2 }}>
+              {([['axis', 'Timeline', Clock], ['outline', 'Outline', ListTree]] as const).map(([m, label, Icon]) => (
+                <button key={m} onClick={() => setMode(m)} title={m === 'outline' ? 'Read the same data as a document — includes entries with no date' : 'Axis view'}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '3px 9px', fontSize: 11, borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                    border: `1px solid ${mode === m ? 'var(--border-gold)' : 'var(--border)'}`,
+                    background: mode === m ? 'var(--bg-hover)' : 'transparent',
+                    color: mode === m ? 'var(--gold)' : 'var(--text-muted)', fontFamily: 'var(--font-ui)',
+                  }}><Icon size={11} /> {label}</button>
+              ))}
+            </div>
+
+            {/* Chronology audit */}
+            <div ref={issuesRef} style={{ position: 'relative' }}>
+              <button onClick={() => setShowIssues(v => !v)} title="Chronology problems — contradictions, unreadable dates, undated articles"
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: showIssues ? 'var(--bg-elevated)' : 'transparent', border: `1px solid ${errorCount > 0 ? 'var(--danger-border)' : 'var(--border)'}`, borderRadius: 'var(--radius-sm)', color: errorCount > 0 ? 'var(--danger)' : 'var(--text-secondary)', transition: 'background var(--transition)' }}
+                className="hover-bg-elevated">
+                <AlertTriangle size={13} /> {issues.length > 0 ? issues.length : 'Canon'}
+              </button>
+              {showIssues && <ChronologyPanel issues={issues} onSelect={handleSelectIssue} onClose={() => setShowIssues(false)} />}
+            </div>
+
             {/* Zoom level tabs */}
+            {mode === 'axis' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 2, borderRight: '1px solid var(--border)', paddingRight: 10, marginRight: 2 }}>
               {ZOOM_ORDER.map(z => (
                 <button key={z} onClick={() => setZoom(z)} style={{
@@ -604,9 +670,10 @@ export default function TimelinePage() {
                 }}>{ZOOM_LABEL[z]}</button>
               ))}
             </div>
+            )}
 
             {/* Day-level zoom +/- (only in day mode) */}
-            {zoom === 'day' && (
+            {mode === 'axis' && zoom === 'day' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, borderRight: '1px solid var(--border)', paddingRight: 10, marginRight: 2 }}>
                 <button style={zoomBtnStyle} onClick={() => setDayZoomIdx(i => Math.max(0, i - 1))} disabled={dayZoomIdx === 0}
                   className="hover-text"><ZoomOut size={13} /></button>
@@ -637,6 +704,7 @@ export default function TimelinePage() {
       </div>
 
 
+      {mode === 'axis' && (<>
       {/* Timeline scroll area */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <div ref={scrollRef} style={{ overflowX: 'auto', overflowY: 'hidden', padding: '32px 0 0', background: 'var(--bg-base)' }}>
@@ -739,17 +807,33 @@ export default function TimelinePage() {
       </div>
 
       <UnplacedBanner undatedSessions={undatedSessions} undatedEvents={undatedEvents} baseYear={cal.start.year} onSessionDateSet={handleSessionDateSet} onEventDateSet={handleEventDateSet} />
+      </>)}
 
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', background: 'var(--bg-elevated)' }}>
-        {embeddedArticle ? (
-          <ArticleEditor key={embeddedArticle.id} article={embeddedArticle}
-            backLabel="Close" onBack={() => { setEmbeddedArticle(null); loadItems() }} />
-        ) : (
-          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 32px', color: 'var(--text-muted)', fontSize: 13 }}>
-            Click an event or death to read it here · sessions open their full page
-          </div>
-        )}
-      </div>
+      {mode === 'outline' && (
+        <TimelineOutline
+          eras={eras} cal={cal} sessions={sessionItems} arcMap={arcMap} items={items}
+          issues={issues} undatedSessions={undatedSessions}
+          onOpenSession={handleOpenSession}
+          onOpenArticle={async id => {
+            const article = await window.api.getArticle(id)
+            if (article) setEmbeddedArticle(article)
+          }}
+          onSelectIssue={handleSelectIssue}
+        />
+      )}
+
+      {(mode === 'axis' || embeddedArticle) && (
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', background: 'var(--bg-elevated)' }}>
+          {embeddedArticle ? (
+            <ArticleEditor key={embeddedArticle.id} article={embeddedArticle}
+              backLabel="Close" onBack={() => { setEmbeddedArticle(null); loadItems() }} />
+          ) : (
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 32px', color: 'var(--text-muted)', fontSize: 13 }}>
+              Click an event or death to read it here · sessions open their full page
+            </div>
+          )}
+        </div>
+      )}
 
       {showCreate && <CreateEventModal onClose={() => setShowCreate(false)} onCreated={loadItems} baseYear={cal.start.year} initialDateRaw={createDateRaw} />}
       {showSettings && <TimelineSettingsModal calendar={cal} eras={eras} showLifespans={showLifespans} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />}

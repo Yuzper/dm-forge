@@ -32,7 +32,6 @@ export const ARTICLE_TYPES: { value: ArticleType; label: string; icon: any; colo
 export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]>>> = {
   character: {
     Vitality:      ['Alive', 'Dead', 'Unknown', 'Missing', 'Immortal'],
-    Death_Date:    [],
     Attitude:    ['Friendly', 'Neutral', 'Hostile'],
     Attitude_Towards_Party: ['Friendly', 'Neutral', 'Hostile', 'Unknown'],
     Age:         [],
@@ -48,7 +47,6 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
   },
   playerCharacter: {
     Vitality:      ['Alive', 'Dead', 'Unknown', 'Retired', 'Immortal'],
-    Death_Date:    [],
     Disposition: ['Friendly', 'Neutral', 'Hostile'],
     Age:         [],
     Species:     ['Human', 'Elf', 'High Elf', 'Drow', 'Half-Elf', 'Dwarf', 'Duergar', 'Halfling', 'Gnome', 'Deep Gnome', 'Half-Orc', 'Orc',

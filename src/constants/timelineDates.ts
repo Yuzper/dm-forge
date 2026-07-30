@@ -13,18 +13,28 @@ export interface TimelineDateField {
 }
 
 // A "start" + "end" pair forms a lifespan band. Mid-life moments use 'point'.
+// The pair is order-enforced when edited (see TimelineDatesSection): an end can't
+// be set before its start, nor a start after its end.
 export const TIMELINE_DATE_FIELDS: Partial<Record<ArticleType, TimelineDateField[]>> = {
   location:        [{ key: 'Founded_Date', label: 'Founded', role: 'start' }, { key: 'Destroyed_Date', label: 'Destroyed', role: 'end' }],
   faction:         [{ key: 'Founded_Date', label: 'Founded', role: 'start' }, { key: 'Disbanded_Date', label: 'Disbanded', role: 'end' }],
-  character:        [{ key: 'Born_Date', label: 'Born', role: 'start' }, { key: 'Death_Date', label: 'Died', role: 'end' }],
-  playerCharacter:  [{ key: 'Born_Date', label: 'Born', role: 'start' }, { key: 'Death_Date', label: 'Died', role: 'end' }],
+  character:        [{ key: 'Born_Date', label: 'Born', role: 'start' }, { key: 'Death_Date', label: 'Death', role: 'end' }],
+  playerCharacter:  [{ key: 'Born_Date', label: 'Born', role: 'start' }, { key: 'Death_Date', label: 'Death', role: 'end' }],
   item:            [{ key: 'Created_Date', label: 'Created', role: 'start' }, { key: 'Lost_Date', label: 'Lost', role: 'end' }],
   religion:        [{ key: 'Founded_Date', label: 'Founded', role: 'start' }, { key: 'Ended_Date', label: 'Ended', role: 'end' }],
   culture:         [{ key: 'Founded_Date', label: 'Founded', role: 'start' }, { key: 'Ended_Date', label: 'Ended', role: 'end' }],
   quest:           [{ key: 'Started_Date', label: 'Started', role: 'start' }, { key: 'Completed_Date', label: 'Completed', role: 'end' }],
-  creature:        [{ key: 'Discovered_Date', label: 'Discovered', role: 'point' }],
+  // Keeps the original Discovered_Date key so existing creature dates survive.
+  creature:        [{ key: 'Discovered_Date', label: 'Found', role: 'start' }, { key: 'Extinct_Date', label: 'Extinct', role: 'end' }],
   lore:            [{ key: 'Occurred_Date', label: 'Occurred', role: 'point' }],
   note:            [{ key: 'Written_Date', label: 'Written', role: 'point' }],
+}
+
+// Setting one of these implies a status track value — kept here so the rule lives
+// next to the field definitions rather than in the editor's markup.
+export const DATE_IMPLIES_TRACK: Record<string, { track: string; value: string }> = {
+  Death_Date:   { track: 'Vitality', value: 'Dead' },
+  Extinct_Date: { track: 'Vitality', value: 'Extinct' },
 }
 
 export interface Milestone { id: string; label: string; date: string }
@@ -72,7 +82,10 @@ export function buildArticleTimeline(
   const legacy = parse(tracks.Timeline_Date)
   if (legacy) markers.push({ id: a.id, title: a.title, day: legacy.day, year: legacy.year, kind, article_type: type, color, articleId: a.id })
 
-  const lifespan = (startDay != null && endDay != null && endDay > startDay)
+  // A thing that began and ended on the same day is real (a city sacked the day
+  // it was founded), so zero-width spans are kept — the canvas draws them as a
+  // tick rather than dropping them.
+  const lifespan = (startDay != null && endDay != null && endDay >= startDay)
     ? { id: a.id, title: a.title, color, startDay, endDay }
     : undefined
 
