@@ -106,6 +106,22 @@ export function registerArticleIPC() {
       SELECT id, title, article_type, tags, content, tracks, updated_at FROM articles WHERE campaign_id = ?
     `).all(campaignId) as any[]
 
+    // Relation-web membership travels with each node so the graph's tag search
+    // matches exactly what the list view's does — there, being a node in a web
+    // counts as carrying that web's name as a tag (see articles:get-list).
+    const webRows = db.prepare(`
+      SELECT n.article_id AS article_id, w.name AS name
+      FROM relation_nodes n
+      JOIN relation_webs w ON w.id = n.web_id
+      WHERE n.article_id IS NOT NULL AND w.campaign_id = ?
+    `).all(campaignId) as { article_id: number; name: string }[]
+    const websById = new Map<number, string[]>()
+    for (const w of webRows) {
+      if (!websById.has(w.article_id)) websById.set(w.article_id, [])
+      const list = websById.get(w.article_id)!
+      if (!list.includes(w.name)) list.push(w.name)   // one article can hold several nodes in a web
+    }
+
     const byTitle = new Map<string, any>()
     for (const r of rows) byTitle.set(r.title.toLowerCase(), r)
 
@@ -213,7 +229,11 @@ export function registerArticleIPC() {
     }
 
     return {
-      nodes: rows.map(r => ({ id: r.id, title: r.title, article_type: r.article_type, tags: r.tags ?? '[]', updated_at: r.updated_at })),
+      nodes: rows.map(r => ({
+        id: r.id, title: r.title, article_type: r.article_type,
+        tags: r.tags ?? '[]', webs: websById.get(r.id) ?? [],
+        updated_at: r.updated_at,
+      })),
       edges,
       ghosts: [...ghostMap.values()].map(g => ({ title: g.title, sources: [...g.sources] })),
       mentions,

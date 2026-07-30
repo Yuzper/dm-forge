@@ -187,7 +187,7 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
                 </button>
               )}
             </div>
-            <div style={{ display: 'flex', gap: 12, paddingLeft: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 2 }}>
               {(['title', 'tags'] as const).map(field => {
                 const active = wikiSearchFields[field]
                 const isLast = active && !wikiSearchFields[field === 'title' ? 'tags' : 'title']
@@ -200,6 +200,13 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
                   </label>
                 )
               })}
+              {/* Mirrors the graph view's match count — the same query reports the
+                  same number in both views. */}
+              {wikiSearch.trim() && (
+                <span style={{ fontSize: 11, color: visibleArticles.length > 0 ? 'var(--gold)' : 'var(--text-muted)', marginLeft: 'auto' }}>
+                  {visibleArticles.length} match{visibleArticles.length !== 1 ? 'es' : ''}
+                </span>
+              )}
             </div>
           </div>
           <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border-light)', flexShrink: 0 }} />

@@ -266,7 +266,9 @@ export interface Clock {
 
 // Whole-campaign wiki link graph (articles + [[link]]/track references).
 export interface LinkGraph {
-  nodes: { id: number; title: string; article_type: string; tags: string; updated_at: string }[]
+  // `webs` = names of the relation webs this article is a node in. The wiki's
+  // tag search counts those as tags, so the graph needs them to match the list.
+  nodes: { id: number; title: string; article_type: string; tags: string; webs: string[]; updated_at: string }[]
   edges: { from: number; to: number }[]
   ghosts: { title: string; sources: number[] }[]   // broken [[links]] → nonexistent titles
   mentions: { from: number; to: number }[]          // plain-text (unlinked) title occurrences

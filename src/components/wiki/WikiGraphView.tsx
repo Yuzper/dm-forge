@@ -12,7 +12,7 @@ import 'reactflow/dist/style.css'
 import { forceSimulation, forceLink, forceManyBody, forceX, forceY, forceCollide } from 'd3-force'
 import { ArrowLeft, Network, Search, X, LayoutGrid, Unlink, Sparkles, Plus, Minus, Clock, Target, SlidersHorizontal, RotateCcw } from 'lucide-react'
 import type { LinkGraph, ArticleType } from '../../types'
-import { ALL_FILTERS, parseTags } from './wikiConstants'
+import { ALL_FILTERS } from './wikiConstants'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
 import { useExcludedTypes, TypeVisibilityMenu } from './TypeVisibilityMenu'
 import { useMenuClose } from '../../hooks/useMenuClose'
@@ -21,7 +21,8 @@ interface LayoutNode {
   id: number          // article id, or a negative synthetic id for ghosts
   title: string
   articleType: string
-  tags: string[]      // lowercased, for search matching (always empty for ghosts)
+  tagText: string     // lowercased raw tags JSON + web names — see matchesQuery
+
   degree: number
   ghost: boolean
   updatedAt?: string  // article's last-edited timestamp (undefined for ghosts)
@@ -58,6 +59,17 @@ const FORCE_KEY = 'wiki-graph-force-params'
 // something. Persisted per browser like the graph's other lens settings.
 interface SearchFields { title: boolean; tags: boolean }
 const SEARCH_FIELDS_KEY = 'wiki-graph-search-fields'
+// The list view filters in SQL: `title LIKE %q%` for the title field, and for
+// tags `tags LIKE %q%` (the raw JSON blob) OR the name of a relation web the
+// article is a node in. Matching the same way — raw text rather than per-tag —
+// keeps the two views' results identical for any query, punctuation included.
+function matchesQuery(n: { title: string; tagText: string }, q: string, fields: SearchFields): boolean {
+  if (!q) return true
+  if (fields.title && n.title.toLowerCase().includes(q)) return true
+  if (fields.tags && n.tagText.includes(q)) return true
+  return false
+}
+
 function loadSearchFields(): SearchFields {
   try {
     const raw = localStorage.getItem(SEARCH_FIELDS_KEY)
@@ -354,7 +366,7 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
         const sources = g.sources.filter(id => idSet.has(id))
         if (sources.length === 0) continue
         const id = gid--
-        ghostSim.push({ id, title: g.title, articleType: '', tags: [], degree: 0, ghost: true, updatedAt: undefined })
+        ghostSim.push({ id, title: g.title, articleType: '', tagText: '', degree: 0, ghost: true, updatedAt: undefined })
         for (const s of sources) gLinks.push({ from: s, to: id })
       }
     }
@@ -362,7 +374,7 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
     const simNodes: any[] = [
       ...nodes.map(n => ({
         id: n.id, title: n.title, articleType: n.article_type,
-        tags: parseTags(n.tags).map(t => t.toLowerCase()),
+        tagText: `${n.tags ?? ''} ${(n.webs ?? []).join(' ')}`.toLowerCase(),
         degree: degree.get(n.id) ?? 0, ghost: false, updatedAt: n.updated_at,
       })),
       ...ghostSim,
@@ -376,7 +388,7 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
       .force('collide', forceCollide().radius((d: any) => nodeRadius(d.degree) + force.collide))
       .stop()
       .tick(300)
-    setLayout(simNodes.map(n => ({ id: n.id, title: n.title, articleType: n.articleType, tags: n.tags, degree: n.degree, ghost: n.ghost, updatedAt: n.updatedAt, x: n.x, y: n.y })))
+    setLayout(simNodes.map(n => ({ id: n.id, title: n.title, articleType: n.articleType, tagText: n.tagText, degree: n.degree, ghost: n.ghost, updatedAt: n.updatedAt, x: n.x, y: n.y })))
     setLinks(edges)
     setGhostLinks(gLinks)
     setLoaded(true)
@@ -498,11 +510,9 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
 
   useEffect(() => {
     const q = search.trim().toLowerCase()
-    // Matches when any *enabled* field hits. Ghosts carry no tags, so a tags-only
-    // search dims them all — which is right: a nonexistent article has no tags.
-    const matches = (n: LayoutNode) => !q
-      || (searchFields.title && n.title.toLowerCase().includes(q))
-      || (searchFields.tags && n.tags.some(t => t.includes(q)))
+    // Ghosts carry no tags, so a tags-only search dims them all — which is right:
+    // an article that doesn't exist yet has nothing tagged.
+    const matches = (n: LayoutNode) => matchesQuery(n, q, searchFields)
     const dimById = new Map<number, boolean>()
     for (const n of layout) {
       let dim: boolean
@@ -536,14 +546,17 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
   const articleNodes = useMemo(() => layout.filter(n => !n.ghost), [layout])
   // Articles the current query hits — surfaced next to the field toggles so a
   // search that highlights nothing (or a stray tag hit off-screen) is obvious.
+  // Counts what's actually lit: the type filter and the orphan lens narrow it,
+  // exactly as the list view's filters narrow its own count.
   const matchCount = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return 0
     return articleNodes.filter(n =>
-      (searchFields.title && n.title.toLowerCase().includes(q))
-      || (searchFields.tags && n.tags.some(t => t.includes(q)))
+      matchesQuery(n, q, searchFields)
+      && (typeFilter === 'all' || n.articleType === typeFilter)
+      && !(orphanOnly && n.degree > 0)
     ).length
-  }, [articleNodes, search, searchFields])
+  }, [articleNodes, search, searchFields, typeFilter, orphanOnly])
   const linkedCount = useMemo(() => articleNodes.filter(n => n.degree > 0).length, [articleNodes])
   const hiddenCount = useMemo(
     () => graph ? graph.nodes.filter(n => excludedTypes.has(n.article_type)).length : 0,
