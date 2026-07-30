@@ -266,7 +266,7 @@ export interface Clock {
 
 // Whole-campaign wiki link graph (articles + [[link]]/track references).
 export interface LinkGraph {
-  nodes: { id: number; title: string; article_type: string; updated_at: string }[]
+  nodes: { id: number; title: string; article_type: string; tags: string; updated_at: string }[]
   edges: { from: number; to: number }[]
   ghosts: { title: string; sources: number[] }[]   // broken [[links]] → nonexistent titles
   mentions: { from: number; to: number }[]          // plain-text (unlinked) title occurrences

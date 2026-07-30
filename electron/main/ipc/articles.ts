@@ -103,7 +103,7 @@ export function registerArticleIPC() {
   // Edges/mentions are undirected and deduped.
   ipcMain.handle('articles:link-graph', (_e, campaignId: number) => {
     const rows = db.prepare(`
-      SELECT id, title, article_type, content, tracks, updated_at FROM articles WHERE campaign_id = ?
+      SELECT id, title, article_type, tags, content, tracks, updated_at FROM articles WHERE campaign_id = ?
     `).all(campaignId) as any[]
 
     const byTitle = new Map<string, any>()
@@ -213,7 +213,7 @@ export function registerArticleIPC() {
     }
 
     return {
-      nodes: rows.map(r => ({ id: r.id, title: r.title, article_type: r.article_type, updated_at: r.updated_at })),
+      nodes: rows.map(r => ({ id: r.id, title: r.title, article_type: r.article_type, tags: r.tags ?? '[]', updated_at: r.updated_at })),
       edges,
       ghosts: [...ghostMap.values()].map(g => ({ title: g.title, sources: [...g.sources] })),
       mentions,

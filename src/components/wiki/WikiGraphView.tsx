@@ -12,7 +12,7 @@ import 'reactflow/dist/style.css'
 import { forceSimulation, forceLink, forceManyBody, forceX, forceY, forceCollide } from 'd3-force'
 import { ArrowLeft, Network, Search, X, LayoutGrid, Unlink, Sparkles, Plus, Minus, Clock, Target, SlidersHorizontal, RotateCcw } from 'lucide-react'
 import type { LinkGraph, ArticleType } from '../../types'
-import { ALL_FILTERS } from './wikiConstants'
+import { ALL_FILTERS, parseTags } from './wikiConstants'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
 import { useExcludedTypes, TypeVisibilityMenu } from './TypeVisibilityMenu'
 import { useMenuClose } from '../../hooks/useMenuClose'
@@ -21,6 +21,7 @@ interface LayoutNode {
   id: number          // article id, or a negative synthetic id for ghosts
   title: string
   articleType: string
+  tags: string[]      // lowercased, for search matching (always empty for ghosts)
   degree: number
   ghost: boolean
   updatedAt?: string  // article's last-edited timestamp (undefined for ghosts)
@@ -49,6 +50,25 @@ const DEFAULT_FORCE: ForceParams = {
   linkDistance: 110, linkStrength: 0.35, repulsion: 260, gravityX: 0.06, gravityY: 0.08, collide: 30,
 }
 const FORCE_KEY = 'wiki-graph-force-params'
+
+// ── Search fields ───────────────────────────────────────────────────────────────
+// What the highlight box matches against — mirrors the list view's title/tags
+// checkboxes so a search term means the same thing in both views. At least one
+// field stays on (the last checked one is disabled), so a query always matches
+// something. Persisted per browser like the graph's other lens settings.
+interface SearchFields { title: boolean; tags: boolean }
+const SEARCH_FIELDS_KEY = 'wiki-graph-search-fields'
+function loadSearchFields(): SearchFields {
+  try {
+    const raw = localStorage.getItem(SEARCH_FIELDS_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      const f = { title: p.title !== false, tags: p.tags !== false }
+      if (f.title || f.tags) return f
+    }
+  } catch { /* malformed — fall through to defaults */ }
+  return { title: true, tags: true }
+}
 function loadForceParams(): ForceParams {
   try {
     const raw = localStorage.getItem(FORCE_KEY)
@@ -252,6 +272,8 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
   const [loaded, setLoaded] = useState(false)
   const [typeFilter, setTypeFilter] = useState<ArticleType | 'all'>('all')
   const [search, setSearch] = useState('')
+  const [searchFields, setSearchFields] = useState<SearchFields>(loadSearchFields)
+  useEffect(() => { localStorage.setItem(SEARCH_FIELDS_KEY, JSON.stringify(searchFields)) }, [searchFields])
   const [hoverId, setHoverId] = useState<number | null>(null)
   // Overlays: ghost nodes for broken links (on), unlinked-mention suggestions
   // (off — can be noisy), and an orphan-only focus toggle (transient).
@@ -332,13 +354,17 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
         const sources = g.sources.filter(id => idSet.has(id))
         if (sources.length === 0) continue
         const id = gid--
-        ghostSim.push({ id, title: g.title, articleType: '', degree: 0, ghost: true, updatedAt: undefined })
+        ghostSim.push({ id, title: g.title, articleType: '', tags: [], degree: 0, ghost: true, updatedAt: undefined })
         for (const s of sources) gLinks.push({ from: s, to: id })
       }
     }
 
     const simNodes: any[] = [
-      ...nodes.map(n => ({ id: n.id, title: n.title, articleType: n.article_type, degree: degree.get(n.id) ?? 0, ghost: false, updatedAt: n.updated_at })),
+      ...nodes.map(n => ({
+        id: n.id, title: n.title, articleType: n.article_type,
+        tags: parseTags(n.tags).map(t => t.toLowerCase()),
+        degree: degree.get(n.id) ?? 0, ghost: false, updatedAt: n.updated_at,
+      })),
       ...ghostSim,
     ]
     const simLinks: any[] = [...edges, ...gLinks].map(e => ({ source: e.from, target: e.to }))
@@ -350,7 +376,7 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
       .force('collide', forceCollide().radius((d: any) => nodeRadius(d.degree) + force.collide))
       .stop()
       .tick(300)
-    setLayout(simNodes.map(n => ({ id: n.id, title: n.title, articleType: n.articleType, degree: n.degree, ghost: n.ghost, updatedAt: n.updatedAt, x: n.x, y: n.y })))
+    setLayout(simNodes.map(n => ({ id: n.id, title: n.title, articleType: n.articleType, tags: n.tags, degree: n.degree, ghost: n.ghost, updatedAt: n.updatedAt, x: n.x, y: n.y })))
     setLinks(edges)
     setGhostLinks(gLinks)
     setLoaded(true)
@@ -471,16 +497,20 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
   }, [layout, links, ghostLinks, showMentions, visibleMentions, recencyOn, recencyRank])
 
   useEffect(() => {
-    const q = search.toLowerCase()
+    const q = search.trim().toLowerCase()
+    // Matches when any *enabled* field hits. Ghosts carry no tags, so a tags-only
+    // search dims them all — which is right: a nonexistent article has no tags.
+    const matches = (n: LayoutNode) => !q
+      || (searchFields.title && n.title.toLowerCase().includes(q))
+      || (searchFields.tags && n.tags.some(t => t.includes(q)))
     const dimById = new Map<number, boolean>()
     for (const n of layout) {
       let dim: boolean
       if (n.ghost) {
         // Ghosts have no type — hide them under any type filter or orphan focus.
-        dim = typeFilter !== 'all' || orphanOnly || (!!q && !n.title.toLowerCase().includes(q))
+        dim = typeFilter !== 'all' || orphanOnly || !matches(n)
       } else {
-        const filteredOut =
-          !((typeFilter === 'all' || n.articleType === typeFilter) && (!q || n.title.toLowerCase().includes(q)))
+        const filteredOut = !((typeFilter === 'all' || n.articleType === typeFilter) && matches(n))
         const orphanDim = orphanOnly && n.degree > 0
         dim = filteredOut || orphanDim
       }
@@ -501,9 +531,19 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
       if (e.data?.dim === dim && e.data?.hot === hot) return e
       return { ...e, data: { ...e.data, dim, hot }, style: edgeStyle(e.data.kind, dim, hot) }
     }))
-  }, [layout, neighbors, typeFilter, search, hoverId, orphanOnly, focusSet, recencyOn, recencyRank])
+  }, [layout, neighbors, typeFilter, search, searchFields, hoverId, orphanOnly, focusSet, recencyOn, recencyRank])
 
   const articleNodes = useMemo(() => layout.filter(n => !n.ghost), [layout])
+  // Articles the current query hits — surfaced next to the field toggles so a
+  // search that highlights nothing (or a stray tag hit off-screen) is obvious.
+  const matchCount = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return 0
+    return articleNodes.filter(n =>
+      (searchFields.title && n.title.toLowerCase().includes(q))
+      || (searchFields.tags && n.tags.some(t => t.includes(q)))
+    ).length
+  }, [articleNodes, search, searchFields])
   const linkedCount = useMemo(() => articleNodes.filter(n => n.degree > 0).length, [articleNodes])
   const hiddenCount = useMemo(
     () => graph ? graph.nodes.filter(n => excludedTypes.has(n.article_type)).length : 0,
@@ -564,15 +604,38 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', width: 220 }}>
-            <Search size={13} color="var(--text-muted)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-            <input className="input" style={{ paddingLeft: 30, paddingRight: search ? 28 : 10, fontSize: 13, height: 32 }}
-              placeholder="Highlight by title…" value={search} onChange={e => setSearch(e.target.value)} />
-            {search && (
-              <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 0 }}>
-                <X size={12} />
-              </button>
-            )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <div style={{ position: 'relative', width: 220 }}>
+              <Search size={13} color="var(--text-muted)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+              <input className="input" style={{ paddingLeft: 30, paddingRight: search ? 28 : 10, fontSize: 13, height: 32 }}
+                placeholder={searchFields.title && searchFields.tags ? 'Highlight by title or tag…' : searchFields.tags ? 'Highlight by tag…' : 'Highlight by title…'}
+                value={search} onChange={e => setSearch(e.target.value)} />
+              {search && (
+                <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 0 }}>
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 2 }}>
+              {(['title', 'tags'] as const).map(field => {
+                const active = searchFields[field]
+                // Never let both fields go off — the last one checked is locked on.
+                const isLast = active && !searchFields[field === 'title' ? 'tags' : 'title']
+                return (
+                  <label key={field} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', userSelect: 'none' }}>
+                    <input type="checkbox" checked={active} disabled={isLast}
+                      onChange={() => setSearchFields(f => ({ ...f, [field]: !active }))}
+                      style={{ accentColor: 'var(--gold)', cursor: isLast ? 'default' : 'pointer', width: 11, height: 11 }} />
+                    {field}
+                  </label>
+                )
+              })}
+              {search.trim() && (
+                <span style={{ fontSize: 11, color: matchCount > 0 ? 'var(--gold)' : 'var(--text-muted)', marginLeft: 'auto' }}>
+                  {matchCount} match{matchCount !== 1 ? 'es' : ''}
+                </span>
+              )}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             {ALL_FILTERS.filter(f => !excludedTypes.has(f.value)).map(f => {
