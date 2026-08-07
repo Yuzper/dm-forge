@@ -36,6 +36,8 @@ import { useEffect, useRef, useState } from 'react'
 import { InfoHint } from './InfoHint'
 import { richTextToPlain } from '../utils/richText'
 import SwatchPicker from './SwatchPicker'
+import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
+import { buildArticleMenu, truncate } from '../utils/contextMenus'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -603,6 +605,8 @@ interface RichEditorProps {
 export default function RichEditor({ content, onChange, placeholder, onWikiLinkClick, readOnly, expandable, excludeTitle }: RichEditorProps) {
   const { navigateToArticleByTitle, navigateToSessionById } = useStore()
   const editorRef = useRef<HTMLDivElement>(null)
+  const showMenu = useContextMenu()
+  const menuCtx = useMenuCtx()
 
   const [wikiSearch, setWikiSearch] = useState<{
     query: string; from: number; to: number
@@ -797,6 +801,38 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     el.addEventListener('click', handleClick, true)
     return () => el.removeEventListener('click', handleClick, true)
   }, [onWikiLinkClick, navigateToArticleByTitle, navigateToSessionById])
+
+  // Right-click a wiki link — or an autolink suggestion — for the same article
+  // menu the wiki list and the graph give. Everything else in the editor is left
+  // alone so the native cut/copy/paste menu still comes up in prose.
+  useEffect(() => {
+    const el = editorRef.current
+    if (!el || !editor) return
+    const onContext = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const linkEl = target.closest('[data-wiki-link]') as HTMLElement | null
+      const mentionEl = linkEl ? null : target.closest('[data-wiki-mention]') as HTMLElement | null
+      const title = linkEl?.getAttribute('data-wiki-link') ?? mentionEl?.getAttribute('data-wiki-mention')
+      if (!title) return
+
+      // A broken link points at nothing openable. Falling through gives the
+      // editing menu instead, which is what you want while standing in text.
+      const article = useStore.getState().allArticles.find(a => a.title.toLowerCase() === title.toLowerCase())
+      if (!article) return
+
+      showMenu(e, () => buildArticleMenu(article, menuCtx, {
+        extra: mentionEl ? [{
+          label: `Link to “${truncate(title)}”`,
+          click: () => {
+            const at = editor.view.posAtCoords({ left: e.clientX, top: e.clientY })
+            if (at) (editor.commands as any).linkMentionAt(at.pos)
+          },
+        }] : undefined,
+      }))
+    }
+    el.addEventListener('contextmenu', onContext, true)
+    return () => el.removeEventListener('contextmenu', onContext, true)
+  }, [editor, showMenu, menuCtx])
 
   // Listen for wiki, session, spell search events from extensions
   useEffect(() => {

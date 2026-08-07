@@ -8,6 +8,8 @@ import Modal from '../components/Modal'
 import EmptyState from '../components/EmptyState'
 import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
 import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
+import { useContextMenu } from '../hooks/useContextMenu'
+import { truncate } from '../utils/contextMenus'
 
 const SYSTEMS = ['D&D 5e 2014', 'D&D 5e 2024', 'Other']
 
@@ -244,6 +246,7 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
   const { selectCampaign } = useStore()
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const showMenu = useContextMenu()
 
   return (
     <>
@@ -251,6 +254,16 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
         className="card card-clickable"
         style={{ padding: '20px 22px', cursor: 'pointer', position: 'relative' }}
         onClick={() => selectCampaign(campaign)}
+        // No open-in-tab trio here: a campaign is not a Location. Switching
+        // campaigns replaces the whole workspace, so there is exactly one place
+        // this can open — and delete keeps its confirm dialog, since losing a
+        // campaign is not something an in-memory undo stack should be trusted with.
+        onContextMenu={e => showMenu(e, [
+          { label: 'Open campaign', click: () => selectCampaign(campaign) },
+          { label: 'Edit…', click: () => setEditOpen(true) },
+          { type: 'separator' },
+          { label: `Delete “${truncate(campaign.name)}”…`, click: () => setDeleteOpen(true) },
+        ])}
       >
         <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span className="badge badge-gold">{campaign.system}</span>

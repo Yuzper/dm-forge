@@ -234,4 +234,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // Publish the player-facing site (encrypted per-player static bundle)
   publishPlayerSite:   (campaignId: number) => ipcRenderer.invoke('publish:export', campaignId),
+
+  // Native context menus. The template is data only; the renderer keeps the
+  // behaviour and dispatches on the id that comes back (null = dismissed).
+  popupMenu:           (template: any[]) => ipcRenderer.invoke('menu:popup', template),
 })

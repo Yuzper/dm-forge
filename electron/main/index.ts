@@ -2,6 +2,8 @@
 import { app, BrowserWindow } from 'electron'
 import { db, initDatabase } from './db'
 import { createWindow, getMainWindow } from './window'
+import { buildAppMenu } from './appMenu'
+import { registerMenuIPC } from './menu'
 import { initUpdater } from './updater'
 import { syncTerritoryWeb } from './relationsSync'
 import { registerCampaignIPC } from './ipc/campaigns'
@@ -36,9 +38,12 @@ function registerIPC(imagesPath: string) {
   registerClockIPC()
   registerPlayerIPC()
   registerPublishIPC()
+  registerMenuIPC()
 }
 
 app.whenReady().then(() => {
+  // Before createWindow, so the window is built with the app menu already set.
+  buildAppMenu()
   createWindow()
   const mainWindow = getMainWindow()
   if (mainWindow) initUpdater(mainWindow)

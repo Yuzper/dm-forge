@@ -29,6 +29,8 @@ import { useMapMeasure } from '../../hooks/useMapMeasure'
 import { useShapeDrawing } from '../../hooks/useShapeDrawing'
 import { centroidOf, parsePoints } from '../../utils/mapShapeGeometry'
 import { makeDescriptionDoc as makePoiContent, parseHubLinks } from '../../utils/hubLinks'
+import { useContextMenu, useMenuCtx } from '../../hooks/useContextMenu'
+import { openItems, truncate, type MenuItem } from '../../utils/contextMenus'
 
 // The map panel's tab strip, which every client→image coordinate conversion has
 // to subtract before the percentage maths works out.
@@ -44,6 +46,8 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
   listSlot?: HTMLElement | null
 }) {
   const { currentCampaign, sessions, navigateToArticleByTitle, navigateToSessionById } = useStore()
+  const showMenu = useContextMenu()
+  const menuCtx = useMenuCtx()
 
   const [localArticles, setLocalArticles] = useState<{ id: number; title: string }[]>([])
   const [pois, setPois] = useState<POI[]>([])
@@ -275,6 +279,34 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
     setShapePopupPos(computeShapePopupPos(shape))
   }
 
+  // A world-map region is usually a kingdom or a district with an article behind
+  // it, so the menu leads with opening that — a border you can't click through
+  // is just decoration.
+  const shapeMenu = useCallback((shape: MapShape, e: React.MouseEvent) => {
+    const article = parseHubLinks(shape.hub_links).find(l => l.type === 'wiki' && l.article_id)
+    const menu: MenuItem[] = []
+    if (article) {
+      menu.push(...openItems(
+        { type: 'article', articleId: article.article_id! }, menuCtx,
+        `Open “${truncate(article.title ?? 'linked article')}”`,
+      ), { type: 'separator' })
+    }
+    menu.push(
+      { label: 'Edit region…', click: () => setEditingShape(shape) },
+      { label: 'Edit points', click: () => drawing.setSelectedId(shape.id) },
+      { type: 'separator' },
+      {
+        label: `Delete “${truncate(shape.label || 'this region')}”`,
+        click: async () => {
+          await drawing.deleteShape(shape.id)
+          setSelectedShape(prev => prev?.id === shape.id ? null : prev)
+          setShapePopupPos(null)
+        },
+      },
+    )
+    showMenu(e, menu)
+  }, [menuCtx, showMenu, drawing])
+
   const handleSaveShape = async (result: Parameters<typeof shapeStore.updateShape>[1]) => {
     if (!editingShape) return
     const updated = await shapeStore.updateShape(editingShape.id, result)
@@ -413,14 +445,44 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
     setEditingPOI(null)
   }
 
-  const handleDeletePOI = async () => {
-    if (!editingPOI) return
-    await window.api.deletePOI(editingPOI.id)
-    setPois((prev: POI[]) => prev.filter(p => p.id !== editingPOI.id))
+  // `target` lets a pin's context menu delete a pin without opening its editor.
+  const handleDeletePOI = async (target?: POI) => {
+    const doomed = target ?? editingPOI
+    if (!doomed) return
+    await window.api.deletePOI(doomed.id)
+    setPois((prev: POI[]) => prev.filter(p => p.id !== doomed.id))
     setSelectedPOI(null)
     setEditingPOI(null)
     setPopupPos(null)
   }
+
+  // The world map's pins are the campaign's index of places, so the menu leads
+  // with wherever a pin points rather than with editing it.
+  const poiMenu = useCallback((poi: POI, e: React.MouseEvent) => {
+    const links = parseHubLinks((poi as any).hub_links || '[]')
+    const article = links.find(l => l.type === 'wiki' && l.article_id)
+    const session = links.find(l => l.type === 'session' && l.session_id)
+    const menu: MenuItem[] = []
+    if (article) {
+      menu.push(...openItems(
+        { type: 'article', articleId: article.article_id! }, menuCtx,
+        `Open “${truncate(article.title ?? 'linked article')}”`,
+      ))
+    }
+    if (session) {
+      menu.push({
+        label: `Open ${truncate(session.name ?? 'linked session')}`,
+        click: () => menuCtx.go({ type: 'session', sessionId: session.session_id! }),
+      })
+    }
+    if (menu.length) menu.push({ type: 'separator' })
+    menu.push(
+      { label: 'Edit pin…', click: () => setEditingPOI(poi) },
+      { type: 'separator' },
+      { label: `Delete “${truncate(poi.label || 'this pin')}”`, click: () => void handleDeletePOI(poi) },
+    )
+    showMenu(e, menu)
+  }, [menuCtx, showMenu])
 
   // ── Contents panel ────────────────────────────────────────────────────────
   // `stacked` = the map hub's left panel column; otherwise it floats over the
@@ -598,10 +660,17 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
                 draft={drawing.draft}
                 livePoints={drawing.livePoints}
                 onShapeClick={handleShapeClick}
+                onShapeContextMenu={shapeMenu}
                 onShapeHover={setHoveredShapeId}
                 onBodyDown={drawing.onBodyDown}
                 onVertexDown={drawing.onVertexDown}
-                onVertexContextMenu={drawing.onVertexContextMenu}
+                // Right-click a corner while reshaping. It used to delete the point
+                // outright, which nothing advertised; a one-item menu says so.
+                // Not editing? Fall through and let the canvas menu take it.
+                onVertexContextMenu={(shape, index, e) => {
+                  if (!drawing.editing) return
+                  showMenu(e, [{ label: 'Remove point', click: () => void drawing.removeVertex(shape, index) }])
+                }}
                 onMidpointDown={drawing.onMidpointDown}
               />
               {/* Measure overlay: reference line, route legs, waypoint dots.
@@ -630,6 +699,7 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
                   draggable={canDragPOI}
                   onSelect={(p, e) => handlePOIClick(p, e)}
                   onMouseDown={(p, e) => handlePOIMouseDown(p, e)}
+                  onContextMenu={poiMenu}
                   onHoverChange={setHoveredPoiId}
                 />
               ))}

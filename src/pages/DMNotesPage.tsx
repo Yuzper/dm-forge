@@ -10,6 +10,9 @@ import {
   Sparkles, Plus, Trash2, MoreHorizontal, FileText, Check,
   ArrowLeft, FolderPlus, ChevronDown, ChevronUp, Pencil, ArrowUpCircle, ArrowDownCircle, GripVertical, Lock, ArrowUp, ArrowDown,
 } from 'lucide-react'
+import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
+import { buildLocationMenu, truncate } from '../utils/contextMenus'
+import type { Location } from '../store/location'
 
 // ── Drag-and-drop plumbing (pages + groups in the notes sidebar) ────────────────
 type NotesDropHint =
@@ -282,9 +285,32 @@ function PageItem({ page, isActive, groups, isFirst, isLast, dnd, index, contain
 }) {
   const isDragging = dnd.dragItem?.kind === 'page' && dnd.dragItem.id === page.id
   const locked = !!page.session_id
+  const showMenu = useContextMenu()
+  const menuCtx = useMenuCtx()
+  const loc: Location = { type: 'dm-notes', pageId: page.id }
   return (
     <div
       onClick={onClick}
+      onAuxClick={e => { if (e.button === 1) { e.preventDefault(); menuCtx.goTab(loc, true) } }}
+      onContextMenu={e => showMenu(e, buildLocationMenu(loc, menuCtx, {
+        label: `Open “${truncate(page.title)}”`,
+        copy: { label: 'Copy title', text: page.title },
+        extra: [
+          !isFirst && { label: 'Move up', click: onMoveUp },
+          !isLast && { label: 'Move down', click: onMoveDown },
+          groups.length > 0 && !locked && {
+            label: 'Move to folder',
+            submenu: [
+              { label: 'No folder', click: () => onMoveToGroup(null) },
+              ...groups.map(g => ({ label: g.name, click: () => onMoveToGroup(g.id) })),
+            ],
+          },
+        ],
+        // Session notes pages mirror a session's own notes — deleting one here
+        // would be deleting the session's notes from the wrong place.
+        onDelete: locked ? undefined : onDelete,
+        deleteLabel: `Delete “${truncate(page.title)}”`,
+      }))}
       draggable={!locked}
       onDragStart={locked ? undefined : e => {
         e.dataTransfer.effectAllowed = 'move'
@@ -711,12 +737,17 @@ export default function DMNotesPage() {
     }
   }, [dmNotesOpenPageId])
 
-  // Remember the open page in the current Recent entry (no new entry per switch),
-  // so returning to DM Notes reopens the page you left on.
-  const patchLastHistoryEntry = useStore(s => s.patchLastHistoryEntry)
+  // Remember the open page on this tab's location (a sub-position, not a new
+  // history step), so returning to DM Notes reopens the page you left on.
+  const publishLocationNames = useStore(s => s.publishLocationNames)
   useEffect(() => {
-    if (activePage) patchLastHistoryEntry('dm-notes', { pageId: activePage.id })
-  }, [activePage?.id, patchLastHistoryEntry])
+    if (pages.length) publishLocationNames('dm-notes', Object.fromEntries(pages.map(p => [p.id, p.title])))
+  }, [pages, publishLocationNames])
+
+  const patchLocation = useStore(s => s.patchLocation)
+  useEffect(() => {
+    if (activePage) patchLocation('dm-notes', { pageId: activePage.id })
+  }, [activePage?.id, patchLocation])
 
   const openPage = async (id: number) => {
     setLoading(true)

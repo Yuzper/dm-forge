@@ -11,6 +11,8 @@ import LootTableEditor from '../components/LootTableEditor'
 import SectionDivider from '../components/SectionDivider'
 import Modal from '../components/Modal'
 import { SECTION_ACCENTS } from '../constants/sections'
+import { useContextMenu } from '../hooks/useContextMenu'
+import { truncate } from '../utils/contextMenus'
 
 // Section accent used for loot-table UI chrome on this page.
 const ACCENT = SECTION_ACCENTS['loot-tables']
@@ -244,16 +246,25 @@ function TableEditorPanel({ table, onUpdate, onDelete }: {
 
 // ── Sidebar Table List ─────────────────────────────────────────────────────────
 
-function TableListItem({ table, isActive, onClick }: {
+function TableListItem({ table, isActive, onClick, onDelete }: {
   table: MasterLootTable
   isActive: boolean
   onClick: () => void
+  onDelete: () => void
 }) {
   const accent = categoryColor(table.category)
+  const showMenu = useContextMenu()
   const itemCount = (() => { try { return JSON.parse(table.items).length } catch { return 0 } })()
   return (
     <div
       onClick={onClick}
+      // Loot tables all share one Location (`loot-tables`), so there is no tab
+      // to open a single table into — the menu is an accelerator, not navigation.
+      onContextMenu={e => showMenu(e, [
+        { label: 'Open', enabled: !isActive, click: onClick },
+        { type: 'separator' },
+        { label: `Delete “${truncate(table.name)}”`, click: onDelete },
+      ])}
       style={{
         padding: '8px 10px', borderRadius: 'var(--radius-sm)',
         cursor: isActive ? 'default' : 'pointer',
@@ -288,12 +299,13 @@ function TableListItem({ table, isActive, onClick }: {
 
 // ── Category Group ─────────────────────────────────────────────────────────────
 
-function CategoryGroup({ category, tables, activeId, onSelect, onCreateInCategory }: {
+function CategoryGroup({ category, tables, activeId, onSelect, onCreateInCategory, onDelete }: {
   category: LootTableCategory
   tables: MasterLootTable[]
   activeId: number | null
   onSelect: (t: MasterLootTable) => void
   onCreateInCategory: (cat: LootTableCategory) => void
+  onDelete: (t: MasterLootTable) => void
 }) {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem(`loot:category-collapsed:${category}`) === '1' } catch { return false }
@@ -347,6 +359,7 @@ function CategoryGroup({ category, tables, activeId, onSelect, onCreateInCategor
               table={t}
               isActive={activeId === t.id}
               onClick={() => onSelect(t)}
+              onDelete={() => onDelete(t)}
             />
           ))}
         </div>
@@ -395,12 +408,15 @@ export default function LootTablesPage() {
     if (activeTable?.id === updated.id) setActiveTable(updated)
   }
 
-  const handleDelete = async () => {
-    if (!activeTable) return
-    await window.api.deleteLootTable(activeTable.id)
-    const remaining = tables.filter(t => t.id !== activeTable.id)
+  // `target` lets a row's context menu delete a table it isn't standing on;
+  // without one this is the editor's own Delete button, acting on the open table.
+  const handleDelete = async (target?: MasterLootTable) => {
+    const doomed = target ?? activeTable
+    if (!doomed) return
+    await window.api.deleteLootTable(doomed.id)
+    const remaining = tables.filter(t => t.id !== doomed.id)
     setTables(remaining)
-    setActiveTable(remaining.length > 0 ? remaining[0] : null)
+    if (activeTable?.id === doomed.id) setActiveTable(remaining.length > 0 ? remaining[0] : null)
   }
 
   const handleResetDefaults = async () => {
@@ -486,6 +502,7 @@ export default function LootTablesPage() {
                 activeId={activeTable?.id ?? null}
                 onSelect={setActiveTable}
                 onCreateInCategory={handleCreate}
+                onDelete={handleDelete}
               />
             ))}
 

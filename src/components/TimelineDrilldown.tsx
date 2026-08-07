@@ -279,13 +279,14 @@ export type SpanOrientation = 'vertical' | 'horizontal'
 
 export function TimelineSpanView({
   year, span, items, cal, lifespans, showLifespans,
-  orient, onOrientChange, onStepSpan, onOpenItem, onAddAt,
+  orient, onOrientChange, onStepSpan, onOpenItem, onItemMenu, onAddAt,
 }: {
   year: number; span: number; items: ClusterItem[]; cal: CampaignCalendar
   lifespans: LifespanBand[]; showLifespans: boolean
   orient: SpanOrientation; onOrientChange: (o: SpanOrientation) => void
   onStepSpan: (delta: number) => void
   onOpenItem: (it: ClusterItem) => void
+  onItemMenu?: (it: ClusterItem, e: React.MouseEvent) => void
   onAddAt: (day: number) => void
 }) {
   const days = cal.spans[span].days
@@ -337,17 +338,18 @@ export function TimelineSpanView({
       )}
 
       {orient === 'vertical'
-        ? <SpanRail year={year} span={span} items={items} cal={cal} onOpenItem={onOpenItem} />
-        : <SpanAxis list={list} days={days} from={from} cal={cal} onOpenItem={onOpenItem} />}
+        ? <SpanRail year={year} span={span} items={items} cal={cal} onOpenItem={onOpenItem} onItemMenu={onItemMenu} />
+        : <SpanAxis list={list} days={days} from={from} cal={cal} onOpenItem={onOpenItem} onItemMenu={onItemMenu} />}
     </div>
   )
 }
 
 // Vertical rail: the long dimension is the one a split pane has to spare, so
 // this orientation never needs horizontal scroll however narrow it gets.
-function SpanRail({ year, span, items, cal, onOpenItem }: {
+function SpanRail({ year, span, items, cal, onOpenItem, onItemMenu }: {
   year: number; span: number; items: ClusterItem[]; cal: CampaignCalendar
   onOpenItem: (it: ClusterItem) => void
+  onItemMenu?: (it: ClusterItem, e: React.MouseEvent) => void
 }) {
   const { groups, quiet, height } = layoutSpanRail(items, year, span, cal)
 
@@ -393,7 +395,7 @@ function SpanRail({ year, span, items, cal, onOpenItem }: {
             {g.items.map((it, i) => {
               const sub = itemSub(it, cal)
               return (
-                <button key={`${it.kind}-${it.id}-${i}`} onClick={() => onOpenItem(it)} className="hover-bg"
+                <button key={`${it.kind}-${it.id}-${i}`} onClick={() => onOpenItem(it)} onContextMenu={e => onItemMenu?.(it, e)} className="hover-bg"
                   style={{
                     display: 'flex', alignItems: 'baseline', gap: 7, textAlign: 'left', width: '100%',
                     background: 'transparent', border: 'none', borderRadius: 'var(--radius-sm)',
@@ -424,9 +426,10 @@ function SpanRail({ year, span, items, cal, onOpenItem }: {
 
 // Horizontal axis: the familiar reading, kept for full-width use. Scrolls
 // sideways by construction — a long division will not fit a narrow pane.
-function SpanAxis({ list, days, from, cal, onOpenItem }: {
+function SpanAxis({ list, days, from, cal, onOpenItem, onItemMenu }: {
   list: ClusterItem[]; days: number; from: number; cal: CampaignCalendar
   onOpenItem: (it: ClusterItem) => void
+  onItemMenu?: (it: ClusterItem, e: React.MouseEvent) => void
 }) {
   const lanes: ClusterItem[][] = []
   for (const it of list) {
@@ -448,7 +451,7 @@ function SpanAxis({ list, days, from, cal, onOpenItem }: {
               const color = it.color || KIND_COLOR[it.kind]
               const label = itemLabel(it)
               return (
-                <g key={`${it.kind}-${it.id}-${i}`} style={{ cursor: 'pointer' }} onClick={() => onOpenItem(it)}>
+                <g key={`${it.kind}-${it.id}-${i}`} style={{ cursor: 'pointer' }} onClick={() => onOpenItem(it)} onContextMenu={e => onItemMenu?.(it, e)}>
                   <line x1={x} y1={y + 8} x2={x} y2={baseY} stroke={color} strokeWidth={1} opacity={0.35} />
                   <circle cx={x} cy={baseY} r={3.5} fill={color} />
                   <rect x={x + 6} y={y - 3} width={Math.min(label.length * 6.4 + 14, 170)} height={18} rx={4}
@@ -478,7 +481,7 @@ function SpanAxis({ list, days, from, cal, onOpenItem }: {
         <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.07em' }}>IN ORDER</div>
         {!list.length && <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>nothing recorded this {cal.unitName.toLowerCase()}</div>}
         {list.map((it, i) => (
-          <button key={`${it.kind}-${it.id}-${i}`} onClick={() => onOpenItem(it)} className="hover-bg" style={{
+          <button key={`${it.kind}-${it.id}-${i}`} onClick={() => onOpenItem(it)} onContextMenu={e => onItemMenu?.(it, e)} className="hover-bg" style={{
             display: 'flex', alignItems: 'baseline', gap: 7, width: '100%', textAlign: 'left',
             background: 'transparent', border: 'none', borderRadius: 'var(--radius-sm)',
             padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 12,

@@ -13,6 +13,7 @@ import { ArticleEditor } from '../components/wiki/ArticleEditor'
 import WikiGraphView from '../components/wiki/WikiGraphView'
 import { useExcludedTypes, TypeVisibilityMenu } from '../components/wiki/TypeVisibilityMenu'
 import Modal from '../components/Modal'
+import { useArticleContextMenu, useMenuCtx } from '../hooks/useContextMenu'
 
 // ─── Create Modal ──────────────────────────────────────────────────────────────
 
@@ -83,9 +84,15 @@ function ArticleCard({ article, onOpen }: { article: ArticleSummary; onOpen: () 
   const Icon = typeInfo.icon
   const tags = parseTags(article.tags)
   const { wikiSearchFields } = useStore()
+  const deleteArticle = useStore(s => s.deleteArticle)
+  const articleMenu = useArticleContextMenu()
+  const menuCtx = useMenuCtx()
 
   return (
-    <div className="card card-clickable" style={{ padding: 0, cursor: 'pointer', overflow: 'hidden' }} onClick={onOpen}>
+    <div className="card card-clickable" style={{ padding: 0, cursor: 'pointer', overflow: 'hidden' }} onClick={onOpen}
+      // Middle-click opens in a background tab, exactly like a browser link.
+      onAuxClick={e => { if (e.button === 1) { e.preventDefault(); menuCtx.goTab({ type: 'article', articleId: article.id }, true) } }}
+      onContextMenu={articleMenu(article, { onDelete: () => void deleteArticle(article.id) })}>
       {article.cover_image ? (
         <div style={{ height: 100, overflow: 'hidden', flexShrink: 0 }}>
           <img src={`file://${article.cover_image}`} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />

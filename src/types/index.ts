@@ -801,6 +801,10 @@ export interface ElectronAPI {
   updateRelationEdge:     (id: number, data: any) => Promise<any>
   deleteRelationEdge:     (id: number) => Promise<void>
   getArticleRelations:    (articleId: number, campaignId: number) => Promise<any[]>
+  /** Webs whose own article_id points at this article (its hierarchy webs). */
+  listRelationWebsForArticle: (articleId: number) => Promise<any[]>
+  /** Webs this article appears in as a node — what "show in relations" offers. */
+  listRelationWebsForMember:  (articleId: number) => Promise<{ id: number; name: string; template: string }[]>
 
   // Maps
   replaceMapImage: (mapId: number) => Promise<{ path: string } | null>
@@ -840,6 +844,20 @@ export interface ElectronAPI {
 
   // Publish the player-facing site
   publishPlayerSite:     (campaignId: number) => Promise<PublishResult>
+
+  // Native context menus — see src/hooks/useContextMenu.ts for the caller side.
+  popupMenu:             (template: MenuTemplateItem[]) => Promise<string | null>
+}
+
+/** Serializable menu template sent to the main process. Mirrors electron/main/menu.ts. */
+export interface MenuTemplateItem {
+  id?: string
+  label?: string
+  type?: 'normal' | 'separator' | 'checkbox'
+  enabled?: boolean
+  checked?: boolean
+  accelerator?: string
+  submenu?: MenuTemplateItem[]
 }
 
 export interface PublishResult {

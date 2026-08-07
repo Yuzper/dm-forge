@@ -19,6 +19,8 @@ import {
 } from './WikiToolbar'
 import { useExcludedTypes, TypeVisibilityMenu } from './TypeVisibilityMenu'
 import { useMenuClose } from '../../hooks/useMenuClose'
+import { useContextMenu, useMenuCtx } from '../../hooks/useContextMenu'
+import { buildArticleMenu } from '../../utils/contextMenus'
 
 interface LayoutNode {
   id: number          // article id, or a negative synthetic id for ghosts
@@ -306,6 +308,9 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
   initialFocusId?: number | null   // deep-link: focus this article once loaded
 }) {
   const { currentCampaign, openArticle, setView, setCampaignSubView, setHintContext } = useStore()
+  const deleteArticle = useStore(s => s.deleteArticle)
+  const showMenu = useContextMenu()
+  const menuCtx = useMenuCtx()
   useEffect(() => { setHintContext('wiki-graph'); return () => setHintContext(null) }, [setHintContext])
 
   const [graph, setGraph] = useState<LinkGraph | null>(null)
@@ -352,6 +357,11 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
     if (typeFilter !== 'all' && excludedTypes.has(typeFilter)) setTypeFilter('all')
   }, [excludedTypes, typeFilter])
 
+  // Bumped when the graph's own contents change under it — deleting an article
+  // from a node's context menu, so far. The fetch below is otherwise once per
+  // campaign, which is right: nothing else in here edits the wiki.
+  const [reloadNonce, setReloadNonce] = useState(0)
+
   // Fetch the raw graph once per campaign.
   useEffect(() => {
     if (!currentCampaign) return
@@ -362,7 +372,7 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
       if (!cancelled) setGraph(g)
     })
     return () => { cancelled = true }
-  }, [currentCampaign?.id])
+  }, [currentCampaign?.id, reloadNonce])
 
   // Visible article ids (after type exclusion) — mentions are filtered to these.
   const visibleIds = useMemo(
@@ -749,6 +759,28 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
             }}
             onNodeMouseEnter={(_e: any, node: any) => setHoverId(Number(node.id))}
             onNodeMouseLeave={() => setHoverId(null)}
+            onNodeContextMenu={(e: React.MouseEvent, node: any) => {
+              const id = Number(node.id)
+              // A ghost is a link with no article behind it — the only thing to
+              // offer is filling it in.
+              if (id < 0) {
+                showMenu(e, [{ label: `Create “${node.data.title}”`, click: () => onCreateArticle(node.data.title) }])
+                return
+              }
+              const focused = focusId === id
+              showMenu(e, () => buildArticleMenu(
+                { id, title: node.data.title, article_type: layout.find(n => n.id === id)?.articleType },
+                menuCtx,
+                {
+                  inGraph: true,
+                  extra: [{
+                    label: focused ? 'Clear focus' : 'Focus on this node',
+                    click: () => { setFocusDepth(1); setFocusId(focused ? null : id) },
+                  }],
+                  onDelete: async () => { await deleteArticle(id); setReloadNonce(n => n + 1) },
+                },
+              ))
+            }}
             fitView fitViewOptions={{ padding: 0.15 }}
             minZoom={0.08}
             proOptions={{ hideAttribution: true }}

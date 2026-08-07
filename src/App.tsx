@@ -1,5 +1,5 @@
 // path: src/App.tsx
-import { useEffect } from 'react'
+import { Fragment, useEffect } from 'react'
 import type React from 'react'
 import { useStore } from './store/store'
 import { applyTheme, getStoredTheme, applyTextTheme, getStoredTextTheme } from './constants/themes'
@@ -9,23 +9,18 @@ import { applyTheme, getStoredTheme, applyTextTheme, getStoredTextTheme } from '
 applyTheme(getStoredTheme())
 applyTextTheme(getStoredTextTheme())
 import Sidebar from './components/Sidebar'
-import CampaignsPage from './pages/CampaignsPage'
-import CampaignDetailPage from './pages/CampaignDetailPage'
-import SessionPage from './pages/SessionPage'
-import WikiPage from './pages/WikiPage'
-import DMNotesPage from './pages/DMNotesPage'
-import LootTablesPage from './pages/LootTablesPage'
 import StatBlockPage from './pages/StatBlockPage'
 import { UpdateBanner } from './components/UpdateBanner'
-import RelationsPage from './pages/RelationsPage'
-import TimelinePage from './pages/TimelinePage'
-import SoundboardPage from './pages/SoundboardPage'
 import SoundboardWidget from './components/SoundboardWidget'
 import StatBlockOverlay from './components/StatBlockOverlay'
 import HintsWidget from './components/HintsWidget'
 import GlobalSearch from './components/GlobalSearch'
 import FindBar from './components/FindBar'
 import PlayersManager from './components/PlayersManager'
+import { ActivePaneProvider } from './context/PaneContext'
+import PaneView from './components/PaneView'
+import PaneSplitter from './components/PaneSplitter'
+import { useTabShortcuts } from './hooks/useTabShortcuts'
 
 const params = new URLSearchParams(window.location.search)
 const statblockMode = params.get('mode') === 'statblock'
@@ -34,7 +29,7 @@ const statblockOverride = statblockMode ? params.get('statblockOverride') : null
 const nameOverride = statblockMode ? params.get('nameOverride') : null
 
 export default function App() {
-  const { view, loadCampaigns, bgStyle, currentCampaign, soundboardOpen, statBlockOverlays, playersManagerOpen } = useStore()
+  const { loadCampaigns, bgStyle, currentCampaign, soundboardOpen, statBlockOverlays, playersManagerOpen, paneIds, splitRatio } = useStore()
 
   useEffect(() => { if (!statblockMode) loadCampaigns() }, [])
 
@@ -49,6 +44,8 @@ export default function App() {
   }
 
   return (
+    <ActivePaneProvider>
+    <TabShortcuts />
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', ...bgStyleCSS(bgStyle) }}>
       <Sidebar />
       <UpdateBanner />
@@ -60,19 +57,30 @@ export default function App() {
       <GlobalSearch />
       <FindBar />
       {currentCampaign && playersManagerOpen && <PlayersManager />}
-      <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {view === 'campaigns'   && <CampaignsPage />}
-        {view === 'campaign'    && <CampaignDetailPage />}
-        {view === 'session'     && <SessionPage />}
-        {view === 'wiki'        && <WikiPage />}
-        {view === 'dm-notes'    && <DMNotesPage />}
-        {view === 'loot-tables' && <LootTablesPage />}
-        {view === 'relations'   && <RelationsPage />}
-        {view === 'timeline'    && <TimelinePage />}
-        {view === 'soundboard'  && <SoundboardPage />}
+      <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' }}>
+        {paneIds.map((id, i) => (
+          <Fragment key={id}>
+            {i > 0 && <PaneSplitter />}
+            <div style={{
+              // Ratio drives the first pane; the second takes the remainder.
+              flex: paneIds.length > 1 ? (i === 0 ? splitRatio : 1 - splitRatio) : 1,
+              minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            }}>
+              <PaneView paneId={id} />
+            </div>
+          </Fragment>
+        ))}
       </main>
     </div>
+    </ActivePaneProvider>
   )
+}
+
+// Rendered inside ActivePaneProvider so Ctrl+T / Ctrl+W / Ctrl+Tab act on the
+// pane that has focus, not always the first one.
+function TabShortcuts() {
+  useTabShortcuts()
+  return null
 }
 
 function bgStyleCSS(style: string): React.CSSProperties {

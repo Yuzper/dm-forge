@@ -5,6 +5,8 @@ import { Music2, X, Minus, ChevronDown, Volume2, SlidersHorizontal, Play, Square
 import type { Sound, SoundCategory } from '../types'
 import { soundCategoryColor, LIBRARY_BOARD_ID, LIBRARY_BOARD } from '../constants/soundCategories'
 import DropdownPortal from './DropdownPortal'
+import { useContextMenu } from '../hooks/useContextMenu'
+import { truncate } from '../utils/contextMenus'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -21,8 +23,9 @@ export default function SoundboardWidget() {
   const {
     view, currentCampaign, currentSession, soundboardMinimized,
     setSoundboardMinimized, setSoundboardOpen,
-    soundBoards: boards, loadSoundBoards, soundsVersion,
+    soundBoards: boards, loadSoundBoards, soundsVersion, bumpSoundsVersion,
   } = useStore()
+  const showMenu = useContextMenu()
 
   // Session-aware open state: expand while viewing a session, auto-minimise (but
   // keep playing) when you navigate elsewhere in the campaign. Keyed on `view`
@@ -432,6 +435,38 @@ export default function SoundboardWidget() {
     s.category === 'music'    ? playingMusic    === s.id :
     playingEffects.has(s.id) || loopingEffects.has(s.id)
 
+  // Right-click a sound mid-session. Editing lives on the Soundboard page; what
+  // is wanted while running a game is the loop toggle and a panic button, so
+  // that is all this offers. Library rows can't be removed from here — the
+  // library is app-wide, and a stray click during play should not empty it.
+  const isLibrary = activeBoardId === LIBRARY_BOARD_ID
+  const soundMenu = (s: Sound) => (e: React.MouseEvent) => showMenu(e, [
+    {
+      label: 'Loop', type: 'checkbox', checked: !!s.loop,
+      click: () => {
+        const loop = s.loop ? 0 : 1
+        setSounds(prev => prev.map(x => x.id === s.id ? { ...x, loop } : x))
+        const live = audioRefs.current.get(s.id)
+        if (live) live.loop = !!loop
+        if (isLibrary) void window.api.updateLibrarySound(s.id, { loop })
+        else void window.api.updateSound(s.id, { loop })
+      },
+    },
+    { type: 'separator' },
+    { label: 'Stop everything', enabled: audioRefs.current.size > 0, click: stopAll },
+    ...(isLibrary ? [] : [
+      { type: 'separator' as const },
+      {
+        label: `Remove “${truncate(s.name)}” from this board`,
+        click: async () => {
+          if (isPlaying(s)) stopAll()
+          await window.api.deleteSound(s.id)
+          bumpSoundsVersion()
+        },
+      },
+    ]),
+  ])
+
   const widgetStyle: React.CSSProperties = pos
     ? { position: 'fixed', left: pos.x, top: pos.y, zIndex: 1000 }
     : { position: 'fixed', right: 24, bottom: 24, zIndex: 1000 }
@@ -617,7 +652,7 @@ export default function SoundboardWidget() {
                   {catSounds.map(s => {
                     const active = isPlaying(s)
                     return (
-                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div key={s.id} onContextMenu={soundMenu(s)} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <button
                           onClick={() => toggleSound(s)}
                           title={active ? 'Stop' : 'Play'}
@@ -657,6 +692,7 @@ export default function SoundboardWidget() {
                     <button
                       key={s.id}
                       onClick={() => toggleSound(s)}
+                      onContextMenu={soundMenu(s)}
                       title={errored
                         ? `${s.name} — file error, click to retry`
                         : s.hotkey ? `${s.name} [${s.hotkey}]` : s.name}

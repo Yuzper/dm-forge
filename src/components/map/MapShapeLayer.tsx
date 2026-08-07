@@ -35,6 +35,7 @@ export interface MapShapeLayerProps {
   /** Shapes on these layers stay visible but never catch a click. */
   lockedLayerIds?: number[]
   onShapeClick?: (shape: MapShape, e: React.MouseEvent) => void
+  onShapeContextMenu?: (shape: MapShape, e: React.MouseEvent) => void
   onShapeHover?: (id: number | null) => void
   onBodyDown?: (shape: MapShape, e: React.MouseEvent) => void
   onVertexDown?: (shape: MapShape, index: number, e: React.MouseEvent) => void
@@ -45,7 +46,7 @@ export interface MapShapeLayerProps {
 export default function MapShapeLayer({
   shapes, layers, box, scale, interactive,
   selectedId, hoveredId, showHandles, draft, livePoints, lockedLayerIds,
-  onShapeClick, onShapeHover, onBodyDown, onVertexDown, onVertexContextMenu, onMidpointDown,
+  onShapeClick, onShapeContextMenu, onShapeHover, onBodyDown, onVertexDown, onVertexContextMenu, onMidpointDown,
 }: MapShapeLayerProps) {
   // Unfiled shapes (layer_id null) are always visible; otherwise the layer's
   // own toggle decides. A shape on a deleted-but-not-yet-refetched layer is
@@ -116,6 +117,10 @@ export default function MapShapeLayer({
           // the very selection just made).
           onClick: live && onShapeClick
             ? (e: React.MouseEvent) => { e.stopPropagation(); onShapeClick(shape, e) }
+            : undefined,
+          // Same reason as onClick: the canvas menu underneath must not also fire.
+          onContextMenu: live && onShapeContextMenu
+            ? (e: React.MouseEvent) => { e.stopPropagation(); onShapeContextMenu(shape, e) }
             : undefined,
           onMouseDown: live && onBodyDown ? (e: React.MouseEvent) => onBodyDown(shape, e) : undefined,
           onMouseEnter: live && onShapeHover ? () => onShapeHover(shape.id) : undefined,

@@ -17,6 +17,8 @@ import EmptyState from '../EmptyState'
 import { InWorldDatePicker } from '../InWorldDatePicker'
 import SwatchPicker from '../SwatchPicker'
 import { STANDARD_PALETTE } from '../../constants/palettes'
+import { useContextMenu, useMenuCtx } from '../../hooks/useContextMenu'
+import { buildSessionMenu } from '../../utils/contextMenus'
 
 // Extend Session with in_world_day / in_world_day_end which exist in DB but not the shared type yet
 type SessionExt = Session & { in_world_day?: number | null; in_world_day_end?: number | null }
@@ -218,11 +220,18 @@ function SessionRow({ session, arc }: { session: Session; arc: Arc }) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
   useMenuClose(menuOpen, menuRef, setMenuOpen)
+  const showMenu = useContextMenu()
+  const menuCtx = useMenuCtx()
 
   return (
     <>
       <div
         onClick={() => selectSession(session)}
+        onAuxClick={e => { if (e.button === 1) { e.preventDefault(); menuCtx.goTab({ type: 'session', sessionId: session.id }, true) } }}
+        onContextMenu={e => showMenu(e, buildSessionMenu(session, menuCtx, {
+          extra: [{ label: 'Edit…', click: () => setEditOpen(true) }],
+          onDelete: () => void deleteSession(session.id),
+        }))}
         style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', cursor: 'pointer', transition: 'all 120ms ease', position: 'relative', '--hover-accent': arc.color } as React.CSSProperties}
         className="hover-border-accent hover-bg-elevated"
       >
@@ -487,6 +496,8 @@ function DraftRow({ session, index, dragId, dropIndex, onDragStart, onDragOver, 
   const menuRef = useRef<HTMLDivElement>(null)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
   useMenuClose(menuOpen, menuRef, setMenuOpen)
+  const showMenu = useContextMenu()
+  const menuCtx = useMenuCtx()
   const arc = arcs.find(a => a.id === session.arc_id) ?? arcs.find(a => a.is_default)
   const color = arc?.color ?? '#8a8a8a'
   const isDropTarget = dropIndex === index && dragId !== null && dragId !== session.id
@@ -496,6 +507,14 @@ function DraftRow({ session, index, dragId, dropIndex, onDragStart, onDragOver, 
       <div
         draggable
         onClick={() => selectSession(session)}
+        onAuxClick={e => { if (e.button === 1) { e.preventDefault(); menuCtx.goTab({ type: 'session', sessionId: session.id }, true) } }}
+        onContextMenu={e => showMenu(e, buildSessionMenu(session, menuCtx, {
+          extra: [
+            { label: 'Edit…', click: () => setEditOpen(true) },
+            { label: 'Promote to a real session', click: () => void promoteSession(session.id) },
+          ],
+          onDelete: () => void deleteSession(session.id),
+        }))}
         onDragStart={e => { onDragStart(session.id); e.dataTransfer.effectAllowed = 'move' }}
         onDragOver={e => { if (dragId === null) return; e.preventDefault(); onDragOver(index) }}
         onDrop={e => { e.preventDefault(); onDrop(index) }}

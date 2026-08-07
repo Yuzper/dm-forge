@@ -1,6 +1,7 @@
 // path: electron/main/window.ts
-import { app, BrowserWindow, Menu } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import path from 'path'
+import { registerContextMenu } from './contextMenu'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -47,21 +48,7 @@ export function createWindow() {
     })
   })
 
-  mainWindow.webContents.on('context-menu', (_, params) => {
-    if (!params.misspelledWord) return
-    const menu = Menu.buildFromTemplate([
-      ...(params.dictionarySuggestions ?? []).map(word => ({
-        label: word,
-        click: () => mainWindow!.webContents.replaceMisspelling(word),
-      })),
-      ...((params.dictionarySuggestions ?? []).length > 0 ? [{ type: 'separator' as const }] : []),
-      {
-        label: 'Add to dictionary',
-        click: () => mainWindow!.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
-      },
-    ])
-    menu.popup()
-  })
+  registerContextMenu(mainWindow)
 
   return mainWindow
 }

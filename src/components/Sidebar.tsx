@@ -9,11 +9,14 @@ import {
   PanelLeftClose, PanelLeftOpen, Search,
 } from 'lucide-react'
 import POIList from './POIList'
-import type { HistoryEntry } from '../store/store'
+import type { Location } from '../store/location'
+import { locationLabel, sameLocation } from '../store/location'
 import { StoreMapProvider } from '../context/MapContext'
 import { THEMES, TEXT_THEMES } from '../constants/themes'
 import type { ThemeKey, TextThemeKey } from '../constants/themes'
 import { NAV_ITEMS } from '../constants/sections'
+import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
+import { buildLocationMenu, truncate } from '../utils/contextMenus'
 
 // ── Collapsed rail ─────────────────────────────────────────────────────────────
 
@@ -39,8 +42,8 @@ function RailIcon({ icon, title, active, accent, onClick }: {
   )
 }
 
-function historyIcon(entry: HistoryEntry) {
-  switch (entry.type) {
+function historyIcon(loc: Location) {
+  switch (loc.type) {
     case 'campaign': return <Layers size={11} />
     case 'session':  return <Scroll size={11} />
     case 'wiki':     return <BookOpen size={11} />
@@ -50,21 +53,28 @@ function historyIcon(entry: HistoryEntry) {
     case 'loot-tables': return <ShoppingBag size={11} />
     case 'timeline': return <Clock size={11} />
     case 'soundboard': return <Music2 size={11} />
+    default: return <FileText size={11} />
   }
 }
 
 export default function Sidebar() {
   const {
     view, setView, currentCampaign,
-    navigationHistory, navigateBack, navigateToHistoryEntry,
+    recentLocations, navigateBack, canGoBack, openTab,
+    tabs, activeTabId, selectTab,
+    sessions, drafts, allArticles, locationNames,
     campaignSubView, setCampaignSubView, setSearchOpen,
   } = useStore()
+  // The sidebar sits under ActivePaneProvider, so its menus act on the focused
+  // pane — which is what "open this recent thing" should mean from out here.
+  const showMenu = useContextMenu()
+  const menuCtx = useMenuCtx()
 
   const inCampaignContext =
     view === 'campaign' || view === 'session' || view === 'wiki' ||
     view === 'dm-notes' || view === 'loot-tables' || view === 'relations' || view === 'timeline' ||
     view === 'soundboard'
-  const canGoBack = navigationHistory.length >= 2
+  const backAvailable = canGoBack()
   const [version, setVersion] = useState('')
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true')
 
@@ -77,7 +87,23 @@ export default function Sidebar() {
     window.api.getAppVersion().then(setVersion)
   }, [])
 
-  const historyToShow = navigationHistory.slice(0, -1).reverse()
+  // Recent is now a campaign-wide trail across every tab, minus wherever the
+  // active tab already is — showing "go here" for the place you're looking at
+  // would be noise.
+  const activeLocation = tabs.find(t => t.id === activeTabId)?.location
+  const historyToShow = recentLocations
+    .filter(loc => !activeLocation || !sameLocation(loc, activeLocation))
+    .map(loc => ({ loc, label: locationLabel(loc, { campaignName: currentCampaign?.name, sessions, drafts, allArticles, locationNames }) }))
+    .filter(x => x.label !== null)
+    .slice(0, 5)
+
+  // Clicking a Recent row reuses a tab already pointed there, else navigates
+  // the active tab — matching how the list behaved before tabs existed.
+  const goToRecent = (loc: Location) => {
+    const existing = tabs.find(t => sameLocation(t.location, loc))
+    if (existing) selectTab(existing.id)
+    else openTab(loc)
+  }
 
   if (collapsed) {
     return (
@@ -279,7 +305,7 @@ export default function Sidebar() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               <Clock size={10} /> Recent
             </div>
-            {canGoBack && (
+            {backAvailable && (
               <button
                 onClick={navigateBack}
                 title="Go back"
@@ -297,12 +323,14 @@ export default function Sidebar() {
           </div>
 
           <div style={{ paddingBottom: 6 }}>
-            {historyToShow.map((entry, i) => {
-              const originalIndex = navigationHistory.length - 2 - i
+            {historyToShow.map(({ loc, label }, i) => {
               return (
                 <button
-                  key={originalIndex}
-                  onClick={() => navigateToHistoryEntry(originalIndex)}
+                  key={i}
+                  onClick={() => goToRecent(loc)}
+                  onContextMenu={e => showMenu(e, buildLocationMenu(loc, menuCtx, {
+                    label: label ? `Open “${truncate(label)}”` : 'Open',
+                  }))}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', gap: 7,
                     padding: '5px 12px', background: 'none', border: 'none',
@@ -312,9 +340,9 @@ export default function Sidebar() {
                   }}
                   className="hover-bg hover-text-secondary"
                 >
-                  <span style={{ flexShrink: 0, opacity: 0.7 }}>{historyIcon(entry)}</span>
+                  <span style={{ flexShrink: 0, opacity: 0.7 }}>{historyIcon(loc)}</span>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                    {entry.label}
+                    {label}
                   </span>
                 </button>
               )

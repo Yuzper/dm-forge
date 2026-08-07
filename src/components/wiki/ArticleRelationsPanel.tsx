@@ -7,6 +7,7 @@ import { NewWebModal } from '../relations/relationsModals'
 import { RelationWebPreview } from '../RelationWebPreview'
 import { sidebarSectionLabel } from './wikiConstants'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
+import { useArticleContextMenu } from '../../hooks/useContextMenu'
 
 // ── Article Relations Panel ────────────────────────────────────────────────────
 
@@ -140,6 +141,7 @@ export function MemberCountSection({ articleId, followerEstimate }: { articleId:
 // truth — these fields are computed, never stored, so they can't drift.
 export function AffiliationsSection({ articleId }: { articleId: number }) {
   const { navigateToArticleByTitle } = useStore()
+  const articleMenu = useArticleContextMenu()
   const [items, setItems] = useState<{ id: number; title: string; article_type: string }[]>([])
 
   useEffect(() => {
@@ -157,6 +159,7 @@ export function AffiliationsSection({ articleId }: { articleId: number }) {
       <button
         key={a.id}
         onClick={() => navigateToArticleByTitle(a.title)}
+        onContextMenu={articleMenu(a)}
         title={`Go to ${a.title}`}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px',
@@ -201,6 +204,7 @@ export function AffiliationsSection({ articleId }: { articleId: number }) {
 // "Within" chain (root-first) plus the locations nested directly inside it.
 export function GeographySection({ articleId, reloadKey }: { articleId: number; reloadKey?: unknown }) {
   const { navigateToArticleByTitle } = useStore()
+  const articleMenu = useArticleContextMenu()
   const [data, setData] = useState<{ ancestors: { id: number; title: string }[]; children: { id: number; title: string }[] }>({ ancestors: [], children: [] })
 
   useEffect(() => {
@@ -218,7 +222,7 @@ export function GeographySection({ articleId, reloadKey }: { articleId: number; 
     textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   }
   const chip = (c: { id: number; title: string }) => (
-    <button key={c.id} onClick={() => navigateToArticleByTitle(c.title)} title={`Go to ${c.title}`}
+    <button key={c.id} onClick={() => navigateToArticleByTitle(c.title)} onContextMenu={articleMenu({ ...c, article_type: 'location' })} title={`Go to ${c.title}`}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px',
         borderRadius: 99, fontSize: 11, cursor: 'pointer',
@@ -239,7 +243,7 @@ export function GeographySection({ articleId, reloadKey }: { articleId: number; 
           {ancestors.map((a, i) => (
             <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               {i > 0 && <ChevronRight size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
-              <button onClick={() => navigateToArticleByTitle(a.title)} title={`Go to ${a.title}`} style={linkStyle}
+              <button onClick={() => navigateToArticleByTitle(a.title)} onContextMenu={articleMenu({ ...a, article_type: 'location' })} title={`Go to ${a.title}`} style={linkStyle}
                 className="hover-underline">
                 {a.title}
               </button>

@@ -409,6 +409,8 @@ export function useShapeDrawing({
     handleCanvasMouseMove,
     handleCanvasDoubleClick,
     onVertexDown, onMidpointDown, onBodyDown, onVertexContextMenu,
+    /** Drop a corner. Exposed so the host can offer it as a menu item. */
+    removeVertex,
     consumeSuppressedClick,
     deleteShape,
     cancelDraft,

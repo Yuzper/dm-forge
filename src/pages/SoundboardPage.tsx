@@ -16,6 +16,8 @@ import {
   LIBRARY_BOARD_ID, LIBRARY_BOARD,
 } from '../constants/soundCategories'
 import { SECTION_ACCENTS } from '../constants/sections'
+import { useContextMenu } from '../hooks/useContextMenu'
+import { buildSoundMenu, truncate } from '../utils/contextMenus'
 
 // Section accent used for all soundboard-flavoured UI chrome on this page.
 const ACCENT = SECTION_ACCENTS['soundboard']
@@ -227,8 +229,23 @@ function SoundEditModal({ title, initial, fileLabel, onSave, onClose }: {
 
 // ── Add-to-board control ───────────────────────────────────────────────────────
 
+type LibraryLike = { name: string; category: SoundCategory; file_path: string; hotkey?: string; volume?: number; loop?: number }
+
+/** Copy a library entry onto a board. Shared by the button and the row's menu. */
+async function addSoundToBoard(boardId: number, entry: LibraryLike) {
+  await window.api.createSound({
+    board_id: boardId,
+    name: entry.name,
+    category: entry.category,
+    file_path: entry.file_path,
+    hotkey: entry.hotkey ?? '',
+    volume: entry.volume ?? 1,
+    loop: entry.loop ?? (entry.category === 'effect' ? 0 : 1),
+  })
+}
+
 function AddToBoardButton({ entry, boards, onAdded, compact }: {
-  entry: { name: string; category: SoundCategory; file_path: string; hotkey?: string; volume?: number; loop?: number }
+  entry: LibraryLike
   boards: SoundBoard[]
   onAdded?: () => void
   compact?: boolean
@@ -239,15 +256,7 @@ function AddToBoardButton({ entry, boards, onAdded, compact }: {
   const anchorRef = useRef<HTMLButtonElement>(null)
 
   const addTo = async (boardId: number) => {
-    await window.api.createSound({
-      board_id: boardId,
-      name: entry.name,
-      category: entry.category,
-      file_path: entry.file_path,
-      hotkey: entry.hotkey ?? '',
-      volume: entry.volume ?? 1,
-      loop: entry.loop ?? (entry.category === 'effect' ? 0 : 1),
-    })
+    await addSoundToBoard(boardId, entry)
     setOpen(false)
     setAdded(true)
     onAdded?.()
@@ -313,6 +322,8 @@ function LibraryRow({ entry, boards, onEdit, onDelete, onAddedToBoard }: {
   onAddedToBoard: () => void
 }) {
   const { confirming, trigger } = useConfirmDelete()
+  const bumpSoundsVersion = useStore(s => s.bumpSoundsVersion)
+  const showMenu = useContextMenu()
   const color = categoryColor(entry.category)
 
   return (
@@ -323,6 +334,17 @@ function LibraryRow({ entry, boards, onEdit, onDelete, onAddedToBoard }: {
         transition: 'background 120ms ease',
       }}
       className="hover-bg"
+      onContextMenu={e => showMenu(e, buildSoundMenu(entry, {
+        edit: onEdit,
+        boards,
+        onAddToBoard: async (boardId) => {
+          await addSoundToBoard(boardId, entry)
+          onAddedToBoard()
+          bumpSoundsVersion()
+        },
+        onDelete,
+        deleteLabel: `Remove “${truncate(entry.name)}” from the library`,
+      }))}
     >
       <PreviewButton filePath={entry.file_path} loop={!!entry.loop} volume={entry.volume ?? 1} color={color} size={22} />
 
@@ -649,6 +671,7 @@ function SoundRow({ sound, onEdit, onDelete }: {
   onDelete: () => void
 }) {
   const { confirming, trigger } = useConfirmDelete()
+  const showMenu = useContextMenu()
   const color = categoryColor(sound.category)
 
   return (
@@ -659,6 +682,11 @@ function SoundRow({ sound, onEdit, onDelete }: {
       transition: 'background 120ms ease',
     }}
       className="hover-bg"
+      onContextMenu={e => showMenu(e, buildSoundMenu(sound, {
+        edit: onEdit,
+        onDelete,
+        deleteLabel: `Remove “${truncate(sound.name)}” from this board`,
+      }))}
     >
       <PreviewButton filePath={sound.file_path} loop={!!sound.loop} volume={sound.volume ?? 1} color={color} />
 

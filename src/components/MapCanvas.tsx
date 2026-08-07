@@ -19,12 +19,15 @@ import { useMapMeasure } from '../hooks/useMapMeasure'
 import { useShapeDrawing } from '../hooks/useShapeDrawing'
 import { centroidOf, parsePoints } from '../utils/mapShapeGeometry'
 import { parseHubLinks } from '../utils/hubLinks'
+import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
+import { openItems, truncate, type MenuItem } from '../utils/contextMenus'
 
 // Fixed pin diameter on article and session maps.
 const POI_MARKER_SIZE = 28
 
-function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef, ghost }: {
-  poi: POI; onSelect: (p: POI) => void; isSelected: boolean; editMode: boolean; scale: number
+function POIMarker({ poi, onSelect, onContextMenu, isSelected, editMode, scale, imgBoundsRef, ghost }: {
+  poi: POI; onSelect: (p: POI) => void; onContextMenu?: (p: POI, e: React.MouseEvent) => void
+  isSelected: boolean; editMode: boolean; scale: number
   imgBoundsRef: React.RefObject<{ left: number; top: number; w: number; h: number } | null>
   // Ghost markers come from another visit layer: shown dimmed for reference,
   // hoverable for the label but not selectable or draggable.
@@ -116,6 +119,7 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef, g
       draggable={editMode && !ghost}
       onSelect={(_p, e) => handleClick(e)}
       onMouseDown={(_p, e) => handleMouseDown(e)}
+      onContextMenu={ghost ? undefined : onContextMenu}
     >
       {isSelected && (
         <div style={{
@@ -129,10 +133,12 @@ function POIMarker({ poi, onSelect, isSelected, editMode, scale, imgBoundsRef, g
 }
 
 export default function MapCanvas({ readMode }: { readMode?: boolean }) {
-  const { currentMap, pois, selectedPOI, selectPOI, createPOI, patchMap,
+  const { currentMap, pois, selectedPOI, selectPOI, createPOI, deletePOI, patchMap,
           activeLayerId, ghostLayerIds, showBaseLayer,
           visitLayers, toggleGhostLayer, toggleBaseLayer, renameVisitLayer } = useMapContext()
   const editMode = !readMode
+  const showMenu = useContextMenu()
+  const menuCtx = useMenuCtx()
 
   // Visit-layer visibility: the active layer is live; base POIs (layer_id
   // null) are live only while the base layer is shown (hidden by default on
@@ -292,10 +298,13 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     if (livePois.some(p => p.id === poi.id)) selectPOI(poi)
   }
 
-  const handleClick = useCallback(async (e: React.MouseEvent) => {
-    if (vp.consumePan()) return
+  /**
+   * Where a pointer event landed, in image-space percentages (plus the raw
+   * container coords the pin-snapping needs). Null when it missed the image.
+   */
+  const pointFromEvent = useCallback((e: React.MouseEvent) => {
     const outer = outerRef.current
-    if (!outer || !imgBoundsRef.current) return
+    if (!outer || !imgBoundsRef.current) return null
     const rect = outer.getBoundingClientRect()
     const cx = e.clientX - rect.left
     const cy = e.clientY - rect.top
@@ -304,7 +313,15 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     const { left: iL, top: iT, w: iW, h: iH } = imgBoundsRef.current
     const x = (innerX - iL) / iW * 100
     const y = (innerY - iT) / iH * 100
-    if (x < 0 || x > 100 || y < 0 || y > 100) return
+    if (x < 0 || x > 100 || y < 0 || y > 100) return null
+    return { x, y, cx, cy }
+  }, [outerRef, imgBoundsRef, offsetRef, scaleRef])
+
+  const handleClick = useCallback(async (e: React.MouseEvent) => {
+    if (vp.consumePan()) return
+    const pt = pointFromEvent(e)
+    if (!pt) return
+    const { x, y, cx, cy } = pt
 
     if (measureMode) {
       // Snap onto a pin if the click lands near one, so room-to-room measuring
@@ -333,7 +350,91 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
       drawing.setSelectedId(null)
       if (selectedShape) { setSelectedShape(null); setShapePopupPos(null) }
     }
-  }, [editMode, readMode, createPOI, tool, drawing, selectedShape, backToSelect, measureMode, measure])
+  }, [editMode, readMode, createPOI, tool, drawing, selectedShape, backToSelect, measureMode, measure, pointFromEvent, vp])
+
+  // ── Context menus ───────────────────────────────────────────────────────────
+
+  const poiMenu = useCallback((poi: POI, e: React.MouseEvent) => {
+    const links = parseHubLinks(poi.hub_links)
+    const article = links.find(l => l.type === 'wiki' && l.article_id)
+    const session = links.find(l => l.type === 'session' && l.session_id)
+    const menu: MenuItem[] = []
+    // A pin's links are the reason to right-click it: the pin is a pointer, and
+    // the thing it points at is what you actually want open beside the map.
+    if (article) {
+      menu.push(...openItems(
+        { type: 'article', articleId: article.article_id! }, menuCtx,
+        `Open “${truncate(article.title ?? 'linked article')}”`,
+      ))
+    }
+    if (session) {
+      menu.push({
+        label: `Open ${truncate(session.name ?? 'linked session')}`,
+        click: () => menuCtx.go({ type: 'session', sessionId: session.session_id! }),
+      })
+    }
+    if (menu.length) menu.push({ type: 'separator' })
+    menu.push({ label: 'Pin details', click: () => selectPOI(poi) })
+    if (editMode && !readMode) {
+      menu.push({ type: 'separator' }, {
+        label: `Delete “${truncate(poi.label || 'this pin')}”`,
+        click: () => void deletePOI(poi.id),
+      })
+    }
+    showMenu(e, menu)
+  }, [menuCtx, showMenu, selectPOI, deletePOI, editMode, readMode])
+
+  const shapeMenu = useCallback((shape: MapShape, e: React.MouseEvent) => {
+    const links = parseHubLinks(shape.hub_links)
+    const article = links.find(l => l.type === 'wiki' && l.article_id)
+    const menu: MenuItem[] = []
+    if (article) {
+      menu.push(...openItems(
+        { type: 'article', articleId: article.article_id! }, menuCtx,
+        `Open “${truncate(article.title ?? 'linked article')}”`,
+      ), { type: 'separator' })
+    }
+    menu.push({ label: 'Edit region…', click: () => setEditingShape(shape) })
+    if (editMode && !readMode) {
+      menu.push(
+        // Reshaping needs the handles up; this is the only way to ask for them
+        // without first hunting the shape down in the Contents list.
+        { label: 'Edit points', click: () => { setTool('select'); drawing.setSelectedId(shape.id) } },
+        { type: 'separator' },
+        {
+          label: `Delete “${truncate(shape.label || 'this region')}”`,
+          click: async () => {
+            await drawing.deleteShape(shape.id)
+            setSelectedShape(prev => prev?.id === shape.id ? null : prev)
+          },
+        },
+      )
+    }
+    showMenu(e, menu)
+  }, [menuCtx, showMenu, editMode, readMode, drawing])
+
+  // Bare canvas. Creation lives here as well as in the toolbar because placing
+  // something *at a spot* is inherently positional — the toolbar can only mean
+  // "next click", which is a worse way to say the same thing.
+  const canvasMenu = useCallback((e: React.MouseEvent) => {
+    // Null off the image — the letterboxed margin, or a map whose image hasn't
+    // loaded. Only the positional items need a point; the view actions are
+    // always offered, so no part of the canvas is a dead right-click.
+    const pt = pointFromEvent(e)
+    const menu: MenuItem[] = []
+    if (pt && editMode && !readMode) {
+      menu.push({ label: 'New point of interest here', click: () => void createPOI(pt.x, pt.y) })
+    }
+    if (pt && measure.mapScale) {
+      menu.push({
+        label: measureMode ? 'Add a waypoint here' : 'Measure from here',
+        click: () => { setTool('measure'); measure.addPoint(pt.x, pt.y) },
+      })
+    }
+    if (menu.length) menu.push({ type: 'separator' })
+    menu.push({ label: 'Reset view', click: resetView })
+    showMenu(e, menu)
+  }, [pointFromEvent, editMode, readMode, createPOI, measure, measureMode, resetView, showMenu])
 
   // ── Shape interactions ────────────────────────────────────────────────────
   // The popup opens where the pointer landed, clamped inside the canvas. A
@@ -549,6 +650,9 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onClick={handleClick}
+        // Pins and shape vertices claim their own right-clicks and stop
+        // propagation, so anything arriving here landed on bare canvas.
+        onContextMenu={canvasMenu}
         style={{ flex: 1, position: 'relative', overflow: 'hidden', cursor: cursorStyle, background: '#0a0908', userSelect: 'none' }}
       >
         {/* Inner container — this is what gets transformed */}
@@ -597,10 +701,17 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
                 draft={drawing.draft}
                 livePoints={drawing.livePoints}
                 onShapeClick={handleShapeClick}
+                onShapeContextMenu={shapeMenu}
                 onShapeHover={setHoveredShapeId}
                 onBodyDown={drawing.onBodyDown}
                 onVertexDown={drawing.onVertexDown}
-                onVertexContextMenu={drawing.onVertexContextMenu}
+                // Right-click a corner while reshaping. It used to delete the point
+                // outright, which nothing advertised; a one-item menu says so.
+                // Not editing? Fall through and let the canvas menu take it.
+                onVertexContextMenu={(shape, index, e) => {
+                  if (!drawing.editing) return
+                  showMenu(e, [{ label: 'Remove point', click: () => void drawing.removeVertex(shape, index) }])
+                }}
                 onMidpointDown={drawing.onMidpointDown}
               />
               {ghostPois.map(poi => (
@@ -620,6 +731,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
                   key={poi.id}
                   poi={poi}
                   onSelect={selectPOI}
+                  onContextMenu={poiMenu}
                   isSelected={selectedPOI?.id === poi.id}
                   editMode={editMode}
                   scale={scale}

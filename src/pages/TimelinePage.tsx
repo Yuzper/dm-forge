@@ -26,6 +26,8 @@ import { SECTION_ACCENTS } from '../constants/sections'
 import { TimelineFilterPanel as FilterPanel, DEFAULT_TIMELINE_FILTERS as DEFAULT_FILTERS, type TimelineFilters } from '../components/TimelineFilterPanel'
 import Modal from '../components/Modal'
 import { ColorDotPicker } from '../components/SwatchPicker'
+import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
+import { buildArticleMenu, buildSessionMenu } from '../utils/contextMenus'
 
 // Section accent used for timeline UI chrome on this page.
 const ACCENT = SECTION_ACCENTS['timeline']
@@ -42,8 +44,10 @@ function parseEras(raw: any): Era[] {
   try { const a = JSON.parse(raw ?? '[]'); return Array.isArray(a) ? a : [] } catch { return [] }
 }
 
-// Where the drill-down was left, per campaign. Reopening the timeline in the
-// decade view every time would undo the navigation on every visit.
+// Where the drill-down was left, per campaign. This is now only the *seed for a
+// new timeline tab* — an existing tab's position lives on its own Location, so
+// two timeline tabs can sit on different years. Before that, both tabs read this
+// one key at mount and silently converged on whichever moved last.
 interface NavState { level: DrilldownLevel; orient: SpanOrientation }
 
 function loadNav(id: number): NavState {
@@ -322,7 +326,9 @@ function UnplacedBanner({ undatedSessions, undatedEvents, baseYear, onSessionDat
 // ── Main Timeline Page ─────────────────────────────────────────────────────────
 
 export default function TimelinePage() {
-  const { currentCampaign, sessions, arcs, setView, selectSession, setCampaignSubView, updateSession, updateCampaign, setHintContext } = useStore()
+  const { currentCampaign, sessions, drafts, arcs, setView, selectSession, setCampaignSubView, updateSession, updateCampaign, setHintContext } = useStore()
+  const showMenu = useContextMenu()
+  const menuCtx = useMenuCtx()
   useEffect(() => { setHintContext('timeline'); return () => setHintContext(null) }, [setHintContext])
   const filterRef = useRef<HTMLDivElement>(null)
   const issuesRef = useRef<HTMLDivElement>(null)
@@ -342,12 +348,26 @@ export default function TimelinePage() {
   const [mode, setMode] = useState<'axis' | 'outline'>('axis')
   const [rawArticles, setRawArticles] = useState<AuditArticle[]>([])
   const [showIssues, setShowIssues] = useState(false)
-  const [level, setLevel] = useState<DrilldownLevel>(() => currentCampaign ? loadNav(currentCampaign.id).level : { view: 'decades' })
-  const [orient, setOrient] = useState<SpanOrientation>(() => currentCampaign ? loadNav(currentCampaign.id).orient : 'vertical')
+  // This tab's own drill position, falling back to the campaign's last-known one
+  // when the tab has none yet (a freshly opened timeline tab).
+  const patchLocation = useStore(s => s.patchLocation)
+  const [level, setLevel] = useState<DrilldownLevel>(() => {
+    const loc = useStore.getState().activeLocation()
+    if (loc?.type === 'timeline' && loc.level) return loc.level
+    return currentCampaign ? loadNav(currentCampaign.id).level : { view: 'decades' }
+  })
+  const [orient, setOrient] = useState<SpanOrientation>(() => {
+    const loc = useStore.getState().activeLocation()
+    if (loc?.type === 'timeline' && loc.orient) return loc.orient
+    return currentCampaign ? loadNav(currentCampaign.id).orient : 'vertical'
+  })
 
   useEffect(() => {
+    // Onto the tab (so each tab keeps its own place) and onto the campaign key
+    // (so the *next* new timeline tab opens where you last were).
+    patchLocation('timeline', { level, orient })
     if (currentCampaign) saveNav(currentCampaign.id, { level, orient })
-  }, [currentCampaign?.id, level, orient])
+  }, [currentCampaign?.id, level, orient, patchLocation])
 
   useEffect(() => {
     setCal(getCampaignCalendar(currentCampaign))
@@ -370,8 +390,10 @@ export default function TimelinePage() {
   useEffect(() => {
     if (!currentCampaign) return
     setFilters(loadFilters(currentCampaign.id))
-    const nav = loadNav(currentCampaign.id)
-    setLevel(nav.level); setOrient(nav.orient)
+    // Deliberately does NOT reset level/orient from the campaign key any more.
+    // That ran on mount as well as on a campaign change, so it overwrote this
+    // tab's own position with whatever another timeline tab last saved.
+    // Switching campaigns rebuilds the tab set and remounts this page anyway.
   }, [currentCampaign?.id])
 
   const handleFiltersChange = (f: TimelineFilters) => {
@@ -528,6 +550,22 @@ export default function TimelinePage() {
     if (article) setEmbeddedArticle(article)
   }, [handleOpenSession])
 
+  // Right-click an entry. A timeline entry is a session or an article wearing a
+  // date, so it gets that entity's menu — with "Open" rebound to this page's own
+  // behaviour (embed below rather than leave the timeline).
+  const itemMenu = useCallback((item: ClusterItem, e: React.MouseEvent) => {
+    if (item.kind === 'session') {
+      const s = [...sessions, ...drafts].find(x => x.id === item.id)
+      if (s) showMenu(e, buildSessionMenu(s, menuCtx))
+      return
+    }
+    showMenu(e, () => buildArticleMenu(
+      { id: item.id, title: item.title, article_type: item.article_type },
+      menuCtx,
+      { extra: [{ label: 'Preview below the timeline', click: () => void navigateToItem(item) }] },
+    ))
+  }, [sessions, drafts, showMenu, menuCtx, navigateToItem])
+
   // Jump from an audit row to the thing it's complaining about: sessions open
   // their page, articles embed below, and the drill-down navigates to the
   // division holding the offending day.
@@ -647,7 +685,7 @@ export default function TimelinePage() {
           year={level.year} span={level.span} items={clusterItems} cal={cal}
           lifespans={lifespanBands} showLifespans={showLifespans}
           orient={orient} onOrientChange={setOrient}
-          onStepSpan={stepSpan} onOpenItem={navigateToItem} onAddAt={handleAddAt}
+          onStepSpan={stepSpan} onOpenItem={navigateToItem} onItemMenu={itemMenu} onAddAt={handleAddAt}
         />
       )}
 
@@ -664,6 +702,10 @@ export default function TimelinePage() {
             if (article) setEmbeddedArticle(article)
           }}
           onSelectIssue={handleSelectIssue}
+          onRowMenu={(entry, e) => itemMenu({
+            id: (entry.sessionId ?? entry.articleId)!,
+            title: entry.title, kind: entry.kind, day: entry.day, color: entry.color,
+          }, e)}
         />
       )}
 

@@ -28,11 +28,15 @@ import {
   AddNodeModal, EdgeLabelModal, EditEdgeModal,
   CreateArticleModal, LinkArticleModal, EditUnionModal,
 } from './relationsModals'
+import { useContextMenu, useMenuCtx } from '../../hooks/useContextMenu'
+import { buildArticleMenu, truncate } from '../../utils/contextMenus'
 
 // ── Canvas View ────────────────────────────────────────────────────────────────
 
 export default function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb; onBack: () => void; focusArticleId?: number | null }) {
   const { currentCampaign, navigateToArticleByTitle } = useStore()
+  const showMenu = useContextMenu()
+  const menuCtx = useMenuCtx()
   // ReactFlow instance (captured on init) — used to pan/zoom to a deep-linked node.
   const rfRef = useRef<any>(null)
   const didFocusRef = useRef(false)
@@ -430,6 +434,39 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     syncDerivedRelations()
   }, [syncDerivedRelations])
 
+  // ── Node context menu ───────────────────────────────────────────────────────
+  // A node is either a linked article — in which case it gets the same menu as
+  // every other article surface — or a bare label the DM has not filled in yet.
+  const onNodeContextMenu = useCallback((e: React.MouseEvent, rf: RFNode) => {
+    const node = dbNodes.find(n => String(n.id) === rf.id)
+    if (!node) return
+    const removeItem = !isTerritory && {
+      label: 'Remove from web',
+      click: () => void onNodesDelete([rf]),
+    }
+
+    if (node.article_id) {
+      showMenu(e, () => buildArticleMenu(
+        { id: node.article_id!, title: node.article_title || node.label, article_type: node.article_type ?? undefined },
+        menuCtx,
+        {
+          inWebId: web.id,
+          extra: [
+            !isTerritory && { label: 'Unlink article', click: () => void unlinkArticle(node.id) },
+            removeItem,
+          ],
+        },
+      ))
+      return
+    }
+
+    showMenu(e, [
+      { label: `Create article for “${truncate(node.label)}”`, enabled: !isTerritory, click: () => requestCreateArticle(node.id) },
+      { label: 'Link an existing article…', enabled: !isTerritory, click: () => setLinkingArticleFor(node) },
+      ...(removeItem ? [{ type: 'separator' as const }, removeItem] : []),
+    ])
+  }, [dbNodes, isTerritory, web.id, menuCtx, showMenu, onNodesDelete, unlinkArticle, requestCreateArticle])
+
   const onEdgesDelete: OnEdgesDelete = useCallback(async (deletedEdges) => {
     for (const edge of deletedEdges) {
       await (window as any).api.deleteRelationEdge(Number(edge.id))
@@ -491,6 +528,10 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
   const saveWebName = async () => {
     if (!webName.trim()) { setWebName(web.name); setEditingName(false); return }
     await (window as any).api.updateRelationWeb(web.id, { name: webName.trim() })
+    // Renaming here happens away from the hub, so publish for the tab label.
+    useStore.getState().publishLocationNames('relations', {
+      ...useStore.getState().locationNames.relations, [web.id]: webName.trim(),
+    })
     setEditingName(false)
   }
 
@@ -669,6 +710,7 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
             onNodesDelete={isTerritory ? undefined : onNodesDelete} onEdgesDelete={isTerritory ? undefined : onEdgesDelete}
             onNodeDragStop={onNodeDragStop}
             onNodeClick={(_e: any, node: RFNode) => setSelectedNodeId(prev => prev === node.id ? null : node.id)}
+            onNodeContextMenu={onNodeContextMenu}
             onEdgeDoubleClick={isTerritory ? undefined : (_e: any, edge: RFEdge) => {
               const db = dbEdges.find(e => String(e.id) === edge.id)
               if (db) setEditingEdge(db)

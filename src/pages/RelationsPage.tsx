@@ -1,5 +1,5 @@
 // path: src/pages/RelationsPage.tsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
 import { Network, Plus, ArrowLeft } from 'lucide-react'
 import {
@@ -17,10 +17,17 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
   const [showNew, setShowNew] = useState(false)
   const [editWeb, setEditWeb] = useState<RelationWeb | null>(null)
 
+  const publishLocationNames = useStore(s => s.publishLocationNames)
   useEffect(() => {
     if (!currentCampaign) return
     ;(window as any).api.getRelationWebs(currentCampaign.id).then(setWebs)
   }, [currentCampaign?.id])
+
+  // Publish off the list itself rather than at each mutation site, so create,
+  // rename and delete all keep tab labels current for free.
+  useEffect(() => {
+    if (webs.length) publishLocationNames('relations', Object.fromEntries(webs.map(w => [w.id, w.name])))
+  }, [webs, publishLocationNames])
 
 
 
@@ -113,24 +120,30 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
 // ── Page Root ──────────────────────────────────────────────────────────────────
 
 export default function RelationsPage() {
-  const { relationsOpenWebId, setRelationsOpenWebId, relationsFocusArticleId, setRelationsFocusArticleId, setHintContext, patchLastHistoryEntry } = useStore()
+  const { relationsOpenWebId, setRelationsOpenWebId, relationsFocusArticleId, setRelationsFocusArticleId, setHintContext, patchLocation } = useStore()
   useEffect(() => { setHintContext('relations'); return () => setHintContext(null) }, [setHintContext])
   const [openWeb, setOpenWeb] = useState<RelationWeb | null>(null)
 
-  // Record the open web (and its name as the label) into the current Recent
-  // entry, so returning to it reopens the same web rather than the hub.
+  // Record the open web on this tab's location, so returning to it reopens the
+  // same web rather than the hub. The label is derived at render time now.
+  //
+  // Gated on `settled`: on mount openWeb is still null while the stored web is
+  // being fetched, and writing that null straight back would erase the very
+  // webId we are about to restore.
+  const settledRef = useRef(false)
   useEffect(() => {
-    patchLastHistoryEntry('relations', openWeb
-      ? { webId: openWeb.id, label: openWeb.name }
-      : { webId: null, label: 'Relations' })
-  }, [openWeb, patchLastHistoryEntry])
+    if (!settledRef.current) return
+    patchLocation('relations', { webId: openWeb ? openWeb.id : null })
+  }, [openWeb, patchLocation])
   const [loading, setLoading] = useState(false)
   // Deep-link focus: select + center the node linked to this article on open.
   const [focusArticleId, setFocusArticleId] = useState<number | null>(null)
 
-  // On mount: if the store has a pending web id, fetch and open it
+  // On mount: if the store has a pending web id, fetch and open it. This runs
+  // per tab now — the subtree is keyed by activeTabId, so switching tabs
+  // remounts this page and re-reads its own tab's web.
   useEffect(() => {
-    if (!relationsOpenWebId) return
+    if (!relationsOpenWebId) { settledRef.current = true; return }
     setLoading(true)
     ;(window as any).api.getRelationWebs
       ? (async () => {
@@ -144,13 +157,14 @@ export default function RelationsPage() {
           setFocusArticleId(focus)
           // Fetch the web from list to get its name
           const { currentCampaign } = useStore.getState()
-          if (!currentCampaign) { setLoading(false); return }
+          if (!currentCampaign) { setLoading(false); settledRef.current = true; return }
           const webs: RelationWeb[] = await (window as any).api.getRelationWebs(currentCampaign.id)
           const web = webs.find(w => w.id === id)
           if (web) setOpenWeb(web)
           setLoading(false)
+          settledRef.current = true
         })()
-      : setLoading(false)
+      : (setLoading(false), settledRef.current = true)
   }, [])
 
   if (loading) return (

@@ -13,7 +13,7 @@ import {
 } from '../utils/timelineGeometry'
 import type { ChronologyIssue } from '../utils/chronologyAudit'
 
-interface Entry {
+export interface OutlineEntry {
   key: string
   day: number
   year: number
@@ -32,7 +32,7 @@ const KIND_COLOR: Record<string, string> = {
 
 export function TimelineOutline({
   eras, cal, sessions, arcMap, items, issues, undatedSessions,
-  onOpenSession, onOpenArticle, onSelectIssue,
+  onOpenSession, onOpenArticle, onSelectIssue, onRowMenu,
 }: {
   eras: Era[]
   cal: CampaignCalendar
@@ -44,6 +44,7 @@ export function TimelineOutline({
   onOpenSession: (id: number) => void
   onOpenArticle: (id: number) => void
   onSelectIssue: (issue: ChronologyIssue) => void
+  onRowMenu?: (entry: OutlineEntry, e: React.MouseEvent) => void
 }) {
   // Errors are pinned to the row they contradict so a read-through surfaces them
   // in place; the rest live in the "not placed" tail. Keyed by day as well as id
@@ -59,7 +60,7 @@ export function TimelineOutline({
   }, [issues])
 
   const groups = useMemo(() => {
-    const entries: Entry[] = [
+    const entries: OutlineEntry[] = [
       ...sessions.map(s => ({
         key: `s-${s.id}`,
         day: s.in_world_day,
@@ -83,8 +84,8 @@ export function TimelineOutline({
     ].sort((a, b) => a.day - b.day)
 
     const sortedEras = [...eras].sort((a, b) => a.startYear - b.startYear)
-    const buckets: { era: Era | null; entries: Entry[] }[] = sortedEras.map(era => ({ era, entries: [] }))
-    const loose: Entry[] = []
+    const buckets: { era: Era | null; entries: OutlineEntry[] }[] = sortedEras.map(era => ({ era, entries: [] }))
+    const loose: OutlineEntry[] = []
 
     for (const e of entries) {
       const era = sortedEras.find(x => e.year >= x.startYear && e.year <= x.endYear)
@@ -96,7 +97,7 @@ export function TimelineOutline({
     return buckets
       .filter(b => b.entries.length > 0)
       .map(b => {
-        const byYear = new Map<number, Entry[]>()
+        const byYear = new Map<number, OutlineEntry[]>()
         for (const e of b.entries) {
           if (!byYear.has(e.year)) byYear.set(e.year, [])
           byYear.get(e.year)!.push(e)
@@ -150,7 +151,8 @@ export function TimelineOutline({
                   return (
                     <div key={e.key} style={{ borderTop: '1px solid var(--border)' }}>
                       <button className="hover-bg" style={rowStyle}
-                        onClick={() => e.sessionId != null ? onOpenSession(e.sessionId) : onOpenArticle(e.articleId!)}>
+                        onClick={() => e.sessionId != null ? onOpenSession(e.sessionId) : onOpenArticle(e.articleId!)}
+                        onContextMenu={ev => onRowMenu?.(e, ev)}>
                         {e.badge ? (
                           <span style={{ fontSize: 10, color: 'var(--gold)', border: '1px solid var(--border-gold)', background: 'var(--gold-glow)', borderRadius: 'var(--radius-sm)', padding: '1px 6px', flexShrink: 0 }}>
                             {e.badge}

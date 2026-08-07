@@ -50,6 +50,7 @@ export interface MapPOIMarkerProps {
   opacity?: number
   onSelect?: (poi: POI, e: React.MouseEvent) => void
   onMouseDown?: (poi: POI, e: React.MouseEvent) => void
+  onContextMenu?: (poi: POI, e: React.MouseEvent) => void
   onHoverChange?: (id: number | null) => void
   /** Extra content pinned to the marker, e.g. the selection pulse ring. */
   children?: React.ReactNode
@@ -58,7 +59,7 @@ export interface MapPOIMarkerProps {
 export default function MapPOIMarker({
   poi, size, scale, selected = false, hovered = false, ghost = false,
   draggable = false, opacity = 1,
-  onSelect, onMouseDown, onHoverChange, children,
+  onSelect, onMouseDown, onContextMenu, onHoverChange, children,
 }: MapPOIMarkerProps) {
   const [selfHover, setSelfHover] = useState(false)
   const showLabel = selfHover || hovered || selected
@@ -73,6 +74,7 @@ export default function MapPOIMarker({
       data-poi="1"
       onMouseDown={e => onMouseDown?.(poi, e)}
       onClick={e => onSelect?.(poi, e)}
+      onContextMenu={e => onContextMenu?.(poi, e)}
       onMouseEnter={() => { setSelfHover(true); onHoverChange?.(poi.id) }}
       onMouseLeave={() => { setSelfHover(false); onHoverChange?.(null) }}
       style={{

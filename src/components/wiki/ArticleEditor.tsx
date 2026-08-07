@@ -23,6 +23,7 @@ import { InWorldDatePicker } from '../InWorldDatePicker'
 import { TIMELINE_DATE_FIELDS, DATE_IMPLIES_TRACK, parseMilestones, type Milestone } from '../../constants/timelineDates'
 import LocationMapSection from '../LocationMapSection'
 import AudienceControl from '../AudienceControl'
+import { useArticleContextMenu } from '../../hooks/useContextMenu'
 import TrackVisibilityControl, { effectiveTrackMode, trackModePlayers } from './TrackVisibilityControl'
 import type { TrackVisibility, TrackVisMode } from '../../types'
 import QuestSubstepsSection, { parseSubsteps } from '../QuestSubstepsSection'
@@ -601,6 +602,7 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
 
 export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: { article: Article; onBack: () => void; backLabel?: string }) {
   const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, allArticles, loadAllArticles, setView, setRelationsOpenWebId, setRelationsFocusArticleId, setHintContext, players, loadPlayers } = useStore()
+  const articleMenu = useArticleContextMenu()
 
   // Article names per type for the track dropdowns, derived from the store's
   // live list so newly created articles show up immediately. Alphabetical.
@@ -1309,7 +1311,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
               const renderLink = (a: ArticleSummary) => {
                 const t = ARTICLE_TYPES.find(x => x.value === a.article_type) || ARTICLE_TYPES[ARTICLE_TYPES.length - 1]
                 return (
-                  <button key={a.id} onClick={() => navigateToArticleByTitle(a.title)}
+                  <button key={a.id} onClick={() => navigateToArticleByTitle(a.title)} onContextMenu={articleMenu(a)}
                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 'var(--radius-sm)', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 120ms ease', '--hover-accent': t.color } as React.CSSProperties}
                     className="hover-accent-border">
                     <t.icon size={11} color={t.color} />

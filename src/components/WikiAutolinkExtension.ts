@@ -112,7 +112,9 @@ function buildDecorations(doc: PMNode, options: WikiAutolinkOptions): Decoration
           const to = from + stripped.length
           decorations.push(Decoration.inline(
             from, to,
-            { class: 'wiki-mention-suggest', title: `Link to “${canonical}”` },
+            // The data attribute is what a right-click reads: decorations aren't
+            // marks, so there is no other way to recover the target from the DOM.
+            { class: 'wiki-mention-suggest', title: `Link to “${canonical}”`, 'data-wiki-mention': canonical },
             { linkTitle: canonical },
           ))
           i += n - 1 // consume matched tokens; no overlapping suggestions
@@ -236,6 +238,19 @@ export const WikiAutolink = Extension.create<WikiAutolinkOptions>({
         },
       }),
     ]
+  },
+
+  addCommands() {
+    return {
+      // Link the mention covering a document position. Used by the right-click
+      // menu, which knows a coordinate rather than the cursor.
+      linkMentionAt: (pos: number) => ({ state, dispatch }: any) => {
+        const hit = mentionAt(state, pos)
+        if (!hit) return false
+        if (dispatch) dispatch(linkRange(state, hit.from, hit.to, hit.title))
+        return true
+      },
+    } as any
   },
 
   addKeyboardShortcuts() {
