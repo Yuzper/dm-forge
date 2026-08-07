@@ -1,6 +1,6 @@
 {
   "name": "dm-forge",
-  "version": "1.11.0",
+  "version": "2.0.0",
   "description": "A DM's companion for planning and running D&D sessions",
   "main": "out/main/index.js",
   "scripts": {
