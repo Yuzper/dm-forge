@@ -433,7 +433,9 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     }
     if (menu.length) menu.push({ type: 'separator' })
     menu.push({ label: 'Reset view', click: resetView })
-    showMenu(e, menu)
+    // Nothing to ring: the target is the viewport itself, and outlining the
+    // whole map would say less than saying nothing.
+    showMenu(e, menu, { target: null })
   }, [pointFromEvent, editMode, readMode, createPOI, measure, measureMode, resetView, showMenu])
 
   // ── Shape interactions ────────────────────────────────────────────────────

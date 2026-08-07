@@ -70,6 +70,38 @@ export async function showContextMenu(list: MenuItem[]) {
   if (picked) await sinks.get(picked)?.()
 }
 
+// ── Marking what the menu is about ────────────────────────────────────────────
+
+/**
+ * A native menu floats above the app with nothing tying it back to the thing it
+ * acts on. On a 200-node graph or a wall of wiki cards that leaves you trusting
+ * your aim, so the target wears a ring for exactly as long as the menu is up.
+ *
+ * This is the honest reading of "right-click should select first": what was
+ * wanted is *the menu says what it is about*, not selection. Actually selecting
+ * would drag this app's selection side effects along with it — `selectPOI` opens
+ * the POI panel, a relations node opens the 240px detail sidebar, a shape opens
+ * its popup — so right-clicking a pin to copy a title would fling a panel open.
+ *
+ * A data attribute rather than a class: `className` is a React-controlled prop
+ * on most of these elements, and a re-render mid-menu would take a class with it.
+ * Nothing sets `data-menu-target`, so React leaves it alone.
+ */
+const MARK = 'data-menu-target'
+
+function mark(el: Element | null) { el?.setAttribute(MARK, '') }
+function unmark(el: Element | null) { el?.removeAttribute(MARK) }
+
+export interface ShowMenuOptions {
+  /**
+   * What to ring while the menu is open. Defaults to the event's
+   * `currentTarget`; pass an element to ring something more precise (a link
+   * inside the editor), or `null` to ring nothing (the bare map canvas, where
+   * outlining the whole viewport would be absurd).
+   */
+  target?: Element | null
+}
+
 // ── The hook ──────────────────────────────────────────────────────────────────
 
 /**
@@ -85,10 +117,20 @@ export function useContextMenu() {
   return useCallback((
     e: React.MouseEvent | MouseEvent,
     list: MenuItem[] | (() => MenuItem[] | Promise<MenuItem[]>),
+    opts?: ShowMenuOptions,
   ) => {
     e.preventDefault()
     e.stopPropagation()
-    void Promise.resolve(typeof list === 'function' ? list() : list).then(showContextMenu)
+    // React nulls `currentTarget` the moment the handler returns, so it has to
+    // be read here and not inside the promise chain below — reading it late
+    // silently yields null and the ring never appears.
+    const target = opts && 'target' in opts ? opts.target ?? null : (e.currentTarget as Element | null)
+    // Marked synchronously: a menu whose items need a database lookup is still
+    // a few milliseconds out, and the ring should answer "this one?" instantly.
+    mark(target)
+    void Promise.resolve(typeof list === 'function' ? list() : list)
+      .then(showContextMenu)
+      .finally(() => unmark(target))
   }, [])
 }
 

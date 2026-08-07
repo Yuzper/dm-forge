@@ -39,7 +39,7 @@ export default function TabStrip({ paneId }: { paneId: PaneId }) {
     closeOtherTabs, closeTabsToRight, duplicateTab, moveTabToPane,
     navigateBack, navigateForward,
     currentCampaign, sessions, drafts, allArticles, locationNames,
-    paneIds, splitPane, closePane,
+    paneIds, activePaneId, splitPane, closePane,
   } = useStore()
   const showMenu = useContextMenu()
   const menuCtx = useMenuCtx()
@@ -56,6 +56,10 @@ export default function TabStrip({ paneId }: { paneId: PaneId }) {
   const canBack = !!active?.back.length
   const canFwd = !!active?.forward.length
   const split = paneIds.length > 1
+  // While split, only the focused pane's active tab wears the gold. Both panes
+  // lighting one up said nothing about which of them Ctrl+T would open into —
+  // and this is the signal the eye is already looking at.
+  const live = !split || activePaneId === paneId
 
   const handleDrop = (targetIndex: number) => {
     if (dragIndex !== null && dragIndex !== targetIndex) moveTab(dragIndex, targetIndex)
@@ -87,15 +91,17 @@ export default function TabStrip({ paneId }: { paneId: PaneId }) {
       }}
       onDragLeave={() => setDropTarget(false)}
       onDrop={handleStripDrop}
-      // Blank strip. Tab menus stop propagation, so this only sees empty space.
+      // Blank strip. Tab menus stop propagation, so this only sees empty space —
+      // and there is no one tab to ring, so nothing gets marked.
       onContextMenu={e => showMenu(e, [
         { label: 'New tab', accelerator: 'Ctrl+T', click: () => void openTab({ type: 'campaign', subView: 'hub' }) },
-      ])}
+      ], { target: null })}
       style={{
         display: 'flex', alignItems: 'stretch', gap: 2,
         padding: '5px 8px 0', flexShrink: 0,
-        background: dropTarget ? 'var(--bg-elevated)' : 'var(--bg-surface)',
-        borderBottom: '1px solid var(--border)',
+        background: dropTarget ? 'var(--bg-elevated)'
+          : live ? 'var(--bg-surface)' : 'var(--bg-base)',
+        borderBottom: `1px solid ${live && split ? 'var(--border-gold)' : 'var(--border)'}`,
         userSelect: 'none', overflowX: 'auto',
       }}>
       {/* Per-tab history */}
@@ -145,11 +151,15 @@ export default function TabStrip({ paneId }: { paneId: PaneId }) {
               maxWidth: 190, minWidth: 90,
               cursor: 'pointer',
               fontSize: 12, fontFamily: 'var(--font-ui)',
-              color: dead ? 'var(--text-muted)' : isActive ? 'var(--gold)' : 'var(--text-secondary)',
-              background: isActive ? 'var(--bg-elevated)' : 'transparent',
+              color: dead ? 'var(--text-muted)'
+                : isActive ? (live ? 'var(--gold)' : 'var(--text-secondary)')
+                : 'var(--text-secondary)',
+              background: isActive ? (live ? 'var(--bg-elevated)' : 'var(--bg-surface)') : 'transparent',
               border: '1px solid',
-              borderColor: isActive ? 'var(--border)' : 'transparent',
-              borderBottom: isActive ? '1px solid var(--bg-elevated)' : '1px solid transparent',
+              borderColor: isActive ? (live && split ? 'var(--border-gold)' : 'var(--border)') : 'transparent',
+              borderBottom: isActive
+                ? `1px solid ${live ? 'var(--bg-elevated)' : 'var(--bg-surface)'}`
+                : '1px solid transparent',
               borderTopLeftRadius: 'var(--radius-sm)', borderTopRightRadius: 'var(--radius-sm)',
               marginBottom: -1,
               opacity: dragIndex === index ? 0.4 : 1,

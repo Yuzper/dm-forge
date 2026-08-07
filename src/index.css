@@ -276,6 +276,32 @@ input[type="number"].ghost-input { -moz-appearance: textfield; }
 .hover-scale:hover              { transform: scale(1.2); }
 .hover-underline:hover          { text-decoration: underline; }
 
+/* ─── Context-menu target ─────────────────────────────────────────────────── */
+/* Set by useContextMenu for as long as a native menu is open, so the menu —
+   which floats above the app with no other connection to it — visibly belongs
+   to something. Same ring the inputs use for focus, for the same reason.
+   !important because most of these elements carry an inline box-shadow. */
+[data-menu-target] {
+  box-shadow: 0 0 0 2px var(--gold-glow), 0 0 0 1px var(--gold-dim) !important;
+}
+/* SVG ignores box-shadow, so map regions and shape handles say it with stroke.
+   A stylesheet !important still beats the inline strokeWidth these carry. */
+svg [data-menu-target] { box-shadow: none !important; }
+svg polygon[data-menu-target],
+svg ellipse[data-menu-target],
+svg circle[data-menu-target],
+svg rect[data-menu-target] {
+  stroke: var(--gold) !important;
+  stroke-width: 3 !important;
+}
+/* A group (a timeline entry) can't take the stroke itself: `stroke` inherits,
+   and a 3px outline on the entry's <text> is unreadable. Outline its shapes. */
+svg g[data-menu-target] > rect,
+svg g[data-menu-target] > circle {
+  stroke: var(--gold) !important;
+  stroke-width: 2 !important;
+}
+
 @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }

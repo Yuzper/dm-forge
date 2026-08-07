@@ -828,7 +828,9 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
             if (at) (editor.commands as any).linkMentionAt(at.pos)
           },
         }] : undefined,
-      }))
+      // This listener sits on the editor root, so currentTarget is the whole
+      // document — ring the link itself, not the article you're reading.
+      }), { target: linkEl ?? mentionEl })
     }
     el.addEventListener('contextmenu', onContext, true)
     return () => el.removeEventListener('contextmenu', onContext, true)

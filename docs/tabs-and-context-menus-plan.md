@@ -369,6 +369,29 @@ Notes against this plan:
   likewise no longer requires registration.
 - **Closing a split pane's last tab collapses the pane** rather than falling back
   to a campaign tab.
+- **The focus indicator was too quiet** (strengthened 2026-08-07 on user
+  feedback, branch `context-menu-target`). It was a 2px gold line along the top
+  of the focused pane plus 0.92 opacity on the other — and a hairline at the very
+  top edge, next to the window chrome, is not where the eye is. Worse, *both*
+  panes lit their active tab gold, so the one thing the eye was already reading
+  said nothing about where Ctrl+T would land. Now: a 3px bar plus a gold-tinted
+  ring around the focused pane, and the unfocused pane's strip drops to
+  `--bg-base` with its active tab in `--text-secondary` instead of gold — so
+  exactly one tab in the workspace is gold, and that is the live one.
+  Deliberately **no background colour on the pane**: the parchment / stone / wood
+  textures are painted on the App root with the panes transparent over them, so
+  tinting one pane would give the two sides visibly different textures.
+- **Cross-pane tab drag** uses a typed dataTransfer payload; the drop handler
+  invokes the move on the *source* pane's store, since that is where the tab lives.
+- `data-pane-id` / `data-tab-strip` attributes exist so the layout is drivable from
+  the Electron probes.
+
+*Verified in the real app*: split → both panes render, new pane seeded from the old;
+navigating one pane leaves the other alone; clicking into a pane moves focus and the
+sidebar follows; Ctrl+T opens in the focused pane only. Restart round-trip restores
+both panes, their tabs, the active tab and the focused pane. Stage 2's suites
+(single-pane real app + headless store flow) re-run clean.
+
 ### Stage 3 — original plan
 
 - Splitter with a draggable ratio; cap at 2 panes.
@@ -444,8 +467,50 @@ Notes on what changed against this plan:
   session's notes) and library sounds from the *widget* (the library is
   app-wide and the widget is used mid-session).
 
+**The target ring** (added 2026-08-07, branch `context-menu-target`). TODO.txt's
+third settle-first item — "right-click should select first, or menus act on
+something other than what's highlighted" — was the one Stage 4 left undone. Half
+of it turned out moot: the menus are *entity-bound*, not selection-bound, so a
+builder receives the exact article or node the pointer hit and can't act on
+anything else. The other half was real: a native menu floats above the app with
+nothing tying it to what it acts on, which on an 88-node graph means trusting
+your aim.
+
+Actually selecting would have been the wrong fix — selection in this app has side
+effects (`selectPOI` opens the POI panel, a relations node opens the 240px detail
+sidebar, a shape opens its popup), so right-clicking a pin to copy a title would
+have flung a panel open. Instead `useContextMenu` marks the target with a
+`data-menu-target` attribute for exactly as long as the menu is up: it already
+knows the duration, because `showContextMenu` awaits `popupMenu` and that
+resolves when the menu closes. No call site changed — the element is the event's
+`currentTarget`.
+
+Three things that make it work:
+
+- **A data attribute, not a class.** `className` is a React-controlled prop on
+  most of these elements; a re-render mid-menu would take an added class with it.
+  Nothing sets `data-menu-target`, so React leaves it alone.
+- **`currentTarget` is read synchronously.** React nulls it the moment the
+  handler returns, so reading it inside the promise chain silently yields null
+  and the ring never appears — a failure mode with no error attached.
+- **SVG needs its own rule.** `box-shadow` doesn't render on SVG, so regions and
+  handles say it with stroke. A marked `<g>` (a timeline entry) can't take the
+  stroke itself, because `stroke` inherits and a 3px outline on its `<text>` is
+  unreadable — the rule reaches its `<rect>`/`<circle>` children instead.
+
+Two surfaces opt out with `{ target: null }`: the bare map canvas and the blank
+tab strip, where the "target" is the whole viewport and outlining it would say
+less than saying nothing. The editor passes an explicit target, since its
+listener sits on the document root and would otherwise ring the whole article.
+
 *Verified in the running app* against a disposable copy of the real database:
-43 checks across five probes, zero failures, no renderer console errors. The
+43 checks across five probes, zero failures, no renderer console errors. A sixth
+probe (11 more checks) covers the ring by stalling the spy's reply so the mark
+stays observable: the right element is marked, exactly one at a time, the CSS
+actually computes, and nothing is left marked once the menu closes. The SVG rules
+are checked against a synthetic `<svg>` built in the page — reaching a real
+horizontal timeline span is a lot of clicks for one CSS rule, and the rule was
+the risky part. The
 `menu:popup` round trip was exercised for real — template in, native menu built
 and popped, item clicked, id back — by wrapping `Menu.buildFromTemplate` in the
 probe to get a handle on the built menu. Every other surface was driven with the
@@ -456,12 +521,25 @@ pane seeded with the article, after which the third item re-words itself to
 "Open in other pane"). Confirmed too that plain prose in the editor is *not*
 claimed, so the native cut/copy/paste menu still wins there.
 
-Two things the probes had to learn the hard way, worth remembering for Stage 5:
-the disposable profile must be **wiped between runs** (the app persists its
-workspace and hub layout to localStorage, so a leftover profile changes which
-screen a probe starts on), and the real `images` directory has to be
-**junctioned into the profile** — map pins and regions only render once the
-image loads, so without it the map probes report false failures.
+Three things the probes had to learn the hard way, worth remembering for Stage 5:
+
+- The disposable profile must be **wiped between runs**. The app persists its
+  workspace and hub layout to localStorage, so a leftover profile changes which
+  screen a probe starts on.
+- The real `images` directory has to be **junctioned into the profile**. Map pins
+  and regions only render once the image loads, so without it every map
+  assertion fails for the wrong reason.
+- **A locked shape layer makes its regions inert on purpose**, and this database
+  has both world-map layers locked. The region check passed once anyway — it had
+  raced ahead of the layer load, so nothing looked locked yet — and then "broke"
+  on an unrelated change that shifted the timing. It now unlocks the layers in
+  the disposable copy before testing. A check that only passes when it wins a
+  race is worse than no check.
+
+Open, and small either way: **should a locked region still offer a menu?** Today
+it doesn't, which is consistent with locking meaning "visible but never catches a
+click". The argument the other way is that "Open linked article" is read-only and
+locking is about editing.
 
 ### Stage 4 — original plan
 

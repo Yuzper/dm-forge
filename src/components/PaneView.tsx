@@ -32,9 +32,26 @@ function PaneBody({ paneId }: { paneId: PaneId }) {
         flex: 1, minWidth: 0, overflow: 'hidden',
         display: 'flex', flexDirection: 'column',
         // Only mark focus while split; a lone pane is always "the" pane.
-        boxShadow: split && focused ? 'inset 0 2px 0 var(--gold)' : 'none',
-        opacity: split && !focused ? 0.92 : 1,
-        transition: 'opacity 120ms',
+        //
+        // Three signals rather than one, because this decides where Ctrl+T, the
+        // sidebar and every "open in this pane" lands — and a 2px line at the
+        // very top edge, next to the window chrome, was easy to miss:
+        //   · a thicker gold bar along the top of the focused pane
+        //   · a gold-tinted ring around the whole of it, so the boundary reads
+        //     even when the top edge is off the eye's path
+        //   · the unfocused pane recedes — but only slightly, since the point
+        //     of a split is that you can still read the other side
+        //
+        // Deliberately no background here: the parchment / stone / wood textures
+        // are painted on the App root and the panes are transparent over them,
+        // so tinting one pane would give the two sides different textures.
+        // Opacity recedes it without touching what shows through.
+        boxShadow: !split ? 'none'
+          : focused
+            ? 'inset 0 3px 0 var(--gold), inset 0 0 0 1px var(--border-gold)'
+            : 'inset 0 0 0 1px var(--border)',
+        opacity: split && !focused ? 0.88 : 1,
+        transition: 'opacity 120ms, box-shadow 120ms',
       }}
     >
       <TabStrip paneId={paneId} />

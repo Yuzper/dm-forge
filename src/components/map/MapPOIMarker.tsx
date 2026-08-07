@@ -85,6 +85,10 @@ export default function MapPOIMarker({
         // the map zooms underneath them.
         transform: `translate(-50%, -50%) scale(${1 / scale})`,
         zIndex: ghost ? 5 : selected ? 20 : 10,
+        // The wrapper has no visual of its own; this is purely so the
+        // context-menu target ring reads as a circle around a circular pin
+        // rather than a box around it.
+        borderRadius: '50%',
         cursor: ghost ? 'default' : draggable ? 'grab' : 'pointer',
         opacity: ghost ? 0.45 : (selfHover || hovered || selected) ? 1 : opacity,
         transition: 'opacity 150ms ease',
