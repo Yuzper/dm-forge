@@ -1,5 +1,5 @@
 // path: src/components/wiki/ArticleEditor.tsx
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { useStore } from '../../store/store'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import {
@@ -33,7 +33,9 @@ import type { QuestReward } from '../QuestRewardSection'
 import {
   ARTICLE_TYPES, ARTICLE_TRACKS, TRACK_VALUE_COLORS, MULTI_TRACKS, trackValues, stringifyMulti,
   getTrackTags, parseTags, formatTrackName, sidebarSectionLabel, imgBtnStyle, addBannerStyle,
+  ARTICLE_BACKED_TRACKS, articleTypeLabel,
 } from './wikiConstants'
+import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
 import { ArticleRelationsPanel, RelationWebsSection, MemberCountSection, AffiliationsSection, GeographySection } from './ArticleRelationsPanel'
 import { ClocksSection } from '../clocks/ClocksSection'
 
@@ -53,14 +55,53 @@ function withItemTracks(article: Article): Record<string, string> {
 
 // ─── Track Row ─────────────────────────────────────────────────────────────────
 
-function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions, visControl }: {
+// A labelled block of picker options. `label: null` renders the options
+// ungrouped; a label renders an <optgroup>, which is how an article-backed
+// track announces where its choices come from. `color` is the article type's
+// accent, so the heading reads as "Location" at a glance.
+export type TrackOptionGroup = { label: string | null; options: string[]; color?: string }
+
+// Chromium renders select popups itself, so optgroup/option styling applies.
+// Only the colour is set — the label keeps the browser's default heading text.
+// Options would otherwise inherit the heading's accent, hence the reset.
+const groupLabelStyle = (color?: string): React.CSSProperties => ({
+  color: color ?? 'var(--text-secondary)',
+})
+const groupOptionStyle: React.CSSProperties = { color: 'var(--text-primary)' }
+
+// Shared by TrackRow and MultiTrackRow: renders the groups, and when an
+// article-backed group is empty says so instead of silently offering nothing.
+function GroupedOptions({ groups }: { groups: TrackOptionGroup[] }) {
+  return (
+    <>
+      {groups.map((g, i) => g.label === null ? (
+        <Fragment key={i}>
+          {g.options.map(o => <option key={o} value={o}>{o}</option>)}
+        </Fragment>
+      ) : (
+        <optgroup key={i} label={g.label} style={groupLabelStyle(g.color)}>
+          {g.options.length > 0
+            ? g.options.map(o => <option key={o} value={o} style={groupOptionStyle}>{o}</option>)
+            : <option disabled style={{ color: 'var(--text-muted)' }}>— none written yet —</option>}
+        </optgroup>
+      ))}
+    </>
+  )
+}
+
+function TrackRow({ trackKey, name, options, value, onChange, optionGroups, visControl }: {
   trackKey: string; name: string; options: string[]; value: string
-  onChange: (v: string) => void; dynamicOptions?: string[]; visControl?: React.ReactNode
+  onChange: (v: string) => void; optionGroups?: TrackOptionGroup[]; visControl?: React.ReactNode
 }) {
-  // One alphabetical, de-duplicated list regardless of how the options were
-  // assembled (static list, dynamic article names, or a merge of both).
-  const resolvedOptions = Array.from(new Set(dynamicOptions ?? options)).sort((a, b) => a.localeCompare(b))
-  const isCustomOnly = dynamicOptions === undefined && options.length === 0
+  // One de-duplicated list for the value/custom-mode logic, regardless of how
+  // the options were assembled (static enum, article titles, or both).
+  // Order is left alone: the fixed enums are authored deliberately — Size runs
+  // Room→World, Difficulty runs Trivial→Deadly, Species groups by family — and
+  // article titles arrive already sorted per type.
+  const resolvedOptions = optionGroups
+    ? Array.from(new Set(optionGroups.flatMap(g => g.options)))
+    : Array.from(new Set(options))
+  const isCustomOnly = optionGroups === undefined && options.length === 0
   const [customMode, setCustomMode] = useState(() => isCustomOnly || (value !== '' && !resolvedOptions.includes(value)))
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -91,7 +132,9 @@ function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions, vi
         <select className="input" style={{ height: 28, fontSize: 12, flex: 1 }} value={value}
           onChange={e => { if (e.target.value === '__custom__') { setCustomMode(true); onChange('') } else onChange(e.target.value) }}>
           <option value="">— none —</option>
-          {resolvedOptions.map(o => <option key={o} value={o}>{o}</option>)}
+          {optionGroups
+            ? <GroupedOptions groups={optionGroups} />
+            : resolvedOptions.map(o => <option key={o} value={o}>{o}</option>)}
           <option value="__custom__">Custom…</option>
         </select>
       )}
@@ -103,15 +146,18 @@ function TrackRow({ trackKey, name, options, value, onChange, dynamicOptions, vi
 // Multi-value sibling of TrackRow (Allies, Rivals, …): holds a list of entries
 // stored as a JSON array in the same track slot. Existing entries show as
 // removable chips; a picker (dynamic article names + Custom…) adds more.
-function MultiTrackRow({ name, value, onChange, dynamicOptions, visControl }: {
-  name: string; value: string; onChange: (v: string) => void; dynamicOptions?: string[]; visControl?: React.ReactNode
+function MultiTrackRow({ name, value, onChange, optionGroups, visControl }: {
+  name: string; value: string; onChange: (v: string) => void; optionGroups?: TrackOptionGroup[]; visControl?: React.ReactNode
 }) {
   const entries = trackValues(value)
   const [customMode, setCustomMode] = useState(false)
   const [customText, setCustomText] = useState('')
-  const options = Array.from(new Set(dynamicOptions ?? []))
-    .filter(o => !entries.includes(o))
-    .sort((a, b) => a.localeCompare(b))
+  // Already-picked entries drop out of the picker. A group emptied that way is
+  // dropped entirely — "none written yet" would be a lie when you've taken them
+  // all — but a genuinely empty article type keeps its group so it can say so.
+  const groups = (optionGroups ?? [])
+    .map(g => ({ ...g, exhausted: g.options.length > 0, options: g.options.filter(o => !entries.includes(o)) }))
+    .filter(g => g.options.length > 0 || !g.exhausted)
 
   const add = (v: string) => {
     const t = v.trim()
@@ -154,7 +200,7 @@ function MultiTrackRow({ name, value, onChange, dynamicOptions, visControl }: {
           <select className="input" style={{ height: 28, fontSize: 12 }} value=""
             onChange={e => { const v = e.target.value; if (!v) return; if (v === '__custom__') setCustomMode(true); else add(v) }}>
             <option value="">+ Add {formatTrackName(name).toLowerCase()}…</option>
-            {options.map(o => <option key={o} value={o}>{o}</option>)}
+            <GroupedOptions groups={groups} />
             <option value="__custom__">Custom…</option>
           </select>
         )}
@@ -564,19 +610,9 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
     for (const k in m) m[k].sort((a, b) => a.localeCompare(b))
     return m
   }, [allArticles])
-  const factionNames         = namesByType.faction ?? []
-  const religionNames        = namesByType.religion ?? []
-  const cultureNames         = namesByType.culture ?? []
-  const locationNames        = namesByType.location ?? []
-  const creatureNames        = namesByType.creature ?? []
-  const playerCharacterNames = namesByType.playerCharacter ?? []
   // Quest reward items can link to any item-ish article
   const rewardItemNames = useMemo(
     () => [...(namesByType.item ?? []), ...(namesByType.artifact ?? [])].sort((a, b) => a.localeCompare(b)),
-    [namesByType]
-  )
-  const characterNames = useMemo(
-    () => [...(namesByType.character ?? []), ...(namesByType.playerCharacter ?? [])].sort((a, b) => a.localeCompare(b)),
     [namesByType]
   )
   const [masterTables, setMasterTables]       = useState<MasterLootTable[]>([])
@@ -752,7 +788,17 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   // otherwise so the Details panel isn't offering an irrelevant field.
   const currentTypeTracks = Object.entries(ARTICLE_TRACKS[articleType] || {})
     .filter(([name]) => !(articleType === 'quest' && name === 'Player_Character' && tracks.Type !== 'Personal'))
-  const statblockHasData = statblock.ac > 0 || statblock.hp > 0 || statblock.traits.length > 0 || statblock.actions.length > 0
+
+  // Which article types feed this type's pickers — named in the Details footnote
+  // so the growing-list behaviour is stated outright, not just implied by the
+  // dropdown's group headings.
+  const trackSourceLabels = (() => {
+    const types = new Set<ArticleType>()
+    for (const [name] of currentTypeTracks) for (const t of ARTICLE_BACKED_TRACKS[name] ?? []) types.add(t)
+    return [...types].map(articleTypeLabel)
+  })()
+
+  const statblockHasData =statblock.ac > 0 || statblock.hp > 0 || statblock.traits.length > 0 || statblock.actions.length > 0
 
   const lootSuggestions = articles.filter(a => ['item', 'artifact', 'note'].includes(a.article_type)).map(a => a.title)
 
@@ -1114,30 +1160,31 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                         </div>
                       )
                     }
-                    // Track values that pull their suggestions from live article
-                    // titles rather than a fixed enum. Shared by TrackRow and the
-                    // multi-value MultiTrackRow.
-                    const dynamicOptions =
-                      trackName === 'Religion'           ? religionNames :
-                      trackName === 'Culture'            ? cultureNames :
-                      trackName === 'Faction'            ? factionNames :
-                      trackName === 'Species'            ? [...(ARTICLE_TRACKS[articleType]?.Species ?? []), ...creatureNames] :
-                      trackName === 'Location'           ? locationNames :
-                      trackName === 'Within'             ? locationNames.filter(n => n !== title) :
-                      trackName === 'HQ'                 ? locationNames :
-                      trackName === 'Ruler/Leader'       ? characterNames :
-                      trackName === 'Controlled_By'      ? factionNames :
-                      trackName === 'Owner'              ? characterNames :
-                      trackName === 'Sender'             ? characterNames :
-                      trackName === 'Intended_Recipient' ? characterNames :
-                      trackName === 'Leader'             ? characterNames :
-                      trackName === 'Quest_Giver'        ? characterNames :
-                      trackName === 'Player_Character'   ? playerCharacterNames :
-                      trackName === 'Allies'             ? [...characterNames, ...factionNames, ...religionNames] :
-                      trackName === 'Rivals'             ? [...characterNames, ...factionNames, ...religionNames] :
-                      trackName === 'Sacred_Sites'       ? locationNames :
-                      trackName === 'Domains'            ? (ARTICLE_TRACKS[articleType]?.Domains ?? []) :
-                      undefined
+                    // Tracks that pull their choices from live article titles get
+                    // one group per source type, each labelled with where it came
+                    // from — that's what tells you the list grows as you write.
+                    // Everything else keeps its plain fixed enum.
+                    const backedBy = ARTICLE_BACKED_TRACKS[trackName]
+                    const articleGroups = backedBy?.map(type => ({
+                      label: `${articleTypeLabel(type)} articles`,
+                      color: ARTICLE_TYPE_COLORS[type],
+                      // "Located within" can't point an article at itself.
+                      options: (namesByType[type] ?? []).filter(n => trackName !== 'Within' || n !== title),
+                    }))
+                    // Once you've written an article for something, that article is
+                    // the canonical entry — drop the stock duplicate so the bestiary
+                    // wins as it grows past the built-in Species list.
+                    const written = new Set(articleGroups?.flatMap(g => g.options.map(n => n.toLowerCase())))
+                    const stockOptions = articleGroups ? options.filter(o => !written.has(o.toLowerCase())) : options
+                    const optionGroups: TrackOptionGroup[] | undefined =
+                      articleGroups ? [
+                        // Species merges the standard list in ahead of your bestiary.
+                        ...(stockOptions.length > 0 ? [{ label: `Standard ${formatTrackName(trackName).toLowerCase()}`, options: stockOptions }] : []),
+                        ...articleGroups,
+                      ]
+                      // Static enum, but MULTI_TRACKS only render options they're handed.
+                      : MULTI_TRACKS.has(trackName) ? [{ label: null, options }]
+                      : undefined
 
                     // Keep the manual-tag / track-tag reconciliation in one place;
                     // both row kinds commit through it.
@@ -1167,7 +1214,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                           name={trackName}
                           value={tracks[trackName] || ''}
                           onChange={commit}
-                          dynamicOptions={dynamicOptions}
+                          optionGroups={optionGroups}
                           visControl={renderVis(trackName)}
                         />
                       )
@@ -1180,11 +1227,21 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                         options={options}
                         value={tracks[trackName] || ''}
                         onChange={commit}
-                        dynamicOptions={dynamicOptions}
+                        optionGroups={optionGroups}
                         visControl={renderVis(trackName)}
                       />
                     )
                   })
+                )}
+                {!readMode && trackSourceLabels.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 10, lineHeight: 1.5, color: 'var(--text-muted)' }}>
+                    <Link size={11} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <span>
+                      Fields grouped under a type heading (<em>“Location articles”</em> and the like) list
+                      what you've already written ({trackSourceLabels.join(', ')}). Write more and they
+                      appear here on their own.
+                    </span>
+                  </div>
                 )}
               </div>
             )}

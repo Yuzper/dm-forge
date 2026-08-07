@@ -10,10 +10,13 @@ import ReactFlow, { Background, BackgroundVariant, Controls, Handle, Position, N
 // @ts-ignore
 import 'reactflow/dist/style.css'
 import { forceSimulation, forceLink, forceManyBody, forceX, forceY, forceCollide } from 'd3-force'
-import { ArrowLeft, Network, Search, X, LayoutGrid, Unlink, Sparkles, Plus, Minus, Clock, Target, SlidersHorizontal, RotateCcw } from 'lucide-react'
+import { Network, X, LayoutGrid, Unlink, Sparkles, Plus, Minus, Clock, Target, SlidersHorizontal, RotateCcw } from 'lucide-react'
 import type { LinkGraph, ArticleType } from '../../types'
-import { ALL_FILTERS } from './wikiConstants'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
+import {
+  WikiHeaderBar, ViewSwitchButton, WikiSearchBox, WikiTypeFilters, ToolbarDivider,
+  toolbarPillStyle, pillCountStyle, type WikiSearchFields,
+} from './WikiToolbar'
 import { useExcludedTypes, TypeVisibilityMenu } from './TypeVisibilityMenu'
 import { useMenuClose } from '../../hooks/useMenuClose'
 
@@ -31,7 +34,9 @@ interface LayoutNode {
 }
 
 const nodeRadius = (degree: number) => 7 + Math.min(11, degree * 1.5)
-const GHOST_COLOR = '#8a7a5a'   // muted warm gray for broken-link placeholders
+const GHOST_COLOR = '#8a7a5a'    // muted warm gray for broken-link placeholders
+const MENTION_COLOR = '#3fa89b'  // teal for unlinked-mention suggestions
+const RECENCY_COLOR = '#ff952b'  // hot amber — the fresh end of the recency ramp
 
 // ── Force-layout tuning ──────────────────────────────────────────────────────────
 // The d3-force simulation is static (pre-settled with .tick, then .stop), so these
@@ -57,7 +62,7 @@ const FORCE_KEY = 'wiki-graph-force-params'
 // checkboxes so a search term means the same thing in both views. At least one
 // field stays on (the last checked one is disabled), so a query always matches
 // something. Persisted per browser like the graph's other lens settings.
-interface SearchFields { title: boolean; tags: boolean }
+type SearchFields = WikiSearchFields
 const SEARCH_FIELDS_KEY = 'wiki-graph-search-fields'
 // The list view filters in SQL: `title LIKE %q%` for the title field, and for
 // tags `tags LIKE %q%` (the raw JSON blob) OR the name of a relation web the
@@ -202,10 +207,10 @@ function edgeStyle(kind: EdgeKind, dim: boolean, emphasis: EdgeEmphasis, glow = 
     filter: lit ? glowFor(GHOST_COLOR) : undefined,
   }
   if (kind === 'mention') return {
-    ...base, stroke: '#3fa89b', strokeWidth: match ? 1.75 : 1,
+    ...base, stroke: MENTION_COLOR, strokeWidth: match ? 1.75 : 1,
     strokeDasharray: '1 4', strokeLinecap: 'round',
     opacity: dim ? 0.05 : match ? 1 : hot ? 0.85 : 0.4,
-    filter: lit ? glowFor('#3fa89b') : undefined,
+    filter: lit ? glowFor(MENTION_COLOR) : undefined,
   }
   return {
     ...base, stroke: hot || match ? 'var(--gold)' : 'var(--border-light)',
@@ -620,154 +625,83 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ padding: '20px 32px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', borderRight: '1px solid var(--border)', paddingRight: 12, marginRight: 4, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', transition: 'color var(--transition)' }}
-              className="hover-text">
-              <ArrowLeft size={14} /> Back
-            </button>
-            <Network size={22} color="var(--gold)" />
-            <h1 style={{ fontSize: 22, letterSpacing: '0.05em' }}>Wiki Graph</h1>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-              {articleNodes.length} article{articleNodes.length !== 1 ? 's' : ''} · {links.length} link{links.length !== 1 ? 's' : ''}
-              {unlinkedCount > 0 && (
-                <>
-                  ·
-                  <button
-                    onClick={() => setOrphanOnly(v => !v)}
-                    title={orphanOnly ? 'Show all articles' : 'Highlight only unconnected articles'}
-                    style={{
-                      background: orphanOnly ? 'var(--gold-glow)' : 'none', border: 'none', cursor: 'pointer',
-                      color: orphanOnly ? 'var(--gold)' : 'var(--text-muted)', fontSize: 12, padding: '1px 6px',
-                      borderRadius: 99, textDecoration: 'underline', textUnderlineOffset: 2,
-                    }}
-                    className={orphanOnly ? '' : 'hover-gold'}>
-                    {unlinkedCount} unlinked
-                  </button>
-                </>
-              )}
-              {hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''}
-            </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              onClick={onSwitchToList}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', transition: 'all 120ms' }}
-              className="hover-gold-border">
-              <LayoutGrid size={13} /> List view
-            </button>
+        <WikiHeaderBar
+          icon={Network}
+          title="Wiki Graph"
+          onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
+          meta={<>
+            {articleNodes.length} article{articleNodes.length !== 1 ? 's' : ''} · {links.length} link{links.length !== 1 ? 's' : ''}
+            {unlinkedCount > 0 && (
+              <>
+                ·
+                <button
+                  onClick={() => setOrphanOnly(v => !v)}
+                  title={orphanOnly ? 'Show all articles' : 'Highlight only unconnected articles'}
+                  style={{
+                    background: orphanOnly ? 'var(--gold-glow)' : 'none', border: 'none', cursor: 'pointer',
+                    color: orphanOnly ? 'var(--gold)' : 'var(--text-muted)', fontSize: 12, padding: '1px 6px',
+                    borderRadius: 99, textDecoration: 'underline', textUnderlineOffset: 2,
+                  }}
+                  className={orphanOnly ? '' : 'hover-gold'}>
+                  {unlinkedCount} unlinked
+                </button>
+              </>
+            )}
+            {hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''}
+          </>}
+          actions={<>
+            <ViewSwitchButton icon={LayoutGrid} label="List view" onClick={onSwitchToList}
+              title="Back to the article cards" />
             <button className="btn btn-primary" onClick={() => onCreateArticle('')}>
               <Plus size={15} /> New Article
             </button>
-          </div>
-        </div>
+          </>}
+        />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <div style={{ position: 'relative', width: 220 }}>
-              <Search size={13} color="var(--text-muted)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-              <input className="input" style={{ paddingLeft: 30, paddingRight: search ? 28 : 10, fontSize: 13, height: 32 }}
-                placeholder={searchFields.title && searchFields.tags ? 'Highlight by title or tag…' : searchFields.tags ? 'Highlight by tag…' : 'Highlight by title…'}
-                value={search} onChange={e => setSearch(e.target.value)} />
-              {search && (
-                <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 0 }}>
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 2 }}>
-              {(['title', 'tags'] as const).map(field => {
-                const active = searchFields[field]
-                // Never let both fields go off — the last one checked is locked on.
-                const isLast = active && !searchFields[field === 'title' ? 'tags' : 'title']
-                return (
-                  <label key={field} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', userSelect: 'none' }}>
-                    <input type="checkbox" checked={active} disabled={isLast}
-                      onChange={() => setSearchFields(f => ({ ...f, [field]: !active }))}
-                      style={{ accentColor: 'var(--gold)', cursor: isLast ? 'default' : 'pointer', width: 11, height: 11 }} />
-                    {field}
-                  </label>
-                )
-              })}
-              {search.trim() && (
-                <span style={{ fontSize: 11, color: matchCount > 0 ? 'var(--gold)' : 'var(--text-muted)', marginLeft: 'auto' }}>
-                  {matchCount} match{matchCount !== 1 ? 'es' : ''}
-                </span>
-              )}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-            {ALL_FILTERS.filter(f => !excludedTypes.has(f.value)).map(f => {
-              const Icon = f.icon; const active = typeFilter === f.value
-              const color = f.value === 'all' ? 'var(--gold)' : f.color
-              return (
-                <button key={f.value} onClick={() => setTypeFilter(active ? 'all' : (f.value as any))} style={{
-                  display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 99,
-                  border: `1px solid ${active ? color : 'var(--border-light)'}`,
-                  background: active ? `color-mix(in srgb, ${color} 12%, transparent)` : 'transparent',
-                  color: active ? color : 'var(--text-muted)',
-                  fontSize: 11, cursor: 'pointer', transition: 'all 120ms ease',
-                }}>
-                  <Icon size={10} /> {f.label}
-                </button>
-              )
-            })}
-          </div>
+          <WikiSearchBox
+            verb="Highlight"
+            value={search} onChange={setSearch}
+            fields={searchFields} onFieldsChange={setSearchFields}
+            matchCount={matchCount}
+          />
+          <ToolbarDivider />
+          <WikiTypeFilters excluded={excludedTypes} value={typeFilter} onChange={setTypeFilter} />
           {(ghostCount > 0 || visibleMentions.length > 0 || showMentions) && (
             <>
-              <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border-light)', flexShrink: 0 }} />
+              <ToolbarDivider />
               {ghostCount > 0 && (
                 <button
                   onClick={toggleGhosts}
                   title="Show placeholder nodes for [[links]] pointing at articles that don't exist yet"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 99,
-                    border: `1px solid ${showGhosts ? GHOST_COLOR : 'var(--border-light)'}`,
-                    background: showGhosts ? `color-mix(in srgb, ${GHOST_COLOR} 14%, transparent)` : 'transparent',
-                    color: showGhosts ? GHOST_COLOR : 'var(--text-muted)',
-                    fontSize: 11, cursor: 'pointer', transition: 'all 120ms ease',
-                  }}>
+                  style={toolbarPillStyle(showGhosts, GHOST_COLOR)}>
                   <Unlink size={11} /> Broken links
-                  <span style={{ fontSize: 10, background: 'color-mix(in srgb, ' + GHOST_COLOR + ' 22%, transparent)', borderRadius: 99, padding: '0 6px' }}>{ghostCount}</span>
+                  <span style={pillCountStyle(GHOST_COLOR)}>{ghostCount}</span>
                 </button>
               )}
               {(visibleMentions.length > 0 || showMentions) && (
                 <button
                   onClick={toggleMentions}
                   title="Suggest connections: article titles mentioned in prose but not yet linked"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 99,
-                    border: `1px solid ${showMentions ? '#3fa89b' : 'var(--border-light)'}`,
-                    background: showMentions ? 'color-mix(in srgb, #3fa89b 14%, transparent)' : 'transparent',
-                    color: showMentions ? '#3fa89b' : 'var(--text-muted)',
-                    fontSize: 11, cursor: 'pointer', transition: 'all 120ms ease',
-                  }}>
+                  style={toolbarPillStyle(showMentions, MENTION_COLOR)}>
                   <Sparkles size={11} /> Suggestions
-                  {visibleMentions.length > 0 && <span style={{ fontSize: 10, background: 'color-mix(in srgb, #3fa89b 22%, transparent)', borderRadius: 99, padding: '0 6px' }}>{visibleMentions.length}</span>}
+                  {visibleMentions.length > 0 && <span style={pillCountStyle(MENTION_COLOR)}>{visibleMentions.length}</span>}
                 </button>
               )}
             </>
           )}
           {articleNodes.length > 0 && (
             <>
-              <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border-light)', flexShrink: 0 }} />
+              <ToolbarDivider />
               <button
                 onClick={toggleRecency}
                 title="Recency lens: color nodes by last edited — fresh work glows amber, neglected corners turn cold"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 99,
-                  border: `1px solid ${recencyOn ? '#ff952b' : 'var(--border-light)'}`,
-                  background: recencyOn ? 'color-mix(in srgb, #ff952b 14%, transparent)' : 'transparent',
-                  color: recencyOn ? '#ff952b' : 'var(--text-muted)',
-                  fontSize: 11, cursor: 'pointer', transition: 'all 120ms ease',
-                }}>
+                style={toolbarPillStyle(recencyOn, RECENCY_COLOR)}>
                 <Clock size={11} /> Recency
               </button>
             </>
           )}
-          <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border-light)', flexShrink: 0 }} />
+          <ToolbarDivider />
           <ForcePanel force={force} setForce={setForce} />
           <TypeVisibilityMenu excluded={excludedTypes} onToggle={toggleTypeExcluded} onClear={clearExcludedTypes} />
         </div>
@@ -886,7 +820,7 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
             )}
             {showMentions && visibleMentions.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, color: 'var(--text-muted)' }}>
-                <svg width="26" height="12"><line x1="0" y1="6" x2="26" y2="6" stroke="#3fa89b" strokeWidth="1.5" strokeDasharray="1 4" strokeLinecap="round" /></svg>
+                <svg width="26" height="12"><line x1="0" y1="6" x2="26" y2="6" stroke={MENTION_COLOR} strokeWidth="1.5" strokeDasharray="1 4" strokeLinecap="round" /></svg>
                 Mentioned in text but not linked
               </div>
             )}

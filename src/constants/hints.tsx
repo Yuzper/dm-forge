@@ -86,6 +86,7 @@ export const HINTS: Record<string, Hint> = {
       </>,
       <>The column to the right shows the article's overview <strong>Details, Timeline, Webs, Relations, Linked From, Tags</strong> etc.</>,
       <><Kbd>Details:</Kbd> (Vitality, Attitude…). Set their statuses for the given article, when setting a track value it will be added as a tag for that article.</>,
+      <>Some Details fields — <strong>Location</strong>, <strong>Faction</strong>, <strong>Religion</strong>, <strong>Leader</strong>, <strong>Allies</strong> and friends — don't have a fixed list. They offer the articles you've already written, grouped under headings like <em>“Location articles”</em>, so the choices grow as the wiki does. Nothing to configure: create a Faction article and every Faction picker in the campaign offers it. <strong>Custom…</strong> is always there for anything you haven't written up yet.</>,
       <><Kbd>Timeline:</Kbd> (Birth, Events, Dates, Deaths, Destructions etc) You can add whatever events relevant for this article on the timeline from here and define what they are.</>,
       <><Kbd>Webs:</Kbd> Create a web related to this article. Example uses are a faction or religion article and you want to create a web for its hierachy.</>,
       <><Kbd>Relations:</Kbd> These are webs an article are part of. Think family trees, organizational charts, ally webs etc. These are updated automatically when added in the <strong>Relations</strong> tab.</>,

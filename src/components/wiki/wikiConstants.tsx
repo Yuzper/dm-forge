@@ -38,7 +38,7 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
     Species:     ['Human', 'Elf', 'High Elf', 'Drow', 'Half-Elf', 'Dwarf', 'Duergar', 'Halfling', 'Gnome', 'Deep Gnome', 'Half-Orc', 'Orc',
                   'Tiefling', 'Dragonborn', 'Aasimar', 'Owlin', 'Aarakocra', 'Tortle', 'Goliath', 'Lizardfolk', 'Tabaxi',
                   'Water Genasi', 'Fire Genasi', 'Air Genasi', 'Earth Genasi'],
-    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
+    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned'],
     Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Location:    [],
     Culture:     [],
@@ -52,7 +52,7 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
     Species:     ['Human', 'Elf', 'High Elf', 'Drow', 'Half-Elf', 'Dwarf', 'Duergar', 'Halfling', 'Gnome', 'Deep Gnome', 'Half-Orc', 'Orc',
                   'Tiefling', 'Dragonborn', 'Aasimar', 'Owlin', 'Aarakocra', 'Tortle', 'Goliath', 'Lizardfolk', 'Tabaxi',
                   'Water Genasi', 'Fire Genasi', 'Air Genasi', 'Earth Genasi'],
-    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned', 'Revoked Title'],
+    Royal_Title: ['Duke', 'Duchess', 'Lord', 'Lady', 'King', 'Queen', 'Prince', 'Princess', 'Emperor', 'Empress', 'Disowned'],
     Title:       ['Professor', 'Captain', 'General', 'Admiral', 'Archmage', 'High Priest'],
     Location:    [],
     Culture:     [],
@@ -71,7 +71,13 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
     // Two axes: Size = how big (a rough small→large scale mixing settlement,
     // realm and landmass), Type = what kind of place it is. Kept separate so a
     // location can be both at once (e.g. Size: City + Type: Ruins).
-    Size:   ['Room', 'Building', 'Village', 'Town', 'City', 'Metropolis', 'Duchy', 'Kingdom', 'Empire', 'Island', 'Continent', 'World'],
+    // Size is ordered smallest → largest and renders in that order (TrackRow
+    // leaves fixed enums in declaration order), running interior → settlement
+    // → polity → landmass. Pick the nearest rung.
+    Size:   ['Room', 'Building', 'Camp', 'Hamlet', 'Village', 'Town',
+             'District', 'City', 'Metropolis',
+             'County', 'Duchy', 'Principality', 'Kingdom', 'Empire',
+             'Island', 'Archipelago', 'Region', 'Continent', 'World','Plane of Existence'],
     Type:   ['Ruins', 'Dungeon', 'Wilderness', 'Landmark', 'Natural Wonder'],
     Government: ['Monarchy', 'Republic', 'Theocracy', 'Oligarchy', 'Magocracy', 'Tribal', 'Anarchy', 'Confederation'],
     'Ruler/Leader': [],
@@ -132,6 +138,39 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
     Location:           [],
   },
   other: { Status: ['Active', 'Inactive', 'Unknown'] },
+}
+
+// ── Article-backed tracks ──────────────────────────────────────────────────────
+// These track pickers list the titles of other articles instead of a fixed
+// enum, so their options grow as the wiki does — a Location track offers every
+// Location article you've written, and a new one shows up the moment it exists.
+// The mapped types are what feeds each picker; the editor uses them to label the
+// dropdown group ("Location articles") and to nudge when a type is empty,
+// so the behaviour is visible instead of something you have to discover.
+export const ARTICLE_BACKED_TRACKS: Record<string, ArticleType[]> = {
+  Religion:           ['religion'],
+  Culture:            ['culture'],
+  Faction:            ['faction'],
+  Location:           ['location'],
+  Within:             ['location'],
+  HQ:                 ['location'],
+  Sacred_Sites:       ['location'],
+  Controlled_By:      ['faction'],
+  'Ruler/Leader':     ['character', 'playerCharacter'],
+  Leader:             ['character', 'playerCharacter'],
+  Owner:              ['character', 'playerCharacter'],
+  Sender:             ['character', 'playerCharacter'],
+  Intended_Recipient: ['character', 'playerCharacter'],
+  Quest_Giver:        ['character', 'playerCharacter'],
+  Player_Character:   ['playerCharacter'],
+  Allies:             ['character', 'playerCharacter', 'faction', 'religion'],
+  Rivals:             ['character', 'playerCharacter', 'faction', 'religion'],
+  // Merged with the standard species list rather than replacing it.
+  Species:            ['creature'],
+}
+
+export function articleTypeLabel(type: ArticleType): string {
+  return ARTICLE_TYPES.find(t => t.value === type)?.label ?? type
 }
 
 export const TRACK_VALUE_COLORS: Record<string, string> = {

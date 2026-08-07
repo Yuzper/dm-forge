@@ -2,10 +2,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useStore } from '../store/store'
 import {
-  BookOpen, Plus, Search, Tag, X, Calendar, ArrowLeft, Network,
+  BookOpen, Plus, Tag, X, Calendar, Network,
 } from 'lucide-react'
 import type { ArticleSummary, ArticleType } from '../types'
-import { ARTICLE_TYPES, ALL_FILTERS, parseTags } from '../components/wiki/wikiConstants'
+import { ARTICLE_TYPES, parseTags } from '../components/wiki/wikiConstants'
+import {
+  WikiHeaderBar, ViewSwitchButton, WikiSearchBox, WikiTypeFilters, ToolbarDivider,
+} from '../components/wiki/WikiToolbar'
 import { ArticleEditor } from '../components/wiki/ArticleEditor'
 import WikiGraphView from '../components/wiki/WikiGraphView'
 import { useExcludedTypes, TypeVisibilityMenu } from '../components/wiki/TypeVisibilityMenu'
@@ -146,102 +149,51 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ padding: '20px 32px 0', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', borderRight: '1px solid var(--border)', paddingRight: 12, marginRight: 4, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', transition: 'color var(--transition)' }}
-              className="hover-text">
-              <ArrowLeft size={14} /> Back
-            </button>
-            <BookOpen size={22} color="var(--gold)" />
-            <h1 style={{ fontSize: 22, letterSpacing: '0.05em' }}>Campaign Wiki</h1>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {visibleArticles.length} article{visibleArticles.length !== 1 ? 's' : ''}
-              {excluded.size > 0 && articles.length > visibleArticles.length ? ` · ${articles.length - visibleArticles.length} hidden` : ''}
-            </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              onClick={onSwitchToGraph}
-              title="See every article and its [[links]] as a network"
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', transition: 'all 120ms' }}
-              className="hover-gold-border">
-              <Network size={13} /> Graph view
-            </button>
+      <div style={{ padding: '20px 32px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <WikiHeaderBar
+          icon={BookOpen}
+          title="Campaign Wiki"
+          onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
+          meta={<>
+            {visibleArticles.length} article{visibleArticles.length !== 1 ? 's' : ''}
+            {excluded.size > 0 && articles.length > visibleArticles.length ? ` · ${articles.length - visibleArticles.length} hidden` : ''}
+          </>}
+          actions={<>
+            <ViewSwitchButton icon={Network} label="Graph view" onClick={onSwitchToGraph}
+              title="See every article and its [[links]] as a network" />
             <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> New Article</button>
-          </div>
-        </div>
+          </>}
+        />
 
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, paddingBottom: 14 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ position: 'relative', width: 260 }}>
-              <Search size={13} color="var(--text-muted)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-              <input className="input" style={{ paddingLeft: 30, paddingRight: wikiSearch ? 28 : 10, fontSize: 13, height: 34 }}
-                placeholder={wikiSearchFields.title && wikiSearchFields.tags ? 'Search by title or tag…' : wikiSearchFields.tags ? 'Search by tag…' : 'Search by title…'}
-                value={wikiSearch} onChange={e => setWikiSearch(e.target.value)} />
-              {wikiSearch && (
-                <button onClick={() => setWikiSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 0 }}>
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 2 }}>
-              {(['title', 'tags'] as const).map(field => {
-                const active = wikiSearchFields[field]
-                const isLast = active && !wikiSearchFields[field === 'title' ? 'tags' : 'title']
-                return (
-                  <label key={field} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', userSelect: 'none' }}>
-                    <input type="checkbox" checked={active} disabled={isLast}
-                      onChange={() => setWikiSearchFields({ ...wikiSearchFields, [field]: !active })}
-                      style={{ accentColor: 'var(--gold)', cursor: isLast ? 'default' : 'pointer', width: 11, height: 11 }} />
-                    {field}
-                  </label>
-                )
-              })}
-              {/* Mirrors the graph view's match count — the same query reports the
-                  same number in both views. */}
-              {wikiSearch.trim() && (
-                <span style={{ fontSize: 11, color: visibleArticles.length > 0 ? 'var(--gold)' : 'var(--text-muted)', marginLeft: 'auto' }}>
-                  {visibleArticles.length} match{visibleArticles.length !== 1 ? 'es' : ''}
-                </span>
-              )}
-            </div>
-          </div>
-          <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border-light)', flexShrink: 0 }} />
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {ALL_FILTERS.filter(f => !excluded.has(f.value)).map(f => {
-              const Icon = f.icon; const active = wikiFilter === f.value
-              return (
-                <button key={f.value} onClick={() => setWikiFilter(active ? 'all' : (f.value as any))} style={{
-                  display: 'flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 99,
-                  border: `1px solid ${active ? 'var(--border-gold)' : 'var(--border-light)'}`,
-                  background: active ? 'var(--bg-active)' : 'transparent',
-                  color: active ? 'var(--gold)' : 'var(--text-muted)',
-                  fontSize: 12, cursor: 'pointer', transition: 'all 120ms ease',
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <WikiSearchBox
+            verb="Search"
+            value={wikiSearch} onChange={setWikiSearch}
+            fields={wikiSearchFields} onFieldsChange={setWikiSearchFields}
+            matchCount={visibleArticles.length}
+            extras={allTags.length > 0 && (
+              <button onClick={() => setWikiShowTags(!wikiShowTags)}
+                title={wikiShowTags ? 'Hide the tag cloud' : 'Browse every tag in the wiki'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, lineHeight: 1.4,
+                  padding: '1px 8px', borderRadius: 99, cursor: 'pointer', transition: 'all 120ms ease',
+                  border: `1px solid ${wikiShowTags ? 'var(--gold-dim)' : 'var(--border-light)'}`,
+                  background: wikiShowTags ? 'var(--gold-glow)' : 'transparent',
+                  color: wikiShowTags ? 'var(--gold)' : 'var(--text-muted)',
                 }}>
-                  <Icon size={11} /> {f.label}
-                </button>
-              )
-            })}
-          </div>
-          <div style={{ marginLeft: 'auto', alignSelf: 'center' }}>
+                <Tag size={10} /> {wikiShowTags ? 'Hide tags' : 'Show tags'}
+              </button>
+            )}
+          />
+          <ToolbarDivider />
+          <WikiTypeFilters excluded={excluded} value={wikiFilter} onChange={setWikiFilter} />
+          <div style={{ marginLeft: 'auto' }}>
             <TypeVisibilityMenu excluded={excluded} onToggle={toggleExcluded} onClear={clearExcluded} />
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-start', paddingBottom: 8 }}>
-          <button onClick={() => setWikiShowTags(!wikiShowTags)}
-            style={{ fontSize: 11, padding: '2px 10px', borderRadius: 99, border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 120ms ease' }}>
-            {wikiShowTags ? 'Hide tags' : 'Show tags'}
-          </button>
-        </div>
-
-        {allTags.length > 0 && <div className="divider" />}
         {allTags.length > 0 && wikiShowTags && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 12, flexWrap: 'wrap' }}>
-            <Tag size={11} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
             {allTags.map(tag => {
               const active = wikiTagFilter === tag
               return (
