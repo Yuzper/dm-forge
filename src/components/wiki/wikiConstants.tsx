@@ -13,9 +13,9 @@ import { RARITY_COLORS } from '../../constants/loot'
 
 export const ARTICLE_TYPES: { value: ArticleType; label: string; icon: any; color: string }[] = [
   { value: 'character',       label: 'Character',    icon: User,        color: ARTICLE_TYPE_COLORS.character },
-  { value: 'playerCharacter', label: 'Player Char',  icon: User,        color: ARTICLE_TYPE_COLORS.playerCharacter },
-  { value: 'creature',        label: 'Creature',     icon: PawPrint,    color: ARTICLE_TYPE_COLORS.creature },
+  { value: 'playerCharacter', label: 'Player Character', icon: User,    color: ARTICLE_TYPE_COLORS.playerCharacter },
   { value: 'location',        label: 'Location',     icon: MapPin,      color: ARTICLE_TYPE_COLORS.location },
+  { value: 'creature',        label: 'Creature',     icon: PawPrint,    color: ARTICLE_TYPE_COLORS.creature },
   { value: 'faction',         label: 'Faction',      icon: Users,       color: ARTICLE_TYPE_COLORS.faction },
   { value: 'culture',         label: 'Culture',      icon: Landmark,    color: ARTICLE_TYPE_COLORS.culture },
   { value: 'religion',        label: 'Religion',     icon: Landmark,    color: ARTICLE_TYPE_COLORS.religion },
@@ -79,6 +79,9 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
              'County', 'Duchy', 'Principality', 'Kingdom', 'Empire',
              'Island', 'Archipelago', 'Region', 'Continent', 'World','Plane of Existence'],
     Type:   ['Ruins', 'Dungeon', 'Wilderness', 'Landmark', 'Natural Wonder'],
+    // Years since founding — the location's counterpart to a character's Age.
+    // Derived from Founded → Destroyed once both dates exist (see derivedAge).
+    Age:    [],
     Government: ['Monarchy', 'Republic', 'Theocracy', 'Oligarchy', 'Magocracy', 'Tribal', 'Anarchy', 'Confederation'],
     'Ruler/Leader': [],
     Controlled_By: [],
@@ -192,7 +195,9 @@ export const TRACK_VALUE_COLORS: Record<string, string> = {
 }
 
 // Date tracks hold JSON (e.g. {"day":3,"year":1507}) and shouldn't become tags.
-export const NON_TAG_TRACKS = new Set(['In_World_Date', 'Death_Date', 'Timeline_Milestones'])
+// Age is excluded for a plainer reason: it's a bare number, and "#317" is noise
+// in the tag cloud — more so now that a lifespan derives one on its own.
+export const NON_TAG_TRACKS = new Set(['In_World_Date', 'Death_Date', 'Timeline_Milestones', 'Age'])
 
 // Tracks that hold several entries instead of one. Stored as a JSON array of
 // strings in the same `tracks[key]` slot; a legacy plain string reads as a

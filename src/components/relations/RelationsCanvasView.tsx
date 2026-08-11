@@ -7,11 +7,10 @@ import ReactFlow, {
   useNodesState, useEdgesState,
   Connection, Edge as RFEdge, Node as RFNode,
   OnConnect, OnNodesDelete, OnEdgesDelete,
-  addEdge, getRectOfNodes, getTransformForBounds, ConnectionMode, SelectionMode,
+  addEdge, ConnectionMode, SelectionMode,
 } from 'reactflow'
 // @ts-ignore
 import 'reactflow/dist/style.css'
-import { toPng, toSvg } from 'html-to-image'
 import {
   Network, Plus, ArrowLeft, Pencil, Check, X, ExternalLink, Filter, GitMerge, LayoutGrid,
   Users, Layers, Unlink, Link2, Palette, Hand, MousePointer2,
@@ -21,7 +20,7 @@ import {
   parentRoleFromUnionLabel, findFreePosition, RANK_PALETTE,
   dbNodeToRF, dbEdgeToRF, NODE_TYPES, EDGE_TYPES,
 } from './relationsShared'
-import { TrackFilterPanel, RankPanel, ColorByPanel, LinkedArticlePill, ExportMenu } from './relationsPanels'
+import { TrackFilterPanel, RankPanel, ColorByPanel, LinkedArticlePill } from './relationsPanels'
 import { trackValues } from '../wiki/wikiConstants'
 import { SECTION_ACCENTS } from '../../constants/sections'
 import {
@@ -503,39 +502,6 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     setNodes(prev => [...prev, dbNodeToRF(node, requestCreateArticle, trackFilters, ranksById, effectiveColorBy)])
   }, [dbNodes, web.id, trackFilters, ranksById, effectiveColorBy, requestCreateArticle])
 
-  // Export the canvas as a PNG or SVG image of the whole graph.
-  const exportImage = useCallback(async (format: 'png' | 'svg') => {
-    const viewport = document.querySelector('.react-flow__viewport') as HTMLElement | null
-    if (!viewport || nodes.length === 0) return
-    const bounds = getRectOfNodes(nodes)
-    const imageWidth = Math.max(Math.round(bounds.width) + 160, 400)
-    const imageHeight = Math.max(Math.round(bounds.height) + 160, 300)
-    const [tx, ty, tScale] = getTransformForBounds(bounds, imageWidth, imageHeight, 0.5, 2)
-    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-base').trim() || '#0d0b09'
-    const opts: any = {
-      backgroundColor: bg,
-      width: imageWidth,
-      height: imageHeight,
-      style: {
-        width: `${imageWidth}px`,
-        height: `${imageHeight}px`,
-        transform: `translate(${tx}px, ${ty}px) scale(${tScale})`,
-      },
-    }
-    try {
-      const dataUrl = format === 'png'
-        ? await toPng(viewport, { ...opts, pixelRatio: 2 })
-        : await toSvg(viewport, opts)
-      const a = document.createElement('a')
-      a.download = `${(webName || 'relations').replace(/[^a-z0-9-_]+/gi, '_')}.${format}`
-      a.href = dataUrl
-      a.click()
-    } catch (err) {
-      console.error('Export failed:', err)
-      setActionError('Export failed — see console for details.')
-    }
-  }, [nodes, webName])
-
   const saveWebName = async () => {
     if (!webName.trim()) { setWebName(web.name); setEditingName(false); return }
     await (window as any).api.updateRelationWeb(web.id, { name: webName.trim() })
@@ -674,7 +640,6 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7F77DD', flexShrink: 0 }} />
             )}
           </button>
-          <ExportMenu onExport={exportImage} />
           {!isTerritory && (
             <button className="btn btn-primary" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => setShowAddNode(true)}>
               <Plus size={13} /> Add node
@@ -754,6 +719,11 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
             selectionOnDrag={selectMode}
             panOnDrag={selectMode ? [1, 2] : true}
             selectionMode={SelectionMode.Partial}
+            // Stated rather than left to React Flow's defaults, so the hint and
+            // the behaviour can't drift: Shift or Ctrl+Shift drags a marquee,
+            // Ctrl (or Cmd) click adds a node to the selection.
+            selectionKeyCode={['Shift', 'Control+Shift']}
+            multiSelectionKeyCode={['Control', 'Meta']}
             onNodeClick={(_e: any, node: RFNode) => setSelectedNodeId(prev => prev === node.id ? null : node.id)}
             onNodeContextMenu={onNodeContextMenu}
             onEdgeDoubleClick={isTerritory ? undefined : (_e: any, edge: RFEdge) => {

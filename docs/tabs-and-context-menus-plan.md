@@ -1,7 +1,7 @@
 # Workspace Tabs & Context Menus — Project Plan
 
 Branch: `workspace-tabs` (context menus land on the same branch, last)
-Status: Stages 0–4 done; Stage 5 (undo for deletes) is next
+Status: complete — Stages 0–4 shipped. Undo for deletes was considered and dropped.
 Last updated: 2026-08-07
 
 ---
@@ -43,7 +43,6 @@ provisional. **No stage produces work that a later stage deletes.**
 | 2 | Tab model, tab strip, per-tab history, persistence | Yes (the feature) |
 | 3 | Second pane, splitter, drag tab across panes | Yes |
 | 4 | Context-menu registry across entity surfaces | Yes |
-| 5 | Undo for deletes | Yes |
 
 The reason Stage 1 is alone: it touches 39 files and 98 call sites. Bundled with new
 UI, any breakage is ambiguous. Alone, "does the app still do exactly what it did
@@ -392,6 +391,14 @@ sidebar follows; Ctrl+T opens in the focused pane only. Restart round-trip resto
 both panes, their tabs, the active tab and the focused pane. Stage 2's suites
 (single-pane real app + headless store flow) re-run clean.
 
+The two drag interactions — the splitter, and dragging a tab from one pane's
+strip to the other's — are **not covered by the probes and cannot be**: synthetic
+events don't reproduce a real pointer drag or an HTML5 drag-and-drop sequence.
+Both were confirmed by hand (2026-08-07). Anything that touches
+[PaneSplitter.tsx](../src/components/PaneSplitter.tsx) or the `DRAG_MIME`
+hand-over in [TabStrip.tsx](../src/components/TabStrip.tsx) needs the same
+treatment — a green suite says nothing about either.
+
 ### Stage 3 — original plan
 
 - Splitter with a draggable ratio; cap at 2 panes.
@@ -521,7 +528,7 @@ pane seeded with the article, after which the third item re-words itself to
 "Open in other pane"). Confirmed too that plain prose in the editor is *not*
 claimed, so the native cut/copy/paste menu still wins there.
 
-Three things the probes had to learn the hard way, worth remembering for Stage 5:
+Three things the probes had to learn the hard way, worth remembering next time:
 
 - The disposable profile must be **wiped between runs**. The app persists its
   workspace and hub layout to localStorage, so a leftover profile changes which
@@ -582,28 +589,20 @@ it is the only surface with any existing binding.
 
 ---
 
-### Stage 5 — undo for deletes
+### Undo for deletes — dropped 2026-08-07
 
-Decided 2026-07-31, reversing the earlier "no trash/undo" call — right-click puts
-deletion one gesture away, so it needs a way back.
+Considered as a Stage 5 and **dropped at the user's call**. It had been declined
+once before, briefly reinstated on 2026-07-31 when context menus put deletion one
+gesture away, and is now off the roadmap again. Don't re-propose it.
 
-- **Scope: deletes only.** Edits are autosaved and visible; a delete is the only
-  action that silently destroys something. Renames/moves/reorders stay un-undoable.
-- **Mechanism: in-memory restore stack.** Each destructive IPC handler captures the
-  row *and its dependents* before deleting, and returns that snapshot; undo
-  re-inserts it with the original ids. No schema change, no query changes, no risk
-  of a missed `deleted_at` filter resurrecting data.
-- The stack is lost on restart. Acceptable — this exists for "wrong menu item", not
-  for archaeology.
-- Ctrl+Z routes to this stack only when focus is **not** in a text field, so Tiptap
-  keeps owning prose undo. The Edit menu's `undo` role (added Stage 0) continues to
-  serve text.
-- The real cost is per-entity cascade capture: deleting an article also touches
-  relations edges, visibility grants, web nodes, and POI link targets. Each entity
-  type needs its snapshot shape worked out and tested.
+Recorded because it was reversed twice, and because the cost was larger than the
+original note assumed: the delete handlers unlink image files from disk as well as
+rows (`articles.ts:408`, `maps.ts:170`, `dmNotes.ts:80`), so a row-only restore
+stack would hand back an article with broken images. Any future attempt needs
+deferred file deletion first, not just snapshotting.
 
-Runs after Stage 4 — right-click is what makes it urgent, and Stage 4 is what tells
-us which deletes are reachable in one click.
+The kebab menus keep their click-again confirm step, so the deliberate path to a
+delete is still deliberate; context-menu deletes remain immediate.
 
 ## 7. Risks
 

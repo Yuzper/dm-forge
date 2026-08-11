@@ -193,7 +193,7 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
             )}
           />
           <ToolbarDivider />
-          <WikiTypeFilters excluded={excluded} value={wikiFilter} onChange={setWikiFilter} />
+          <WikiTypeFilters excluded={excluded} value={wikiFilter} onChange={setWikiFilter} grow />
           <div style={{ marginLeft: 'auto' }}>
             <TypeVisibilityMenu excluded={excluded} onToggle={toggleExcluded} onClear={clearExcluded} />
           </div>

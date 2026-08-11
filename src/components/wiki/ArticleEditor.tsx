@@ -20,7 +20,11 @@ import LootTableView from '../LootTableView'
 import { parseLootTable } from '../../types'
 import SectionDivider from '../SectionDivider'
 import { InWorldDatePicker } from '../InWorldDatePicker'
-import { TIMELINE_DATE_FIELDS, DATE_IMPLIES_TRACK, parseMilestones, type Milestone } from '../../constants/timelineDates'
+import {
+  TIMELINE_DATE_FIELDS, DATE_IMPLIES_TRACK, parseMilestones, trackDay,
+  AGE_TRACK_TYPES, derivedAge, ageSourceLabels, type Milestone,
+} from '../../constants/timelineDates'
+import { getCampaignCalendar, yearLength } from '../../utils/timelineGeometry'
 import LocationMapSection from '../LocationMapSection'
 import AudienceControl from '../AudienceControl'
 import { useArticleContextMenu } from '../../hooks/useContextMenu'
@@ -140,6 +144,45 @@ function TrackRow({ trackKey, name, options, value, onChange, optionGroups, visC
         </select>
       )}
       {visControl}
+    </div>
+  )
+}
+
+// Age is a number you fill in yourself while the subject is still going — there's
+// no dependable "now" in world to count up to. Once the end date is set the span
+// stops being a guess, so the row switches to a derived readout and the editor
+// writes that number into the track (see the sync effect in ArticleEditor).
+function AgeTrackRow({ name, value, derived, sourceLabels, onChange, visControl }: {
+  name: string; value: string; derived: number | null
+  sourceLabels: { start: string; end: string } | null
+  onChange: (v: string) => void; visControl?: React.ReactNode
+}) {
+  // Ages written before this field was numeric ("Ancient", "unknown") stay
+  // editable as text rather than being blanked by a number input; the row goes
+  // numeric again as soon as the box holds a number or nothing.
+  const numeric = value === '' || /^\d+(?:\.\d+)?$/.test(value)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>{formatTrackName(name)}</span>
+      {derived !== null ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{derived} year{derived !== 1 ? 's' : ''}</span>
+          {sourceLabels && (
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              from {sourceLabels.start.toLowerCase()} → {sourceLabels.end.toLowerCase()}
+            </span>
+          )}
+          <span style={{ marginLeft: 'auto' }}>{visControl}</span>
+        </div>
+      ) : (
+        <>
+          <input className="input" style={{ height: 28, fontSize: 12, flex: 1 }}
+            {...(numeric ? { type: 'number', min: 0 } : {})}
+            value={value} placeholder="Years…"
+            onChange={e => onChange(e.target.value)} />
+          {visControl}
+        </>
+      )}
     </div>
   )
 }
@@ -508,10 +551,7 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
   const endField   = allFields.find(f => f.role === 'end')
   const [pairError, setPairError] = useState<{ key: string; msg: string } | null>(null)
 
-  const dayOf = (raw: string | undefined) => {
-    if (!raw) return null
-    try { const d = JSON.parse(raw); return typeof d.day === 'number' ? d.day : null } catch { return null }
-  }
+  const dayOf = trackDay
 
   // A start/end pair can only be set in order — an end before its start (or a
   // start after its end) is rejected rather than stored. Milestones are freeform
@@ -700,6 +740,23 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   }, [article.id])
 
   useEffect(() => { getArticleBacklinks(article.title).then(setBacklinks) }, [article.title])
+
+  // ── Age ─────────────────────────────────────────────────────────────────────
+  // Years are counted in the campaign's own calendar, so a 300-day year ages its
+  // people at its own rate.
+  // Memoised: the calendar is parsed from JSON, and this sits on the typing path.
+  const yearLen = useMemo(() => yearLength(getCampaignCalendar(currentCampaign as any)), [currentCampaign])
+  const ageFromDates = derivedAge(articleType, tracks, yearLen)
+  // Once both dates exist the derived span replaces whatever was typed before —
+  // otherwise a hand-filled age would sit there contradicting the lifespan. Only
+  // while editing: opening an article to read it shouldn't rewrite it.
+  useEffect(() => {
+    if (readMode || ageFromDates === null) return
+    const derived = String(ageFromDates)
+    if (tracks.Age === derived) return
+    setTracks(prev => ({ ...prev, Age: derived }))
+    setDirty(true)
+  }, [readMode, ageFromDates, tracks.Age])
 
   // ── Per-field player visibility ─────────────────────────────────────────────
   // The roster loads when a campaign is opened, but not on the wiki/article
@@ -1107,7 +1164,10 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                 {readMode ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {currentTypeTracks.map(([trackName]) => {
-                      const val = tracks[trackName]
+                      // Reading doesn't write, so a derived age is applied here
+                      // for display rather than trusted from the stored track.
+                      const val = trackName === 'Age' && ageFromDates !== null
+                        ? String(ageFromDates) : tracks[trackName]
                       if (!val) return null
                       if (trackName === 'In_World_Date') {
                         let display = val
@@ -1209,6 +1269,19 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                       setDirty(true)
                     }
 
+                    if (trackName === 'Age' && AGE_TRACK_TYPES.includes(articleType)) {
+                      return (
+                        <AgeTrackRow
+                          key={articleType + trackName}
+                          name={trackName}
+                          value={tracks[trackName] || ''}
+                          derived={ageFromDates}
+                          sourceLabels={ageSourceLabels(articleType)}
+                          onChange={commit}
+                          visControl={renderVis(trackName)}
+                        />
+                      )
+                    }
                     if (MULTI_TRACKS.has(trackName)) {
                       return (
                         <MultiTrackRow

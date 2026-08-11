@@ -270,7 +270,7 @@ export default function EncounterBalance({
       <section>
         <div style={sectionLabel}>Party in this fight</div>
         {party.length === 0 ? (
-          <div style={emptyNote}>No player-character articles yet. Create some in the wiki (type “Player Char”).</div>
+          <div style={emptyNote}>No player-character articles yet. Create some in the wiki (type “Player Character”).</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {party.map(p => {

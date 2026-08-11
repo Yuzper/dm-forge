@@ -4,7 +4,6 @@ import { useStore } from '../../store/store'
 import { Plus, Network, ChevronRight, ExternalLink, Skull } from 'lucide-react'
 import type { ArticleType } from '../../types'
 import { NewWebModal } from '../relations/relationsModals'
-import { RelationWebPreview } from '../RelationWebPreview'
 import { sidebarSectionLabel } from './wikiConstants'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
 import { useArticleContextMenu } from '../../hooks/useContextMenu'
@@ -87,15 +86,12 @@ export function RelationWebsSection({ articleId, articleTitle, articleType, canC
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {webs.map(w => (
-          <div key={w.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <button style={btnStyle} onClick={() => onOpenWeb(w.id)}
-              className="hover-bg-elevated">
-              <Network size={13} color="#7F77DD" />
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{w.node_count} node{w.node_count !== 1 ? 's' : ''}</span>
-            </button>
-            <RelationWebPreview webId={w.id} webName={w.name} onOpen={() => onOpenWeb(w.id)} />
-          </div>
+          <button key={w.id} style={btnStyle} onClick={() => onOpenWeb(w.id)}
+            className="hover-bg-elevated">
+            <Network size={13} color="#7F77DD" />
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{w.node_count} node{w.node_count !== 1 ? 's' : ''}</span>
+          </button>
         ))}
         {canCreate && (
           <button style={{ ...btnStyle, borderStyle: 'dashed', justifyContent: 'center', color: '#7F77DD' }}

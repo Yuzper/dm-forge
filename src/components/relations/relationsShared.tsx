@@ -174,7 +174,7 @@ export const ARTICLE_TRACKS: Partial<Record<string, Record<string, string[]>>> =
     Size: ['Tiny','Small','Medium','Large','Huge','Gargantuan'],
     Habitat: ['Forest','Desert','Mountain','Swamp','Ocean','Underdark','Urban','Arctic','Plains'],
   },
-  location: { State: [], Size: [], Type: [], Government: [], 'Ruler/Leader': [], Controlled_By: [], Plane: [], Within: [] },
+  location: { State: [], Size: [], Type: [], Age: [], Government: [], 'Ruler/Leader': [], Controlled_By: [], Plane: [], Within: [] },
   faction:  { Status: [], Type: [], Scale: [], Leader: [], HQ: [], Allies: [], Rivals: [] },
   quest: { Status: [], Type: [], Difficulty: [] },
   item:  { Status: [], Type: [], Rarity: [], Location: [] },

@@ -37,6 +37,46 @@ export const DATE_IMPLIES_TRACK: Record<string, { track: string; value: string }
   Extinct_Date: { track: 'Vitality', value: 'Extinct' },
 }
 
+// Campaign day stored in a date track, or null when unset/unparseable.
+export function trackDay(raw: string | undefined): number | null {
+  if (!raw) return null
+  try { const d = JSON.parse(raw); return typeof d.day === 'number' ? d.day : null } catch { return null }
+}
+
+// ── Age ────────────────────────────────────────────────────────────────────────
+// Types carrying an Age track that reads off their lifespan. While the end date
+// is unset the number is yours to type — there's no reliable "today" in world, so
+// a living character's age can't be computed — but once the end date exists the
+// span is a settled fact and the field is derived from it instead.
+export const AGE_TRACK_TYPES: ArticleType[] = ['character', 'playerCharacter', 'location']
+
+// Whole years between the start and end date, or null when the pair is
+// incomplete (which is what leaves the field hand-filled). `yearLen` is the
+// campaign calendar's year length, so custom calendars count their own years.
+export function derivedAge(
+  type: ArticleType,
+  tracks: Record<string, string>,
+  yearLen: number,
+): number | null {
+  if (!AGE_TRACK_TYPES.includes(type)) return null
+  const fields = TIMELINE_DATE_FIELDS[type] ?? []
+  const startKey = fields.find(f => f.role === 'start')?.key
+  const endKey   = fields.find(f => f.role === 'end')?.key
+  if (!startKey || !endKey) return null
+  const start = trackDay(tracks[startKey])
+  const end   = trackDay(tracks[endKey])
+  if (start == null || end == null) return null
+  return Math.max(0, Math.floor((end - start) / Math.max(1, yearLen)))
+}
+
+// The two dates an Age is read from, for labelling the derived field.
+export function ageSourceLabels(type: ArticleType): { start: string; end: string } | null {
+  const fields = TIMELINE_DATE_FIELDS[type] ?? []
+  const start = fields.find(f => f.role === 'start')
+  const end   = fields.find(f => f.role === 'end')
+  return start && end ? { start: start.label, end: end.label } : null
+}
+
 export interface Milestone { id: string; label: string; date: string }
 
 export function parseMilestones(raw: any): Milestone[] {

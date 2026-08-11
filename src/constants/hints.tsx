@@ -125,7 +125,8 @@ export const HINTS: Record<string, Hint> = {
       <>Pick a <strong>template</strong> when creating a web — family trees add union nodes, hierarchies add editable rank tiers.</>,
       <>Edges you draw here appear automatically on each linked article.</>,
       <>Drag from any of a node's four dots to connect two nodes.</>,
-      <>Export the finished canvas as a PNG or SVG image.</>,
+      <>Hold <Kbd>Shift</Kbd> (or <Kbd>Ctrl+Shift</Kbd>) and drag on empty canvas to rubber-band select several nodes at once — or switch the toolbar from <strong>Pan</strong> to <strong>Select</strong> to make plain dragging do it.</>,
+      <><Kbd>Ctrl+click</Kbd> a node to add it to (or drop it from) the selection. Dragging any selected node moves the whole group, and <Kbd>Del</Kbd> removes them all.</>,
     ],
   },
 

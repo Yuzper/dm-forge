@@ -148,13 +148,22 @@ export function WikiSearchBox({ value, onChange, fields, onFieldsChange, matchCo
 
 // Clicking the active type clears back to 'all'. Excluded types drop out of the
 // row entirely (they're off in this view).
-export function WikiTypeFilters({ excluded, value, onChange }: {
+//
+// `grow` decides how the row behaves when the pane narrows. Flexbox breaks lines
+// before it shrinks anything, so with the default (flex-basis auto → max-content)
+// the whole pill block drops to its own line the moment every pill no longer fits
+// beside the search box. With `grow`, flex-basis 0 keeps the block on the first
+// line and it wraps its pills in place instead. Use it only where nothing needs to
+// sit tight against the pills — a growing block pushes later siblings to the far
+// right of the row.
+export function WikiTypeFilters({ excluded, value, onChange, grow }: {
   excluded: Set<string>
   value: WikiTypeFilter
   onChange: (v: WikiTypeFilter) => void
+  grow?: boolean
 }) {
   return (
-    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', ...(grow ? { flex: '1 1 0' } : null) }}>
       {ALL_FILTERS.filter(f => !excluded.has(f.value)).map(f => {
         const Icon = f.icon
         const active = value === f.value

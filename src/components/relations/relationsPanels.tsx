@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../../store/store'
 import {
   Plus, Trash2, Pencil, Check, X, Search, ExternalLink, ChevronDown, MoreHorizontal,
-  Download, Link2, ChevronUp,
+  Link2, ChevronUp,
 } from 'lucide-react'
 import {
   type Rank, RANK_PALETTE, makeRankId, ARTICLE_TRACKS, ARTICLE_TYPE_LABELS, ALL_ARTICLE_TYPES,
@@ -383,46 +383,6 @@ export function LinkedArticlePill({ webId, article, onReload }: {
     </div>
   )
 }
-// ── Export menu ─────────────────────────────────────────────────────────────────
-
-export function ExportMenu({ onExport }: { onExport: (format: 'png' | 'svg') => void }) {
-  const [open, setOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  return (
-    <div ref={menuRef} style={{ position: 'relative' }}>
-      <button onClick={() => setOpen(o => !o)}
-        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: open ? 'var(--bg-elevated)' : 'transparent', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', transition: 'background var(--transition)' }}
-        className="hover-bg-elevated"
-      >
-        <Download size={13} /> Export <ChevronDown size={12} />
-      </button>
-      {open && (
-        <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: 140, zIndex: 60, overflow: 'hidden' }}>
-          {(['png', 'svg'] as const).map(fmt => (
-            <button key={fmt}
-              onClick={() => { setOpen(false); onExport(fmt) }}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'none', border: 'none', fontSize: 13, cursor: 'pointer', textAlign: 'left', color: 'var(--text-secondary)' }}
-              className="hover-bg"
-            >
-              <Download size={13} /> {fmt.toUpperCase()} image
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Web Card Menu ─────────────────────────────────────────────────────────────
 
 export function WebMenu({ onEdit, onDelete }: { onEdit?: () => void; onDelete: () => void }) {
