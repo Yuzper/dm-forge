@@ -161,6 +161,8 @@ function makeCtx(pane: PaneStoreApi): MenuCtx {
     go: (loc) => pane.getState().navigateTo(loc),
     goTab: (loc, background) => { void pane.getState().openTab(loc, { background }) },
     goPane,
+    pinned: (loc) => shared().isPinned(loc),
+    togglePin: (loc) => shared().togglePin(loc),
     copy: copyText,
     showInGraph: (articleId) => {
       // WikiPage consumes the focus id on mount and flips itself to graph mode,

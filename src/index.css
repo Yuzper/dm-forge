@@ -41,6 +41,13 @@
   --border-light:  #3a3028;
   --border-gold:   rgba(200, 168, 75, 0.3);
 
+  /* Background-texture inks. Set per base theme so the stone/wood/parchment
+     backdrops draw in something visible on a light ground too. */
+  --texture-line:         rgba(255,255,255,0.018);
+  --texture-grain:        rgba(255,255,255,0.02);
+  --texture-shade:        rgba(0,0,0,0.06);
+  --texture-shade-strong: rgba(0,0,0,0.12);
+
   --shadow-sm:   0 2px 8px rgba(0,0,0,0.4);
   --shadow-md:   0 4px 20px rgba(0,0,0,0.6);
   --shadow-lg:   0 8px 40px rgba(0,0,0,0.8);
@@ -268,6 +275,12 @@ input[type="number"].ghost-input { -moz-appearance: textfield; }
 .hover-gold-border-strong:hover { color: var(--gold) !important; border-color: var(--gold) !important; }
 .hover-danger-tint:hover        { color: #e05555 !important; background: #e0555514 !important; }
 .hover-bg-active:hover          { background: var(--bg-active) !important; color: var(--text-primary) !important; }
+/* The sidebar's pinned rows: the unpin control only appears on hover, so a long
+   pinned list doesn't read as a column of delete buttons. */
+.pin-row .pin-unpin        { opacity: 0; transition: opacity var(--transition), color var(--transition); }
+.pin-row:hover .pin-unpin  { opacity: 0.65; }
+.pin-row .pin-unpin:hover  { opacity: 1; color: var(--danger-soft); }
+
 /* Accent-coloured hovers: set `--hover-accent` in the element's inline style */
 .hover-accent:hover             { color: var(--hover-accent) !important; }
 .hover-accent-border:hover      { color: var(--hover-accent) !important; border-color: var(--hover-accent) !important; }

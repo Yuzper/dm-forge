@@ -15,7 +15,8 @@ import { useContextMenu } from '../hooks/useContextMenu'
 import { truncate } from '../utils/contextMenus'
 
 // Section accent used for loot-table UI chrome on this page.
-const ACCENT = SECTION_ACCENTS['loot-tables']
+// Section colours are theme-dependent and user-overridable, so they're read
+// during render rather than captured at module load.
 
 // ── Category config ────────────────────────────────────────────────────────────
 
@@ -371,6 +372,7 @@ function CategoryGroup({ category, tables, activeId, onSelect, onCreateInCategor
 // ── Loot Tables Page ───────────────────────────────────────────────────────────
 
 export default function LootTablesPage() {
+  const ACCENT = SECTION_ACCENTS['loot-tables']
   const { currentCampaign, setView, setCampaignSubView, setHintContext } = useStore()
 
   useEffect(() => { setHintContext('loot-tables'); return () => setHintContext(null) }, [setHintContext])

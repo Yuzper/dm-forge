@@ -16,7 +16,7 @@ import Modal from '../components/Modal'
 import { SECTION_ACCENTS } from '../constants/sections'
 
 // The in-world date chip is timeline-flavoured, so it borrows that accent.
-const TIMELINE_ACCENT = SECTION_ACCENTS['timeline']
+// Read during render — see the note in constants/sections.ts.
 
 function EditMapModal({ map, onClose }: { map: GameMap; onClose: () => void }) {
   const { updateMap } = useStore()
@@ -365,6 +365,7 @@ function SceneView({ map, readMode }: { map: GameMap; readMode: boolean }) {
 // ── In-world date header section ──────────────────────────────────────────────
 
 function InWorldDateHeader({ session, readMode }: { session: Session; readMode: boolean }) {
+  const TIMELINE_ACCENT = SECTION_ACCENTS['timeline']
   const { updateSession, currentCampaign } = useStore()
   const [open, setOpen] = useState(false)
   const [startRaw, setStartRaw] = useState('')

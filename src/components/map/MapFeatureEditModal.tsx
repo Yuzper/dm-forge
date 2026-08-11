@@ -12,7 +12,7 @@ import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import { SECTION_ACCENTS } from '../../constants/sections'
 import Modal from '../Modal'
 
-const WIKI_ACCENT = SECTION_ACCENTS['wiki']
+// Read during render — see the note in constants/sections.ts.
 
 /** The fields the shell owns; appearance values come from the caller's slot. */
 export interface FeatureEditFields {
@@ -53,6 +53,7 @@ export default function MapFeatureEditModal({
   onDelete: () => void
   onClose: () => void
 }) {
+  const WIKI_ACCENT = SECTION_ACCENTS['wiki']
   const [name, setName] = useState(initialName)
   const [description, setDescription] = useState(initialDescription)
   const [links, setLinks] = useState<HubLink[]>([...initialLinks])

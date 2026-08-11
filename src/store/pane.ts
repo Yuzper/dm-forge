@@ -267,7 +267,6 @@ export function createPaneStore() {
           } : t),
         }
       })
-      sharedStore.getState().pushRecent(loc)
       void get()._goto(loc)
       get()._persist()
     },
@@ -352,7 +351,6 @@ export function createPaneStore() {
           return [...s.tabs.slice(0, i + 1), tab, ...s.tabs.slice(i + 1)]
         })(),
       }))
-      sharedStore.getState().pushRecent(loc)
       if (!opts?.background) await get().selectTab(tab.id)
       else get()._persist()
     },

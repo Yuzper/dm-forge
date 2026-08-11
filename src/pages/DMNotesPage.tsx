@@ -718,18 +718,30 @@ export default function DMNotesPage() {
     return ps as DMNotePageSummary[]
   }, [currentCampaign?.id])
 
+  // Whether *some* page was asked for — by a pinned row, the tab remembering
+  // where it was, or a search deep-link. Held in a ref rather than read from the
+  // store below, because the store hand-off is cleared the moment it is consumed
+  // while the first-page fallback only resolves two IPC round-trips later: by
+  // then the store always looks empty, and the fallback would drop you on
+  // Session 1's notes no matter which page you opened.
+  const requestedPageRef = useRef<number | null>(null)
+
   useEffect(() => {
     if (!currentCampaign) return
+    // Synchronous, so the deep-link effect below (which runs right after this
+    // one on mount) records its request *after* the reset, not before.
+    requestedPageRef.current = null
     window.api.syncDMSessionNotes(currentCampaign.id).then(() => {
       loadAll().then(ps => {
-        if (ps && ps.length > 0 && !activePage && !useStore.getState().dmNotesOpenPageId) {
+        if (ps && ps.length > 0 && requestedPageRef.current == null) {
           openPage(ps[0].id)
         }
       })
     })
   }, [currentCampaign?.id])
 
-  // Deep-link from global search: open the requested page, then clear the hand-off.
+  // Deep-link from a pinned row, a tab or global search: open the requested
+  // page, then clear the hand-off so re-opening the same page later still fires.
   useEffect(() => {
     if (dmNotesOpenPageId != null) {
       openPage(dmNotesOpenPageId)
@@ -750,6 +762,7 @@ export default function DMNotesPage() {
   }, [activePage?.id, patchLocation])
 
   const openPage = async (id: number) => {
+    requestedPageRef.current = id
     setLoading(true)
     const page = await window.api.getDMNotePage(id)
     setActivePage(page as DMNotePageFull)
@@ -761,6 +774,9 @@ export default function DMNotesPage() {
     const page = await window.api.createDMNotePage(currentCampaign.id, groupId)
     setPages(ps => [...ps, { ...page, content: undefined } as unknown as DMNotePageSummary])
     const full = await window.api.getDMNotePage(page.id)
+    // Counts as a request too, so a page created before the initial load
+    // settles isn't swapped out from under you by the first-page fallback.
+    requestedPageRef.current = page.id
     setActivePage(full as DMNotePageFull)
   }
 

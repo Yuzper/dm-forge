@@ -48,6 +48,10 @@ export interface MenuCtx {
   goTab: (loc: Location, background?: boolean) => void
   /** Open a location in the other pane, splitting the view if there isn't one. */
   goPane: (loc: Location) => void
+  /** Whether this location is already in the sidebar's pinned list. */
+  pinned: (loc: Location) => boolean
+  /** Add it to the pinned list, or take it out again. */
+  togglePin: (loc: Location) => void
   copy: (text: string) => void
   /** Jump to the wiki graph centred on an article. */
   showInGraph: (articleId: number) => void
@@ -68,6 +72,13 @@ export function openItems(loc: Location, ctx: MenuCtx, label = 'Open'): MenuItem
     // be *available*, not to be taken there.
     { label: 'Open in new tab', click: () => ctx.goTab(loc, true) },
     { label: ctx.split ? 'Open in other pane' : 'Open in split view', click: () => ctx.goPane(loc) },
+    // Pinning rides along with the open trio for the same reason that trio
+    // exists: it is a property of the *entity*, so the sidebar's list can be
+    // built from wherever you happen to meet the thing.
+    SEP,
+    ctx.pinned(loc)
+      ? { label: 'Unpin from sidebar', click: () => ctx.togglePin(loc) }
+      : { label: 'Pin to sidebar', click: () => ctx.togglePin(loc) },
   ]
 }
 
@@ -169,13 +180,17 @@ export interface TabMenuActions {
   moveToOtherPane: () => void
   openInOtherPane: () => void
   newTab: () => void
+  togglePin: () => void
 }
 
 export function buildTabMenu(
-  state: { tabCount: number; isLast: boolean; split: boolean },
+  state: { tabCount: number; isLast: boolean; split: boolean; pinned: boolean },
   a: TabMenuActions,
 ): MenuItem[] {
   return items(
+    // A tab is a place you are; pinning is how it outlives the tab.
+    { label: state.pinned ? 'Unpin from sidebar' : 'Pin to sidebar', click: a.togglePin },
+    SEP,
     { label: 'Close tab', accelerator: 'Ctrl+W', click: a.close },
     { label: 'Close other tabs', enabled: state.tabCount > 1, click: a.closeOthers },
     { label: 'Close tabs to the right', enabled: !state.isLast, click: a.closeToRight },

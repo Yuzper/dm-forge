@@ -4,10 +4,7 @@
 
 import { useState } from 'react'
 import { useStore } from '../../store/store'
-import {
-  ChevronDown, ChevronUp, LayoutGrid,
-  Scroll, BookOpen, Sparkles, ShoppingBag, Network, Music2, Users,
-} from 'lucide-react'
+import { ChevronDown, ChevronUp, LayoutGrid, Scroll, Users } from 'lucide-react'
 import HubWorldMap from './HubWorldMap'
 import { CLOCKS_INFO } from '../clocks/ClocksSection'
 import { InfoHint } from '../InfoHint'
@@ -15,7 +12,7 @@ import {
   type HubPanelKey, HubSettingsMenu, HEALTH_INFO,
   ActiveQuestsPanel, WikiHealthPanel, RecentlyUpdatedPanel, ArticlesByTypePanel, ClocksPanel,
 } from './HubPanels'
-import { SECTION_ACCENTS } from '../../constants/sections'
+import { NAV_ITEMS, type SectionView } from '../../constants/sections'
 
 // ── Overlay open/collapsed persistence ─────────────────────────────────────────
 
@@ -126,9 +123,25 @@ export interface MapHubStats {
   soundboardCount: number
 }
 
+// Shorter than the labels NAV_ITEMS carries — the dock is a pill, not a page.
+const DOCK_LABELS: Partial<Record<SectionView, string>> = {
+  'dm-notes':    'Notes',
+  'loot-tables': 'Loot',
+  'soundboard':  'Sound',
+}
+
+// Driven by NAV_ITEMS rather than hand-listed, which is how Timeline came to be
+// missing here while the classic hub's dock had it.
 function NavDock({ stats }: { stats: MapHubStats }) {
   const { sessions, setView, setCampaignSubView } = useStore()
   const plural = (n: number, word: string) => `${n} ${word}${n !== 1 ? 's' : ''}`
+  const counts: Partial<Record<SectionView, [number, string]>> = {
+    'wiki':        [stats.articleCount, 'article'],
+    'dm-notes':    [stats.noteCount, 'note'],
+    'loot-tables': [stats.lootCount, 'table'],
+    'relations':   [stats.relationsCount, 'web'],
+    'soundboard':  [stats.soundboardCount, 'board'],
+  }
   return (
     <div style={{
       position: 'absolute', left: '50%', bottom: 14, transform: 'translateX(-50%)',
@@ -138,21 +151,19 @@ function NavDock({ stats }: { stats: MapHubStats }) {
       <DockItem icon={<Scroll size={15} />} label="Sessions" accent="var(--gold)"
         stat={sessions.length > 0 ? plural(sessions.length, 'session') : undefined}
         onClick={() => setCampaignSubView('sessions')} />
-      <DockItem icon={<BookOpen size={15} />} label="Wiki" accent={SECTION_ACCENTS['wiki']}
-        stat={stats.articleCount > 0 ? plural(stats.articleCount, 'article') : undefined}
-        onClick={() => setView('wiki')} />
-      <DockItem icon={<Sparkles size={15} />} label="Notes" accent={SECTION_ACCENTS['dm-notes']}
-        stat={stats.noteCount > 0 ? plural(stats.noteCount, 'note') : undefined}
-        onClick={() => setView('dm-notes')} />
-      <DockItem icon={<ShoppingBag size={15} />} label="Loot" accent={SECTION_ACCENTS['loot-tables']}
-        stat={stats.lootCount > 0 ? plural(stats.lootCount, 'table') : undefined}
-        onClick={() => setView('loot-tables')} />
-      <DockItem icon={<Network size={15} />} label="Relations" accent={SECTION_ACCENTS['relations']}
-        stat={stats.relationsCount > 0 ? plural(stats.relationsCount, 'web') : undefined}
-        onClick={() => setView('relations')} />
-      <DockItem icon={<Music2 size={15} />} label="Sound" accent={SECTION_ACCENTS['soundboard']}
-        stat={stats.soundboardCount > 0 ? plural(stats.soundboardCount, 'board') : undefined}
-        onClick={() => setView('soundboard')} />
+      {NAV_ITEMS.map(({ view, label, icon: Icon, accent }) => {
+        const count = counts[view]
+        return (
+          <DockItem
+            key={view}
+            icon={<Icon size={15} />}
+            label={DOCK_LABELS[view] ?? label}
+            accent={accent}
+            stat={count && count[0] > 0 ? plural(count[0], count[1]) : undefined}
+            onClick={() => setView(view)}
+          />
+        )
+      })}
     </div>
   )
 }

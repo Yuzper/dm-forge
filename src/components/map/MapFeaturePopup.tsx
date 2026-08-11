@@ -7,7 +7,7 @@ import { BookOpen, ExternalLink, Pencil, Scroll, X } from 'lucide-react'
 import type { HubLink } from '../../utils/hubLinks'
 import { SECTION_ACCENTS } from '../../constants/sections'
 
-const WIKI_ACCENT = SECTION_ACCENTS['wiki']
+// Read during render — see the note in constants/sections.ts.
 
 const iconBtn: React.CSSProperties = {
   background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)',
@@ -41,6 +41,7 @@ export default function MapFeaturePopup({
   onNavigateWiki: (title: string) => void
   onNavigateSession: (sessionId: number) => void
 }) {
+  const WIKI_ACCENT = SECTION_ACCENTS['wiki']
   const wikis = links.filter(l => l.type === 'wiki')
   const sessions = links.filter(l => l.type === 'session')
 

@@ -7,14 +7,14 @@ import ReactFlow, {
   useNodesState, useEdgesState,
   Connection, Edge as RFEdge, Node as RFNode,
   OnConnect, OnNodesDelete, OnEdgesDelete,
-  addEdge, getRectOfNodes, getTransformForBounds, ConnectionMode,
+  addEdge, getRectOfNodes, getTransformForBounds, ConnectionMode, SelectionMode,
 } from 'reactflow'
 // @ts-ignore
 import 'reactflow/dist/style.css'
 import { toPng, toSvg } from 'html-to-image'
 import {
   Network, Plus, ArrowLeft, Pencil, Check, X, ExternalLink, Filter, GitMerge, LayoutGrid,
-  Users, Layers, Unlink, Link2, Palette,
+  Users, Layers, Unlink, Link2, Palette, Hand, MousePointer2,
 } from 'lucide-react'
 import {
   type Rank, type ColorByConfig, TEMPLATE_CONFIG, type RelationWeb, type DBRelationNode, type DBRelationEdge,
@@ -47,6 +47,8 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
   const [dbEdges, setDbEdges] = useState<DBRelationEdge[]>([])
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  // Marquee mode: left-drag draws a selection box instead of panning.
+  const [selectMode, setSelectMode] = useState(false)
   const [showAddNode, setShowAddNode] = useState(false)
   const [addNodeTypeFilter, setAddNodeTypeFilter] = useState<string | null>(null)
   const [pendingConnection, setPendingConnection] = useState<Connection | null>(null)
@@ -346,6 +348,15 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     })
   }, [])
 
+  // Dragging any node of a multi-selection moves the whole set, so every one of
+  // them needs its new position written — React Flow reports the group here
+  // rather than through onNodeDragStop.
+  const onSelectionDragStop = useCallback(async (_evt: any, dragged: RFNode[]) => {
+    await Promise.all(dragged.map(n => (window as any).api.updateRelationNode(Number(n.id), {
+      pos_x: n.position.x, pos_y: n.position.y,
+    })))
+  }, [])
+
   const onConnect: OnConnect = useCallback((connection: Connection) => {
     // Ignore self-loops and duplicate connections between the same pair.
     if (!connection.source || !connection.target || connection.source === connection.target) return
@@ -538,6 +549,9 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
   useEffect(() => { if (editingName) nameRef.current?.focus() }, [editingName])
 
   const selectedNode = selectedNodeId ? dbNodes.find(n => String(n.id) === selectedNodeId) : null
+  // React Flow owns multi-selection, so the count is read off the nodes rather
+  // than tracked alongside it.
+  const selectedCount = nodes.filter((n: RFNode) => n.selected).length
   const selectedNodeEdges = selectedNodeId
     ? dbEdges.filter(e => String(e.from_node_id) === selectedNodeId || String(e.to_node_id) === selectedNodeId)
     : []
@@ -571,9 +585,32 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
           </button>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          {!isTerritory && (
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Del to remove selected</span>
-          )}
+          <span style={{ fontSize: 11, color: selectedCount > 1 ? '#7F77DD' : 'var(--text-muted)' }}>
+            {selectedCount > 1
+              ? `${selectedCount} selected · drag to move${isTerritory ? '' : ', Del to remove'}`
+              : isTerritory ? '' : 'Del to remove selected'}
+          </span>
+
+          {/* Pan ↔ Select. Shift+drag marquees in either mode; this makes the
+              marquee the primary drag when you're rearranging a big web. */}
+          <button
+            onClick={() => setSelectMode(v => !v)}
+            title={selectMode
+              ? 'Select mode — drag to select, middle or right button to pan'
+              : 'Pan mode — drag to pan, Shift+drag to select'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12,
+              cursor: 'pointer', background: selectMode ? 'var(--bg-elevated)' : 'transparent',
+              border: `1px solid ${selectMode ? '#AFA9EC' : 'var(--border)'}`,
+              borderRadius: 'var(--radius-sm)',
+              color: selectMode ? '#7F77DD' : 'var(--text-secondary)',
+              transition: 'background var(--transition)',
+            }}
+            className="hover-bg-elevated"
+          >
+            {selectMode ? <MousePointer2 size={13} /> : <Hand size={13} />}
+            {selectMode ? 'Select' : 'Pan'}
+          </button>
           {cfg.ranked && (
             <button
               onClick={() => setShowRankPanel(v => !v)}
@@ -709,6 +746,14 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
             onConnect={isTerritory ? undefined : onConnect}
             onNodesDelete={isTerritory ? undefined : onNodesDelete} onEdgesDelete={isTerritory ? undefined : onEdgesDelete}
             onNodeDragStop={onNodeDragStop}
+            onSelectionDragStop={onSelectionDragStop}
+            // Select mode turns a left-drag on empty canvas into a marquee and
+            // moves panning onto the middle and right buttons. Shift+drag
+            // marquees in either mode, so the toggle is a convenience, not the
+            // only way in.
+            selectionOnDrag={selectMode}
+            panOnDrag={selectMode ? [1, 2] : true}
+            selectionMode={SelectionMode.Partial}
             onNodeClick={(_e: any, node: RFNode) => setSelectedNodeId(prev => prev === node.id ? null : node.id)}
             onNodeContextMenu={onNodeContextMenu}
             onEdgeDoubleClick={isTerritory ? undefined : (_e: any, edge: RFEdge) => {

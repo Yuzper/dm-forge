@@ -105,3 +105,29 @@ export function loadWorkspace(campaignId: number | null | undefined): WorkspaceP
 export function clampRatio(n: number): number {
   return Math.min(0.8, Math.max(0.2, n))
 }
+
+// ── Pinned locations ──────────────────────────────────────────────────────────
+// The sidebar's curated list. Same shape and same safety as tabs — ids only, so
+// a pinned article that gets deleted resolves to nothing and drops out of the
+// list rather than resurrecting a ghost. Kept here to share `validLocation`.
+
+const pinsKey = (campaignId: number) => `dmforge:pins:v1:${campaignId}`
+
+export function savePins(campaignId: number | null | undefined, pins: Location[]) {
+  if (!campaignId) return
+  try {
+    localStorage.setItem(pinsKey(campaignId), JSON.stringify(pins))
+  } catch { /* quota or private mode — pins just won't survive restart */ }
+}
+
+export function loadPins(campaignId: number | null | undefined): Location[] {
+  if (!campaignId) return []
+  try {
+    const raw = localStorage.getItem(pinsKey(campaignId))
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter(validLocation) : []
+  } catch {
+    return []
+  }
+}

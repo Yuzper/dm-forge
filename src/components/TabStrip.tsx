@@ -130,8 +130,12 @@ export default function TabStrip({ paneId }: { paneId: PaneId }) {
             // Middle-click closes, like every browser.
             onAuxClick={e => { if (e.button === 1) { e.preventDefault(); closeTab(tab.id) } }}
             onContextMenu={e => showMenu(e, buildTabMenu(
-              { tabCount: tabs.length, isLast: index === tabs.length - 1, split },
               {
+                tabCount: tabs.length, isLast: index === tabs.length - 1, split,
+                pinned: menuCtx.pinned(tab.location),
+              },
+              {
+                togglePin:       () => menuCtx.togglePin(tab.location),
                 close:           () => void closeTab(tab.id),
                 closeOthers:     () => void closeOtherTabs(tab.id),
                 closeToRight:    () => void closeTabsToRight(tab.id),

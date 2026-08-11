@@ -11,11 +11,17 @@ import type { Campaign, Session, Arc, ArticleSummary,
   Player, VisibilityGrant, VisibilityEntityType, Grantee, CreatePlayerInput, SoundBoard } from '../types'
 import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
 import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
-import { applyTheme, getStoredTheme, applyTextTheme, getStoredTextTheme } from '../constants/themes'
-import type { ThemeKey, TextThemeKey } from '../constants/themes'
+import {
+  applyAppearance, loadAppearance, saveAppearance, resolveSections, DEFAULT_APPEARANCE,
+  hasCampaignAppearance, clearCampaignAppearance,
+} from '../constants/themes'
+import type { Appearance } from '../constants/themes'
+import { applySectionAccents, type SectionView } from '../constants/sections'
 import { forEachPane, setActivePaneId, ALL_PANE_IDS, type PaneId } from './paneRegistry'
 import { sameLocation, type Location } from './location'
-import { saveWorkspace, loadWorkspace, clampRatio } from './workspacePersist'
+import { saveWorkspace, loadWorkspace, clampRatio, savePins, loadPins } from './workspacePersist'
+
+const RECENT_ACCENTS_KEY = 'dmforge:recent-accents'
 
 function getStarterMonsters(system: string) {
   if (system === 'D&D 5e 2014') return MONSTERS_2014
@@ -101,10 +107,25 @@ export interface SharedSlice {
   // UI preferences
   bgStyle: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood'
   setBgStyle: (s: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood') => void
-  colorTheme: ThemeKey
-  setColorTheme: (key: ThemeKey) => void
-  textTheme: TextThemeKey
-  setTextTheme: (key: TextThemeKey) => void
+
+  /** Base surface family, accent colour, text palette, tint and section overrides. */
+  appearance: Appearance
+  setAppearance: (patch: Partial<Appearance>) => void
+  setSectionColor: (view: SectionView, hex: string | null) => void
+  resetSectionColors: () => void
+  /** Back to gold-on-parchment: appearance and backdrop texture, not hints. */
+  resetAppearance: () => void
+  /** Bumped on every appearance change so colour reads taken during render refresh. */
+  themeVersion: number
+  /** Accents you've moved away from, most recent first, for quick undo-by-eye. */
+  recentAccents: string[]
+  /** Whether the current look belongs to this campaign or to the app. */
+  appearanceScope: 'global' | 'campaign'
+  setAppearanceScope: (scope: 'global' | 'campaign') => void
+
+  /** Which tab the Settings dialog is showing, or null when it's closed. */
+  settingsTab: 'appearance' | 'data' | 'help' | null
+  setSettingsTab: (tab: 'appearance' | 'data' | 'help' | null) => void
   showHints: boolean
   setShowHints: (v: boolean) => void
   dismissedHints: string[]
@@ -113,11 +134,14 @@ export interface SharedSlice {
   searchOpen: boolean
   setSearchOpen: (v: boolean) => void
 
-  // Campaign-wide "Recent" trail for the sidebar. Distinct from per-tab
-  // back/forward: that is navigation, this is discovery — where have I been
-  // lately, across every tab. Cleared when the campaign changes.
-  recentLocations: Location[]
-  pushRecent: (loc: Location) => void
+  // The sidebar's pinned list: places you chose to keep, in the order you
+  // pinned them. Distinct from per-tab back/forward (that is navigation) and
+  // from what a "recent" trail used to do here — this one is curated, so it is
+  // persisted per campaign rather than rebuilt from wherever you have been.
+  // Unbounded on purpose: a favourites list you have to prune isn't one.
+  pinnedLocations: Location[]
+  isPinned: (loc: Location) => boolean
+  togglePin: (loc: Location) => void
 
   // Display names for locations whose label lives outside the campaign caches —
   // a relation web, a DM notes page. Without these, two relation tabs both read
@@ -165,13 +189,25 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
     const paneIds = saved?.paneIds ?? ['p0']
     const activePaneId = saved?.activePaneId ?? 'p0'
     setActivePaneId(activePaneId)
+    // A campaign with its own look puts it on now; one without takes the
+    // app-wide look, so leaving a themed campaign doesn't strand you in it.
+    const ownLook = hasCampaignAppearance(campaign.id)
+    const appearance = loadAppearance(campaign.id)
+    applyAppearance(appearance)
+    applySectionAccents(resolveSections(appearance))
+    set(s => ({
+      appearance,
+      appearanceScope: ownLook ? 'campaign' : 'global',
+      themeVersion: s.themeVersion + 1,
+    }))
     set({
       currentCampaign: campaign,
       sessions: [], drafts: [],
       arcs: [],
       allArticles: [],
       players: [], grants: [], soundBoards: [],
-      recentLocations: [],
+      // Each campaign keeps its own pinned list, like its tabs.
+      pinnedLocations: loadPins(campaign.id),
       locationNames: { relations: {}, 'dm-notes': {} },
       paneIds, activePaneId,
       splitRatio: saved?.splitRatio ?? 0.5,
@@ -506,20 +542,79 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
 
   bgStyle: (localStorage.getItem('bgStyle') as SharedSlice['bgStyle']) || 'none',
   setBgStyle: (bgStyle) => { localStorage.setItem('bgStyle', bgStyle); set({ bgStyle }) },
-  colorTheme: getStoredTheme(),
-  setColorTheme: (key) => {
-    localStorage.setItem('dmforge:color-theme', key)
-    applyTheme(key)
-    // applyTheme resets the text vars to the theme's defaults — re-apply the
-    // independent text-colour override on top so it survives a theme switch.
-    applyTextTheme(get().textTheme)
-    set({ colorTheme: key })
+
+  appearance: loadAppearance(),
+  themeVersion: 0,
+  recentAccents: (() => {
+    try { return JSON.parse(localStorage.getItem(RECENT_ACCENTS_KEY) ?? '[]') } catch { return [] }
+  })(),
+
+  // One path for every appearance change: persist, write the CSS vars, refresh
+  // the live section-accent record, then bump `themeVersion`. The bump is what
+  // re-renders the tree — section colours are read as plain hex during render
+  // (they get concatenated into rgba suffixes and canvas fills), so CSS vars
+  // alone would leave those sites showing the old colour until something else
+  // re-rendered them.
+  setAppearance: (patch) => {
+    const prev = get().appearance
+    const next = { ...prev, ...patch }
+    // Edits land wherever the current look lives: on the campaign when it has
+    // its own, otherwise on the app-wide one.
+    saveAppearance(next, get().appearanceScope === 'campaign' ? get().currentCampaign?.id : null)
+    applyAppearance(next)
+    applySectionAccents(resolveSections(next))
+    // Trying colours is a back-and-forth, so the ones you passed through stay
+    // one click away instead of having to be found in the wheel again.
+    let recentAccents = get().recentAccents
+    if (next.accent !== prev.accent) {
+      recentAccents = [prev.accent, ...recentAccents.filter(c => c !== prev.accent && c !== next.accent)].slice(0, 6)
+      localStorage.setItem(RECENT_ACCENTS_KEY, JSON.stringify(recentAccents))
+    }
+    set(s => ({ appearance: next, recentAccents, themeVersion: s.themeVersion + 1 }))
   },
-  textTheme: getStoredTextTheme(),
-  setTextTheme: (key) => {
-    localStorage.setItem('dmforge:text-theme', key)
-    applyTextTheme(key)
-    set({ textTheme: key })
+
+  setSectionColor: (view, hex) => {
+    const sections = { ...get().appearance.sections }
+    if (hex) sections[view] = hex
+    else delete sections[view]
+    get().setAppearance({ sections })
+  },
+
+  resetSectionColors: () => get().setAppearance({ sections: {} }),
+
+  appearanceScope: 'global',
+
+  // Turning it on forks the current look onto the campaign; turning it off drops
+  // the fork and falls back to the app-wide look, which is what "delete this
+  // campaign's look" should mean.
+  setAppearanceScope: (scope) => {
+    const campaign = get().currentCampaign
+    if (!campaign) return
+    if (scope === 'campaign') {
+      saveAppearance(get().appearance, campaign.id)
+      set({ appearanceScope: 'campaign' })
+      return
+    }
+    clearCampaignAppearance(campaign.id)
+    const global = loadAppearance()
+    applyAppearance(global)
+    applySectionAccents(resolveSections(global))
+    set(s => ({ appearance: global, appearanceScope: 'global', themeVersion: s.themeVersion + 1 }))
+  },
+
+  settingsTab: null,
+  setSettingsTab: (settingsTab) => set({ settingsTab }),
+
+  // Back to the app's original look — gold on parchment, no tint, stock section
+  // colours, no backdrop texture. Covers everything the Appearance tab owns
+  // except hints, which is a help preference rather than an appearance one.
+  resetAppearance: () => {
+    const next = { ...DEFAULT_APPEARANCE }
+    saveAppearance(next, get().appearanceScope === 'campaign' ? get().currentCampaign?.id : null)
+    applyAppearance(next)
+    applySectionAccents(resolveSections(next))
+    localStorage.setItem('bgStyle', 'none')
+    set(s => ({ appearance: next, bgStyle: 'none', themeVersion: s.themeVersion + 1 }))
   },
 
   showHints: localStorage.getItem('dmforge:show-hints') !== 'false',
@@ -624,10 +719,18 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
     saveWorkspace(currentCampaign?.id, { paneIds, activePaneId, splitRatio })
   },
 
-  recentLocations: [],
-  pushRecent: (loc) => set(s => ({
-    // Most recent first, de-duplicated, shallow — this is a shortcut list, not
-    // a log.
-    recentLocations: [loc, ...s.recentLocations.filter(l => !sameLocation(l, loc))].slice(0, 8),
-  })),
+  pinnedLocations: [],
+
+  isPinned: (loc) => get().pinnedLocations.some(l => sameLocation(l, loc)),
+
+  togglePin: (loc) => {
+    const { pinnedLocations, currentCampaign } = get()
+    const next = pinnedLocations.some(l => sameLocation(l, loc))
+      ? pinnedLocations.filter(l => !sameLocation(l, loc))
+      // Appended, not prepended: the list is curated, so its order should be the
+      // order you built it in and not shuffle under you on every pin.
+      : [...pinnedLocations, loc]
+    set({ pinnedLocations: next })
+    savePins(currentCampaign?.id, next)
+  },
 }))

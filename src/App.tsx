@@ -2,13 +2,12 @@
 import { Fragment, useEffect } from 'react'
 import type React from 'react'
 import { useStore } from './store/store'
-import { applyTheme, getStoredTheme, applyTextTheme, getStoredTextTheme } from './constants/themes'
+import { applyAppearance, loadAppearance } from './constants/themes'
 
-// Apply saved colour + text themes before the first render so there's no flash.
-// Text theme applies after the colour theme so it overrides the theme's text vars.
-applyTheme(getStoredTheme())
-applyTextTheme(getStoredTextTheme())
-import Sidebar from './components/Sidebar'
+// Base, accent, text palette and section colours all land in one pass, before
+// the first render, so there's no flash of the default theme.
+applyAppearance(loadAppearance())
+import Sidebar from './components/sidebar/Sidebar'
 import StatBlockPage from './pages/StatBlockPage'
 import { UpdateBanner } from './components/UpdateBanner'
 import SoundboardWidget from './components/SoundboardWidget'
@@ -17,6 +16,7 @@ import HintsWidget from './components/HintsWidget'
 import GlobalSearch from './components/GlobalSearch'
 import FindBar from './components/FindBar'
 import PlayersManager from './components/PlayersManager'
+import SettingsModal from './components/SettingsModal'
 import { ActivePaneProvider } from './context/PaneContext'
 import PaneView from './components/PaneView'
 import PaneSplitter from './components/PaneSplitter'
@@ -29,7 +29,7 @@ const statblockOverride = statblockMode ? params.get('statblockOverride') : null
 const nameOverride = statblockMode ? params.get('nameOverride') : null
 
 export default function App() {
-  const { loadCampaigns, bgStyle, currentCampaign, soundboardOpen, statBlockOverlays, playersManagerOpen, paneIds, splitRatio } = useStore()
+  const { loadCampaigns, bgStyle, currentCampaign, soundboardOpen, statBlockOverlays, playersManagerOpen, paneIds, splitRatio, themeVersion } = useStore()
 
   useEffect(() => { if (!statblockMode) loadCampaigns() }, [])
 
@@ -46,7 +46,10 @@ export default function App() {
   return (
     <ActivePaneProvider>
     <TabShortcuts />
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', ...bgStyleCSS(bgStyle) }}>
+    {/* themeVersion is here to be *read*: an appearance change bumps it, which
+        re-renders this tree so components that read section colours as plain hex
+        pick up the new values. */}
+    <div data-theme-version={themeVersion} style={{ display: 'flex', height: '100vh', overflow: 'hidden', ...bgStyleCSS(bgStyle) }}>
       <Sidebar />
       <UpdateBanner />
       {/* Persists across the campaign (not just the session) so music keeps
@@ -56,6 +59,7 @@ export default function App() {
       <HintsWidget />
       <GlobalSearch />
       <FindBar />
+      <SettingsModal />
       {currentCampaign && playersManagerOpen && <PlayersManager />}
       <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' }}>
         {paneIds.map((id, i) => (
@@ -83,14 +87,20 @@ function TabShortcuts() {
   return null
 }
 
+// The hairlines take their colour from the theme (--texture-line /
+// --texture-grain): a white hairline is invisible on the light base, so each
+// base states what its texture is drawn in. The grain layers stay plain
+// grayscale noise composited normally — they read on any ground, and blending
+// them (an earlier attempt at light-mode support) crushed the wood to flat black.
 function bgStyleCSS(style: string): React.CSSProperties {
+  const grain = (freq: string, size: number, opacity: number, type = 'fractalNoise', octaves = 4) =>
+    `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='${type}' baseFrequency='${freq}' numOctaves='${octaves}' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='${size}' height='${size}' filter='url(%23n)' opacity='${opacity}'/%3E%3C/svg%3E")`
+
   switch (style) {
     case 'parchment':
       return {
         background: 'var(--bg-base)',
-        backgroundImage: [
-          `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E")`,
-        ].join(', '),
+        backgroundImage: grain('0.75', 300, 0.055),
         backgroundRepeat: 'repeat',
       }
     case 'vignette':
@@ -101,19 +111,19 @@ function bgStyleCSS(style: string): React.CSSProperties {
       return {
         backgroundColor: 'var(--bg-base)',
         backgroundImage: [
-          `repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,0.018) 39px, rgba(255,255,255,0.018) 40px)`,
-          `repeating-linear-gradient(90deg, transparent, transparent 59px, rgba(255,255,255,0.018) 59px, rgba(255,255,255,0.018) 60px)`,
-          `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.5' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='80' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E")`,
+          `repeating-linear-gradient(0deg, transparent, transparent 39px, var(--texture-line) 39px, var(--texture-line) 40px)`,
+          `repeating-linear-gradient(90deg, transparent, transparent 59px, var(--texture-line) 59px, var(--texture-line) 60px)`,
+          grain('0.5', 120, 0.04, 'fractalNoise', 2),
         ].join(', '),
       }
     case 'wood':
       return {
         backgroundColor: 'var(--bg-base)',
         backgroundImage: [
-          `repeating-linear-gradient(92deg, transparent 0px, rgba(255,255,255,0.02) 1px, transparent 2px, transparent 14px)`,
-          `repeating-linear-gradient(88deg, transparent 0px, rgba(255,255,255,0.015) 1px, transparent 3px, transparent 22px)`,
-          `repeating-linear-gradient(90deg, rgba(0,0,0,0.12) 0px, transparent 1px, transparent 7px, rgba(0,0,0,0.06) 8px, transparent 9px, transparent 18px)`,
-          `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.02 0.4' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E")`,
+          `repeating-linear-gradient(92deg, transparent 0px, var(--texture-grain) 1px, transparent 2px, transparent 14px)`,
+          `repeating-linear-gradient(88deg, transparent 0px, var(--texture-line) 1px, transparent 3px, transparent 22px)`,
+          `repeating-linear-gradient(90deg, var(--texture-shade-strong) 0px, transparent 1px, transparent 7px, var(--texture-shade) 8px, transparent 9px, transparent 18px)`,
+          grain('0.02 0.4', 200, 0.05, 'turbulence', 3),
         ].join(', '),
       }
     default:

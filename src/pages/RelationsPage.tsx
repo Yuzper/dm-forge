@@ -8,6 +8,8 @@ import {
 import RelationsCanvasView from '../components/relations/RelationsCanvasView'
 import { NewWebModal, EditWebModal } from '../components/relations/relationsModals'
 import { WebMenu } from '../components/relations/relationsPanels'
+import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
+import { buildLocationMenu, truncate } from '../utils/contextMenus'
 
 // ── Hub View ───────────────────────────────────────────────────────────────────
 
@@ -16,6 +18,13 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
   const [webs, setWebs] = useState<RelationWeb[]>([])
   const [showNew, setShowNew] = useState(false)
   const [editWeb, setEditWeb] = useState<RelationWeb | null>(null)
+  const showMenu = useContextMenu()
+  const menuCtx = useMenuCtx()
+
+  const deleteWeb = async (web: RelationWeb) => {
+    await (window as any).api.deleteRelationWeb(web.id)
+    setWebs(prev => prev.filter(w => w.id !== web.id))
+  }
 
   const publishLocationNames = useStore(s => s.publishLocationNames)
   useEffect(() => {
@@ -66,6 +75,15 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
               <div key={web.id}
                 style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '16px 18px', cursor: 'pointer', transition: 'border-color var(--transition)', position: 'relative', '--hover-accent': 'var(--border-gold)' } as React.CSSProperties}
                 onClick={() => onOpenWeb(web)}
+                // A web is a location like any other, so the card gets the
+                // standard entity menu: open / new tab / other pane / pin.
+                onContextMenu={e => showMenu(e, buildLocationMenu({ type: 'relations', webId: web.id }, menuCtx, {
+                  label: `Open “${truncate(web.name)}”`,
+                  copy: { label: 'Copy name', text: web.name },
+                  onDelete: () => void deleteWeb(web),
+                  deleteLabel: `Delete “${truncate(web.name)}”`,
+                }))}
+                onAuxClick={e => { if (e.button === 1) { e.preventDefault(); menuCtx.goTab({ type: 'relations', webId: web.id }, true) } }}
                 className="hover-border-accent"
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 8 }}>
@@ -80,10 +98,7 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
                   </div>
                   <WebMenu
                     onEdit={() => setEditWeb(web)}
-                    onDelete={async () => {
-                      await (window as any).api.deleteRelationWeb(web.id)
-                      setWebs(prev => prev.filter(w => w.id !== web.id))
-                    }} />
+                    onDelete={() => deleteWeb(web)} />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)', padding: '2px 8px', background: 'var(--bg-elevated)', borderRadius: 99 }}>{web.node_count} node{web.node_count !== 1 ? 's' : ''}</span>

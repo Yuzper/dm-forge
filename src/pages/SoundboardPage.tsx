@@ -20,7 +20,9 @@ import { useContextMenu } from '../hooks/useContextMenu'
 import { buildSoundMenu, truncate } from '../utils/contextMenus'
 
 // Section accent used for all soundboard-flavoured UI chrome on this page.
-const ACCENT = SECTION_ACCENTS['soundboard']
+// Section colours are theme-dependent and user-overridable, so each component
+// reads this during render rather than capturing it at module load.
+const accent = () => SECTION_ACCENTS['soundboard']
 
 function basename(p: string) {
   return p.replace(/\\/g, '/').split('/').pop() ?? p
@@ -181,9 +183,9 @@ function SoundEditModal({ title, initial, fileLabel, onSave, onClose }: {
               display: 'flex', alignItems: 'center', gap: 6, height: 32,
               padding: '0 12px', borderRadius: 'var(--radius-sm)', fontSize: 12,
               cursor: 'pointer',
-              border: `1px solid ${loop ? ACCENT : 'var(--border-light)'}`,
-              background: loop ? `${ACCENT}20` : 'transparent',
-              color: loop ? ACCENT : 'var(--text-muted)',
+              border: `1px solid ${loop ? accent() : 'var(--border-light)'}`,
+              background: loop ? `${accent()}20` : 'transparent',
+              color: loop ? accent() : 'var(--text-muted)',
               transition: 'all 120ms ease',
             }}
           >
@@ -199,7 +201,7 @@ function SoundEditModal({ title, initial, fileLabel, onSave, onClose }: {
               type="range" min={0} max={1} step={0.01}
               value={volume}
               onChange={e => setVolume(parseFloat(e.target.value))}
-              style={{ flex: 1, accentColor: ACCENT, cursor: 'pointer' }}
+              style={{ flex: 1, accentColor: accent(), cursor: 'pointer' }}
             />
             <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 34, textAlign: 'right' }}>
               {Math.round(volume * 100)}%
@@ -436,7 +438,7 @@ function SoundLibraryPanel({ boards, entries, setEntries, onBoardsChanged }: {
         display: 'flex', alignItems: 'center', gap: 10,
         minHeight: 52, flexShrink: 0, background: 'var(--bg-surface)',
       }}>
-        <Library size={14} color={ACCENT} style={{ flexShrink: 0 }} />
+        <Library size={14} color={accent()} style={{ flexShrink: 0 }} />
         <span style={{
           fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 500,
           color: 'var(--text-primary)', letterSpacing: '0.03em',
@@ -612,14 +614,14 @@ function LibraryPickerModal({ entries, existingPaths, onAdd, onClose }: {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
                   padding: '6px 10px', borderBottom: '1px solid var(--border)',
-                  background: checked ? `${ACCENT}12` : 'transparent',
+                  background: checked ? `${accent()}12` : 'transparent',
                 }}
                 className={checked ? '' : 'hover-bg'}
               >
                 <span style={{
                   width: 14, height: 14, borderRadius: 3, flexShrink: 0,
-                  border: `1px solid ${checked ? ACCENT : 'var(--border-light)'}`,
-                  background: checked ? ACCENT : 'transparent',
+                  border: `1px solid ${checked ? accent() : 'var(--border-light)'}`,
+                  background: checked ? accent() : 'transparent',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   {checked && <Check size={10} color="#fff" />}
@@ -886,7 +888,7 @@ function BoardPanel({ board, library, onSoundsChanged }: {
           style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4 }}
           title="Link sessions — this board auto-loads when you open them"
         >
-          <Link2 size={13} color={linkedSessions.length > 0 ? ACCENT : 'currentColor'} />
+          <Link2 size={13} color={linkedSessions.length > 0 ? accent() : 'currentColor'} />
           {linkedSessions.length > 0 ? `${linkedSessions.length} linked` : 'Link sessions'}
         </button>
         {linkOpen && (
@@ -926,8 +928,8 @@ function BoardPanel({ board, library, onSoundsChanged }: {
                     >
                       <span style={{
                         width: 14, height: 14, borderRadius: 3, flexShrink: 0,
-                        border: `1px solid ${linkedHere ? ACCENT : 'var(--border-light)'}`,
-                        background: linkedHere ? ACCENT : 'transparent',
+                        border: `1px solid ${linkedHere ? accent() : 'var(--border-light)'}`,
+                        background: linkedHere ? accent() : 'transparent',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
                         {linkedHere && <Check size={10} color="#fff" />}
@@ -977,7 +979,7 @@ function BoardPanel({ board, library, onSoundsChanged }: {
             No sounds on this board yet.{' '}
             <button
               onClick={() => setPicking(true)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: ACCENT, fontSize: 13 }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: accent(), fontSize: 13 }}
             >
               Add some from the library
             </button>
@@ -1037,15 +1039,15 @@ function BoardListItem({ board, isActive, count, onClick }: {
         padding: '7px 10px', borderRadius: 'var(--radius-sm)',
         cursor: isActive ? 'default' : 'pointer',
         background: isActive ? 'var(--bg-active)' : 'transparent',
-        border: `1px solid ${isActive ? `${ACCENT}40` : 'transparent'}`,
+        border: `1px solid ${isActive ? `${accent()}40` : 'transparent'}`,
         transition: 'all 120ms ease',
         display: 'flex', alignItems: 'center', gap: 8,
       }}
       className={(!isActive) ? 'hover-bg' : ''}
     >
       {isLibrary
-        ? <Library size={11} style={{ color: isActive ? ACCENT : 'var(--text-muted)', flexShrink: 0 }} />
-        : <Music2 size={11} style={{ color: isActive ? ACCENT : 'var(--text-muted)', flexShrink: 0 }} />}
+        ? <Library size={11} style={{ color: isActive ? accent() : 'var(--text-muted)', flexShrink: 0 }} />
+        : <Music2 size={11} style={{ color: isActive ? accent() : 'var(--text-muted)', flexShrink: 0 }} />}
       <span style={{
         flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
@@ -1131,7 +1133,7 @@ export default function SoundboardPage() {
         >
           <ArrowLeft size={14} /> Back
         </button>
-        <Music2 size={13} color={ACCENT} />
+        <Music2 size={13} color={accent()} />
         <span style={{
           fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500,
           color: 'var(--text-primary)', letterSpacing: '0.03em', flex: 1,
@@ -1202,7 +1204,7 @@ export default function SoundboardPage() {
                 <br />
                 <button
                   onClick={() => setCreating(true)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: ACCENT, fontSize: 12, marginTop: 4 }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: accent(), fontSize: 12, marginTop: 4 }}
                 >
                   Create your first board
                 </button>

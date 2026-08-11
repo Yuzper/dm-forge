@@ -30,7 +30,8 @@ import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
 import { buildArticleMenu, buildSessionMenu } from '../utils/contextMenus'
 
 // Section accent used for timeline UI chrome on this page.
-const ACCENT = SECTION_ACCENTS['timeline']
+// Section colours are theme-dependent and user-overridable, so they're read
+// during render rather than captured at module load.
 
 function loadFilters(id: number): TimelineFilters {
   try { const s = localStorage.getItem(`timeline-filters-${id}`); if (s) return { ...DEFAULT_FILTERS, ...JSON.parse(s) } } catch {}
@@ -246,6 +247,7 @@ function UnplacedBanner({ undatedSessions, undatedEvents, baseYear, onSessionDat
   onSessionDateSet: (id: number, start: string, end: string) => Promise<void>
   onEventDateSet: (id: number, dateRaw: string) => Promise<void>
 }) {
+  const ACCENT = SECTION_ACCENTS['timeline']
   const [activeSession, setActiveSession] = useState<number | null>(null)
   const [activeEvent, setActiveEvent] = useState<number | null>(null)
   const [startRaw, setStartRaw] = useState('')
@@ -326,6 +328,7 @@ function UnplacedBanner({ undatedSessions, undatedEvents, baseYear, onSessionDat
 // ── Main Timeline Page ─────────────────────────────────────────────────────────
 
 export default function TimelinePage() {
+  const ACCENT = SECTION_ACCENTS['timeline']
   const { currentCampaign, sessions, drafts, arcs, setView, selectSession, setCampaignSubView, updateSession, updateCampaign, setHintContext } = useStore()
   const showMenu = useContextMenu()
   const menuCtx = useMenuCtx()

@@ -14,11 +14,13 @@ type FlatItem =
   | { kind: 'note';    item: GlobalSearchResults['notes'][number] }
   | { kind: 'poi';     item: GlobalSearchResults['pois'][number] }
 
+// `accent` is a getter: section colours change with the theme and can be
+// overridden, so this list must not freeze them at module load.
 const GROUPS: { kind: FlatItem['kind']; label: string; icon: React.ReactNode; accent: string }[] = [
-  { kind: 'article', label: 'Wiki articles', icon: <BookOpen size={11} />, accent: SECTION_ACCENTS['wiki'] },
+  { kind: 'article', label: 'Wiki articles', icon: <BookOpen size={11} />, get accent() { return SECTION_ACCENTS['wiki'] } },
   { kind: 'session', label: 'Sessions',      icon: <Scroll size={11} />,   accent: 'var(--gold)' },
-  { kind: 'note',    label: 'DM notes',      icon: <Sparkles size={11} />, accent: SECTION_ACCENTS['dm-notes'] },
-  { kind: 'poi',     label: 'Map pins',      icon: <MapPin size={11} />,   accent: '#49c185' },
+  { kind: 'note',    label: 'DM notes',      icon: <Sparkles size={11} />, get accent() { return SECTION_ACCENTS['dm-notes'] } },
+  { kind: 'poi',     label: 'Map pins',      icon: <MapPin size={11} />,   get accent() { return SECTION_ACCENTS['loot-tables'] } },
 ]
 
 export default function GlobalSearch() {
