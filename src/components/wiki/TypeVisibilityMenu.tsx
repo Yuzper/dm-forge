@@ -27,10 +27,18 @@ export function useExcludedTypes(storageKey: string, computeDefault: () => Set<s
   return { excluded, toggle, clear }
 }
 
-export function TypeVisibilityMenu({ excluded, onToggle, onClear }: {
+/**
+ * Display switches the list view adds to the bottom of the menu (count bubbles
+ * on the pills, the distribution bar). The graph has neither, so it passes
+ * nothing and the section disappears.
+ */
+export interface TypeDisplayToggle { key: string; label: string; on: boolean; onToggle: () => void }
+
+export function TypeVisibilityMenu({ excluded, onToggle, onClear, display }: {
   excluded: Set<string>
   onToggle: (type: string) => void
   onClear: () => void
+  display?: TypeDisplayToggle[]
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -94,6 +102,29 @@ export function TypeVisibilityMenu({ excluded, onToggle, onClear }: {
                 className="hover-bg">
                 Show all types
               </button>
+            </>
+          )}
+          {display && display.length > 0 && (
+            <>
+              <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '6px 14px 4px' }}>
+                Display
+              </div>
+              {display.map(d => (
+                <button key={d.key} onClick={d.onToggle}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '7px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: d.on ? 'var(--text-secondary)' : 'var(--text-muted)', textAlign: 'left' }}
+                  className="hover-bg">
+                  <div style={{
+                    width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                    border: `1.5px solid ${d.on ? 'var(--gold)' : 'var(--border)'}`,
+                    background: d.on ? 'var(--gold)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {d.on && <Check size={9} color="#000" />}
+                  </div>
+                  {d.label}
+                </button>
+              ))}
             </>
           )}
         </div>

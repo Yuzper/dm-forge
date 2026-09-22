@@ -63,7 +63,12 @@ export default function MapShapeLayer({
     return layer ? layer.visible === 1 : false
   }), [shapes, visibleById])
 
-  const ordered = useMemo(() => paintOrder(visible), [visible])
+  // The list order the Contents panel shows *is* the stack: later layers paint
+  // over earlier ones. Hosts hand these over already sorted by sort_order.
+  const layerRank = useMemo(
+    () => new Map(layers.map((l, i) => [l.id, i])), [layers])
+
+  const ordered = useMemo(() => paintOrder(visible, layerRank), [visible, layerRank])
 
   if (box.w <= 0 || box.h <= 0) return null
 

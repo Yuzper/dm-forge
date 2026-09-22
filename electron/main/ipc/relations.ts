@@ -34,7 +34,7 @@ export function registerRelationIPC() {
   })
 
   ipcMain.handle('relation-webs:update', (_e, id: number, data: any) => {
-    const allowed = ['name', 'description', 'template', 'ranks']
+    const allowed = ['name', 'description', 'template', 'ranks', 'node_style']
     const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)))
     if (Object.keys(clean).length === 0) {
       return db.prepare(`
@@ -56,7 +56,7 @@ export function registerRelationIPC() {
 
   ipcMain.handle('relation-webs:get-data', (_e, webId: number) => {
     const nodes = db.prepare(`
-      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.pos_x, n.pos_y,
+      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.frame, n.pos_x, n.pos_y,
              a.title AS article_title, a.article_type, a.tracks, a.portrait_image
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
@@ -86,14 +86,14 @@ export function registerRelationIPC() {
 
   ipcMain.handle('relation-nodes:create', (_e, data: any) => {
     const result = db.prepare(`
-      INSERT INTO relation_nodes (web_id, article_id, label, node_type, rank_id, pos_x, pos_y)
-      VALUES (@web_id, @article_id, @label, @node_type, @rank_id, @pos_x, @pos_y)
-    `).run({ article_id: null, node_type: 'person', rank_id: '', pos_x: 100, pos_y: 100, ...data })
+      INSERT INTO relation_nodes (web_id, article_id, label, node_type, rank_id, frame, pos_x, pos_y)
+      VALUES (@web_id, @article_id, @label, @node_type, @rank_id, @frame, @pos_x, @pos_y)
+    `).run({ article_id: null, node_type: 'person', rank_id: '', frame: '', pos_x: 100, pos_y: 100, ...data })
 
     db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(data.web_id)
 
     const node = db.prepare(`
-      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.pos_x, n.pos_y,
+      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.frame, n.pos_x, n.pos_y,
              a.title AS article_title, a.article_type, a.tracks, a.portrait_image
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
@@ -109,14 +109,14 @@ export function registerRelationIPC() {
   })
 
   ipcMain.handle('relation-nodes:update', (_e, id: number, data: any) => {
-    const allowed = ['article_id', 'label', 'node_type', 'rank_id', 'pos_x', 'pos_y']
+    const allowed = ['article_id', 'label', 'node_type', 'rank_id', 'frame', 'pos_x', 'pos_y']
     const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)))
     if (Object.keys(clean).length === 0) return null
     const fields = Object.keys(clean).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE relation_nodes SET ${fields} WHERE id = @id`).run({ ...clean, id })
 
     const node = db.prepare(`
-      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.pos_x, n.pos_y,
+      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.frame, n.pos_x, n.pos_y,
              a.title AS article_title, a.article_type, a.tracks, a.portrait_image
       FROM relation_nodes n
       LEFT JOIN articles a ON a.id = n.article_id
@@ -361,6 +361,104 @@ export function registerRelationIPC() {
       WHERE w.id IN (SELECT web_id FROM relation_nodes WHERE article_id = ?)
       ORDER BY w.name COLLATE NOCASE
     `).all(articleId)
+  })
+
+  // ── Cross-web bridges ─────────────────────────────────────────────────────────
+  // A person who appears in two webs (married into another family tree, say) is
+  // already recorded twice — once per web, both nodes pointing at the same
+  // article. That shared article IS the bridge, so nothing needs wiring up by
+  // hand: this reports, per node of `webId`, every other web holding the same
+  // article and which node it is there.
+  //
+  // Family tree → family tree only. A character usually also sits in the guilds,
+  // churches and adventuring parties they belong to, and ghosting a chunk of an
+  // org chart into a bloodline says nothing about the bloodline — it's the other
+  // family's branch that's worth pulling across, and only while you're reading
+  // a family tree in the first place.
+  ipcMain.handle('relation-webs:get-bridges', (_e, webId: number) => {
+    return db.prepare(`
+      SELECT n.id          AS node_id,
+             w2.id         AS web_id,
+             w2.name       AS web_name,
+             w2.template   AS web_template,
+             n2.id         AS target_node_id
+      FROM relation_nodes n
+      JOIN relation_webs  w  ON w.id  = n.web_id
+      JOIN relation_nodes n2 ON n2.article_id = n.article_id AND n2.web_id <> n.web_id
+      JOIN relation_webs  w2 ON w2.id = n2.web_id
+      WHERE n.web_id = ?
+        AND n.article_id IS NOT NULL
+        AND w2.campaign_id = w.campaign_id
+        AND w.template  = 'family_tree'
+        AND w2.template = 'family_tree'
+      ORDER BY w2.name COLLATE NOCASE, n2.id
+    `).all(webId)
+  })
+
+  // The slice of another web to ghost in beside a bridged node: every node
+  // within `depth` generations of the anchor. Union nodes are pass-throughs —
+  // stepping person → union → person costs one generation, not two — so a
+  // depth of 2 means "parents and grandparents", not "parents and their union".
+  ipcMain.handle('relation-webs:get-ghost-branch', (_e, webId: number, anchorNodeId: number, depth: number) => {
+    const web = db.prepare('SELECT id, name, template FROM relation_webs WHERE id = ?').get(webId) as any
+    if (!web) return null
+
+    const allNodes = db.prepare(`
+      SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.frame, n.pos_x, n.pos_y,
+             a.title AS article_title, a.article_type, a.tracks, a.portrait_image
+      FROM relation_nodes n
+      LEFT JOIN articles a ON a.id = n.article_id
+      WHERE n.web_id = ?
+    `).all(webId) as any[]
+    const allEdges = db.prepare('SELECT * FROM relation_edges WHERE web_id = ?').all(webId) as any[]
+
+    const byId = new Map<number, any>(allNodes.map(n => [n.id, n]))
+    if (!byId.has(anchorNodeId)) return null
+
+    const adj = new Map<number, number[]>()
+    for (const e of allEdges) {
+      if (!adj.has(e.from_node_id)) adj.set(e.from_node_id, [])
+      if (!adj.has(e.to_node_id))   adj.set(e.to_node_id, [])
+      adj.get(e.from_node_id)!.push(e.to_node_id)
+      adj.get(e.to_node_id)!.push(e.from_node_id)
+    }
+
+    const maxDepth = Math.max(1, Math.min(8, depth || 2))
+    const dist = new Map<number, number>([[anchorNodeId, 0]])
+    const queue: number[] = [anchorNodeId]
+    while (queue.length) {
+      const id = queue.shift()!
+      const d = dist.get(id)!
+      for (const next of adj.get(id) ?? []) {
+        const node = byId.get(next)
+        if (!node) continue
+        // Unions are joints, not generations.
+        const nd = d + (node.node_type === 'union' ? 0 : 1)
+        if (nd > maxDepth) continue
+        if (dist.has(next) && dist.get(next)! <= nd) continue
+        dist.set(next, nd)
+        queue.push(next)
+      }
+    }
+
+    // A union left hanging off the edge of the slice (one member reached, the
+    // rest beyond the depth limit) reads as a stray dot — drop it.
+    for (const [id, _d] of Array.from(dist)) {
+      const node = byId.get(id)
+      if (node?.node_type !== 'union') continue
+      const kept = (adj.get(id) ?? []).filter(o => dist.has(o))
+      if (kept.length < 2) dist.delete(id)
+    }
+
+    const nodes = Array.from(dist.keys()).map(id => {
+      const n = byId.get(id)
+      let vitality: string | null = null
+      if (n.tracks) { try { vitality = JSON.parse(n.tracks).Vitality || null } catch {} }
+      return { ...n, vitality, depth: dist.get(id) }
+    })
+    const edges = allEdges.filter(e => dist.has(e.from_node_id) && dist.has(e.to_node_id))
+
+    return { web, anchorNodeId, nodes, edges }
   })
 
   // Single article linked to this web (one-to-one). Returns null when unset.

@@ -17,7 +17,8 @@ import { WikiLink } from './WikiLinkExtension'
 import { WikiAutolink } from './WikiAutolinkExtension'
 import { SessionLink } from './SessionLinkExtension'
 import { SpellLink } from './SpellLinkExtension'
-import { DmOnly } from './DmOnlyMark'
+import { WebLink, isUrlOnly, normalizeUrl } from './WebLinkExtension'
+import { DmOnly, DmOnlyBlock, DM_ONLY_NODE_TYPES } from './DmOnlyMark'
 import { SpellCard } from './SpellCard'
 import { ItemCard, type ItemCardData } from './ItemCard'
 import { parseItemStatBlock } from '../types'
@@ -45,6 +46,18 @@ import { buildArticleMenu, truncate } from '../utils/contextMenus'
 // Link marks (wikiLink, sessionLink, spellLink) are deliberately absent — they
 // are content, and stripping them would silently break links.
 const FORMAT_MARKS = ['bold', 'italic', 'underline', 'strike', 'highlight', 'textStyle']
+
+// A lone image/rule carries DM-only as a node attribute rather than a mark, so
+// the toolbar button needs its own active check to light up for one.
+function isDmOnlyBlockActive(editor: any): boolean {
+  const { from, to } = editor.state.selection
+  let found = false
+  editor.state.doc.nodesBetween(from, to, (node: any) => {
+    if (DM_ONLY_NODE_TYPES.includes(node.type.name) && node.attrs?.dmOnly) found = true
+  })
+  return found
+}
+
 
 
 // ── Spell types & data ─────────────────────────────────────────────────────────
@@ -726,10 +739,32 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       WikiAutolink.configure({ excludeTitle: excludeTitle ?? null }),
       SessionLink,
       SpellLink,
+      WebLink,
       DmOnly,
+      DmOnlyBlock,
     ],
     content: parsedContent,
     editable: !readOnly,
+    editorProps: {
+      // Pasting a bare URL is the case this feature exists for, so it links
+      // immediately rather than waiting for a space that may never be typed.
+      // With text selected, the paste turns that text into the link instead —
+      // the usual editor behaviour, and how you label a YouTube link.
+      handlePaste: (view, event) => {
+        const text = event.clipboardData?.getData('text/plain') ?? ''
+        if (!isUrlOnly(text)) return false
+        const href = normalizeUrl(text.trim())
+        const { state, dispatch } = view
+        const { from, to, empty } = state.selection
+        const mark = state.schema.marks.webLink.create({ href })
+        const tr = empty
+          ? state.tr.insertText(text.trim(), from).addMark(from, from + text.trim().length, mark)
+          : state.tr.addMark(from, to, mark)
+        dispatch(tr.scrollIntoView())
+        event.preventDefault()
+        return true
+      },
+    },
     onUpdate: ({ editor }) => {
       onChange(JSON.stringify(editor.getJSON()))
     },
@@ -795,12 +830,28 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
         e.preventDefault(); e.stopPropagation()
         const sessionId = parseInt(sessionLink.getAttribute('data-session-id') || '0')
         if (sessionId) navigateToSessionById(sessionId)
+        return
+      }
+
+      // A web link leaves the app entirely, so it goes to the system browser.
+      // It opens on a plain click even while editing: these are pasted for
+      // watching later, and DM Notes is never read-only, so gating it behind
+      // Ctrl would mean the feature never worked where it was asked for. The
+      // caret still lands where you clicked (ProseMirror handles that on
+      // mousedown), and right-click offers Remove link for editing the text.
+      // preventDefault is what stops the anchor navigating the app window
+      // itself to the site — there is no way back from that.
+      const webLink = target.closest('[data-web-link]') as HTMLAnchorElement | null
+      if (webLink) {
+        e.preventDefault(); e.stopPropagation()
+        const href = webLink.getAttribute('href')
+        if (href) void window.api.openExternal(href)
       }
     }
     const el = editorRef.current
     el.addEventListener('click', handleClick, true)
     return () => el.removeEventListener('click', handleClick, true)
-  }, [onWikiLinkClick, navigateToArticleByTitle, navigateToSessionById])
+  }, [onWikiLinkClick, navigateToArticleByTitle, navigateToSessionById, readOnly])
 
   // Right-click a wiki link — or an autolink suggestion — for the same article
   // menu the wiki list and the graph give. Everything else in the editor is left
@@ -810,6 +861,37 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     if (!el || !editor) return
     const onContext = (e: MouseEvent) => {
       const target = e.target as HTMLElement
+
+      // A web link's menu is about the address, not the campaign.
+      const webEl = target.closest('[data-web-link]') as HTMLAnchorElement | null
+      const href = webEl?.getAttribute('href')
+      if (href) {
+        showMenu(e, [
+          { label: 'Open in browser', click: () => { void window.api.openExternal(href) } },
+          { label: 'Copy link address', click: () => { void navigator.clipboard.writeText(href) } },
+          ...(readOnly ? [] : [
+            { type: 'separator' as const },
+            {
+              // The way back to plain text, so a mistyped address can be fixed.
+              label: 'Remove link',
+              click: () => {
+                const at = editor.view.posAtCoords({ left: e.clientX, top: e.clientY })
+                if (!at) return
+                const $pos = editor.state.doc.resolve(at.pos)
+                const start = at.pos - $pos.textOffset
+                const node = $pos.parent.maybeChild($pos.index())
+                if (!node) return
+                editor.chain().focus()
+                  .setTextSelection({ from: start, to: start + node.nodeSize })
+                  .unsetMark('webLink')
+                  .run()
+              },
+            },
+          ]),
+        ], { target: webEl })
+        return
+      }
+
       const linkEl = target.closest('[data-wiki-link]') as HTMLElement | null
       const mentionEl = linkEl ? null : target.closest('[data-wiki-mention]') as HTMLElement | null
       const title = linkEl?.getAttribute('data-wiki-link') ?? mentionEl?.getAttribute('data-wiki-mention')
@@ -834,7 +916,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     }
     el.addEventListener('contextmenu', onContext, true)
     return () => el.removeEventListener('contextmenu', onContext, true)
-  }, [editor, showMenu, menuCtx])
+  }, [editor, showMenu, menuCtx, readOnly])
 
   // Listen for wiki, session, spell search events from extensions
   useEffect(() => {
@@ -1100,7 +1182,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
             <ToolbarButton onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} title="Underline"><UnderlineIcon size={13} /></ToolbarButton>
             <ToolbarButton onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} title="Strikethrough"><Strikethrough size={13} /></ToolbarButton>
             <ToolbarButton onClick={() => editor.chain().focus().toggleHighlight().run()} active={editor.isActive('highlight')} title="Highlight"><Highlighter size={13} /></ToolbarButton>
-            <ToolbarButton onClick={() => editor.chain().focus().toggleMark('dmOnly').run()} active={editor.isActive('dmOnly')} title="DM-only — hidden from players on export"><EyeOff size={13} /></ToolbarButton>
+            <ToolbarButton onClick={() => editor.chain().focus().toggleDmOnly().run()} active={editor.isActive('dmOnly') || isDmOnlyBlockActive(editor)} title="DM-only — hidden from players on export (covers images too)"><EyeOff size={13} /></ToolbarButton>
 
             {/* Text colour */}
             <div style={{ position: 'relative', flexShrink: 0 }}>

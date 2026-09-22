@@ -11,6 +11,7 @@
 // folding it in here would buy one abstraction with a session-shaped branch
 // through every method. Session maps stay in store.ts.
 import { useCallback, useEffect, useState } from 'react'
+import { reorder } from './useDragReorder'
 import type { GameMap } from '../types'
 
 export type MapOwner =
@@ -129,6 +130,14 @@ export function useMapCollection({
     if (currentMap?.id === id) selectMap(next[0] ?? null)
   }, [maps, currentMap, selectMap, onCountChange])
 
+  // Tab order. Optimistic: the strip must not snap back while the write lands,
+  // and a failed write is a cosmetic loss, not a lost map.
+  const reorderMaps = useCallback((from: number, to: number) => {
+    const next = reorder(maps, from, to).map((m, i) => ({ ...m, sort_order: i }))
+    setMaps(next)
+    void window.api.reorderMaps(next.map(m => ({ id: m.id, sort_order: m.sort_order })))
+  }, [maps])
+
   /** Apply a locally-known update (e.g. a saved map scale) without a refetch. */
   const patchMap = useCallback((updated: GameMap) => {
     setMaps(prev => prev.map(m => m.id === updated.id ? updated : m))
@@ -137,6 +146,6 @@ export function useMapCollection({
 
   return {
     maps, currentMap, importing,
-    selectMap, addMap, renameMap, replaceImage, deleteMap, patchMap,
+    selectMap, addMap, renameMap, replaceImage, deleteMap, patchMap, reorderMaps,
   }
 }

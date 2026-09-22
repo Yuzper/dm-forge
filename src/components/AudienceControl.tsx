@@ -2,15 +2,22 @@
 // "Visible to" control for the player-facing pages: sets which players (or the
 // whole party) can see a given entity. Deny-by-default — no grant = Hidden.
 import { useRef, useState } from 'react'
-import { Eye, EyeOff, Users, Check, UserCog } from 'lucide-react'
+import { Eye, EyeOff, Users, Check, UserCog, Link2 } from 'lucide-react'
 import { useStore } from '../store/store'
 import DropdownPortal from './DropdownPortal'
 import type { VisibilityEntityType, Grantee } from '../types'
+
+// Map features (pins, regions) fall back to the audience of the article they
+// link to when they carry no grant of their own, so "no grants" means something
+// different for them than it does for an article — and saying "Hidden" there
+// would be a lie. Pass `inherits` to label the empty state honestly.
+const INHERITING_TYPES = new Set<VisibilityEntityType>(['poi', 'shape'])
 
 export default function AudienceControl({ entityType, entityId }: {
   entityType: VisibilityEntityType
   entityId: number
 }) {
+  const inherits = INHERITING_TYPES.has(entityType)
   const players = useStore(s => s.players)
   const grants = useStore(s => s.grants)
   const setEntityAudience = useStore(s => s.setEntityAudience)
@@ -32,7 +39,7 @@ export default function AudienceControl({ entityType, entityId }: {
   if (hasParty) label = 'All players'
   else if (grantedIds.length === 1) label = nameFor(grantedIds[0])
   else if (grantedIds.length > 1) label = `${grantedIds.length} players`
-  else label = 'Hidden'
+  else label = inherits ? 'Follows page' : 'Hidden'
   const shared = hasParty || grantedIds.length > 0
 
   const apply = (grantees: Grantee[]) => setEntityAudience(entityType, entityId, grantees)
@@ -64,7 +71,9 @@ export default function AudienceControl({ entityType, entityId }: {
       <button
         ref={btnRef}
         onClick={() => setOpen(o => !o)}
-        title="Choose which players can see this"
+        title={inherits
+          ? 'Choose which players can see this, or leave it following the linked page'
+          : 'Choose which players can see this'}
         style={{
           display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 99,
           fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 120ms ease',
@@ -82,6 +91,14 @@ export default function AudienceControl({ entityType, entityId }: {
           <div style={{ padding: '7px 11px 5px', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
             Visible to
           </div>
+
+          {inherits && (
+            <button onClick={() => apply([])} style={{ ...rowStyle, opacity: shared ? 1 : 0.9 }} className="hover-bg">
+              {box(!shared)}
+              <Link2 size={13} style={{ opacity: 0.8 }} />
+              <span style={{ flex: 1 }}>Follow the linked page</span>
+            </button>
+          )}
 
           <button onClick={toggleParty} style={rowStyle} className="hover-bg">
             {box(hasParty)}

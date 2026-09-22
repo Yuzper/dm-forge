@@ -1,8 +1,24 @@
+// path: shared/PlayerContent.tsx
 // Compact, dependency-free renderer for the TipTap JSON that DM-Forge produces.
 // Deliberately self-contained (no @tiptap, no store) so the viewer never pulls
 // in the editor stack. Covers the node/mark set the app actually uses; unknown
 // nodes render their children (or nothing) rather than throwing.
+//
+// Shared between the published player viewer and the DM app's preview-as-player,
+// so a DM previewing a page is looking at the same renderer the player will use
+// — a preview that renders things its own way is a preview you can't trust.
+import { createContext, useContext } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
+
+// Set once per document rather than threaded through every render call — image
+// nodes are the only consumer and they can sit at any depth.
+const SrcContext = createContext<((src: string) => string) | undefined>(undefined)
+
+function ContentImage({ src, alt }: { src?: string; alt: string }) {
+  const resolve = useContext(SrcContext)
+  if (!src) return null
+  return <img src={resolve ? resolve(src) : src} alt={alt} />
+}
 
 interface Node {
   type?: string
@@ -29,7 +45,10 @@ function applyMarks(text: ReactNode, marks: Node['marks'], onWikiLink: (title: s
         el = color ? <span style={{ color }}>{el}</span> : el
         break
       }
-      case 'link': {
+      case 'link':
+      // The editor's own web-link mark. Here it is an ordinary anchor: the
+      // player site is a static page in a real browser, so the browser opens it.
+      case 'webLink': {
         const href = m.attrs?.href
         el = <a href={href} target="_blank" rel="noreferrer noopener">{el}</a>
         break
@@ -53,12 +72,19 @@ function renderChildren(nodes: Node[] | undefined, onWikiLink: (t: string) => vo
   return (nodes ?? []).map((n, i) => <RenderNode key={i} node={n} onWikiLink={onWikiLink} />)
 }
 
+// Defence in depth: the publish pipeline drops DM-only content, but an older
+// bundle (or a bug on the way in) must never render one. Checked for every node,
+// not just text runs — images and rules carry the flag as an attribute, which is
+// exactly the case the exporter used to miss.
+function isDmOnly(node: Node): boolean {
+  if ((node.attrs as any)?.dmOnly === true) return true
+  return !!node.marks?.some(m => m.type === 'dmOnly')
+}
+
 function RenderNode({ node, onWikiLink }: { node: Node; onWikiLink: (title: string) => void }): ReactNode {
+  if (isDmOnly(node)) return null
   switch (node.type) {
     case 'text':
-      // Defence in depth: the publish pipeline strips DM-only runs, but never
-      // render one even if a bundle somehow carried it through.
-      if (node.marks?.some(m => m.type === 'dmOnly')) return null
       return applyMarks(node.text, node.marks, onWikiLink, 0)
     case 'paragraph':
       return <p style={alignStyle(node.attrs)}>{renderChildren(node.content, onWikiLink)}</p>
@@ -77,7 +103,7 @@ function RenderNode({ node, onWikiLink }: { node: Node; onWikiLink: (title: stri
     case 'horizontalRule': return <hr />
     case 'hardBreak':    return <br />
     case 'image':
-      return <img src={node.attrs?.src} alt={node.attrs?.alt ?? ''} />
+      return <ContentImage src={node.attrs?.src} alt={node.attrs?.alt ?? ''} />
     case 'table':        return <div className="table-wrap"><table><tbody>{renderChildren(node.content, onWikiLink)}</tbody></table></div>
     case 'tableRow':     return <tr>{renderChildren(node.content, onWikiLink)}</tr>
     case 'tableHeader':  return <th colSpan={node.attrs?.colspan} rowSpan={node.attrs?.rowspan}>{renderChildren(node.content, onWikiLink)}</th>
@@ -89,11 +115,21 @@ function RenderNode({ node, onWikiLink }: { node: Node; onWikiLink: (title: stri
   }
 }
 
-export default function TipTapRenderer({ json, onWikiLink }: {
+export default function PlayerContent({ json, onWikiLink, resolveSrc }: {
   json: string
   onWikiLink: (title: string) => void
+  /**
+   * Maps a bundle-relative "images/x.png" to something the host can load.
+   * The published site serves those paths as-is; the DM preview has no bundle
+   * on disk yet, so it points them at the originals in userData instead.
+   */
+  resolveSrc?: (src: string) => string
 }) {
   let doc: Node
   try { doc = JSON.parse(json) } catch { return null }
-  return <div className="prose"><RenderNode node={doc} onWikiLink={onWikiLink} /></div>
+  return (
+    <SrcContext.Provider value={resolveSrc}>
+      <div className="prose"><RenderNode node={doc} onWikiLink={onWikiLink} /></div>
+    </SrcContext.Provider>
+  )
 }

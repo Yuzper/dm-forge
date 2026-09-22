@@ -13,6 +13,8 @@ export interface Campaign {
   timeline_eras?: string | null
   timeline_show_lifespans?: number
   timeline_calendar?: string | null
+  // Folder the player site publishes into, remembered between publishes.
+  player_site_path?: string | null
 }
 
 export interface Session {
@@ -271,7 +273,6 @@ export interface LinkGraph {
   nodes: { id: number; title: string; article_type: string; tags: string; webs: string[]; updated_at: string }[]
   edges: { from: number; to: number }[]
   ghosts: { title: string; sources: number[] }[]   // broken [[links]] → nonexistent titles
-  mentions: { from: number; to: number }[]          // plain-text (unlinked) title occurrences
 }
 
 export type LootTableCategory = 'creature' | 'vendor' | 'location' | 'custom'
@@ -633,7 +634,10 @@ export interface CreateLootTableInput {
 
 // First-class entities that visibility grants can target. Track/subtrack
 // visibility is handled separately (companion JSON on the article).
-export type VisibilityEntityType = 'article' | 'map' | 'poi' | 'layer'
+// 'layer' = a POI visit-layer; 'shape_layer' = a map drawing-layer. Separate
+// types because the two tables have overlapping ids.
+export type VisibilityEntityType =
+  | 'article' | 'map' | 'poi' | 'shape' | 'layer' | 'shape_layer'
 
 // A grant's audience: a specific player id, or null meaning "party" (all players).
 export type Grantee = number | null
@@ -714,6 +718,7 @@ export interface ElectronAPI {
   createShapeLayer:   (mapId: number, name?: string) => Promise<MapShapeLayer>
   updateShapeLayer:   (id: number, data: Partial<Pick<MapShapeLayer, 'name' | 'visible' | 'locked' | 'sort_order'>>) => Promise<MapShapeLayer>
   deleteShapeLayer:   (id: number)                 => Promise<void>
+  reorderShapeLayers: (orders: { id: number; sort_order: number }[]) => Promise<void>
 
   getMapShapes:    (mapId: number)                 => Promise<MapShape[]>
   createMapShape:  (data: CreateMapShapeInput)     => Promise<MapShape>
@@ -728,6 +733,8 @@ export interface ElectronAPI {
   getArticlesHealth:   (campaignId: number) => Promise<WikiHealth>
   getArticleLinkGraph: (campaignId: number) => Promise<LinkGraph>
   globalSearch:        (campaignId: number, query: string) => Promise<GlobalSearchResults>
+  /** Opens a web link in the user's own browser. False = refused (not http/https/mailto). */
+  openExternal:        (url: string) => Promise<boolean>
   findInPage:          (text: string, opts?: { forward?: boolean; findNext?: boolean }) => Promise<void>
   stopFindInPage:      () => Promise<void>
   onFindResult:        (cb: (r: { matches: number; active: number }) => void) => void
@@ -805,6 +812,15 @@ export interface ElectronAPI {
   listRelationWebsForArticle: (articleId: number) => Promise<any[]>
   /** Webs this article appears in as a node — what "show in relations" offers. */
   listRelationWebsForMember:  (articleId: number) => Promise<{ id: number; name: string; template: string }[]>
+  getRelationBridges:     (webId: number) => Promise<{
+    node_id: number; web_id: number; web_name: string; web_template: string; target_node_id: number
+  }[]>
+  getRelationGhostBranch: (webId: number, anchorNodeId: number, depth: number) => Promise<{
+    web: { id: number; name: string; template: string }
+    anchorNodeId: number
+    nodes: any[]
+    edges: any[]
+  } | null>
 
   // Maps
   replaceMapImage: (mapId: number) => Promise<{ path: string } | null>
@@ -820,6 +836,7 @@ export interface ElectronAPI {
   createSound:      (data: Omit<Sound, 'id' | 'sort_order' | 'created_at' | 'loop'> & { loop?: number }) => Promise<Sound>
   updateSound:      (id: number, data: Partial<Sound>) => Promise<Sound>
   deleteSound:      (id: number)                => Promise<void>
+  reorderSounds:    (orders: { id: number; sort_order: number }[]) => Promise<void>
   selectAudioFile:  ()                          => Promise<string | null>
   selectAudioFiles: ()                          => Promise<{ file_path: string; name: string }[]>
 
@@ -828,6 +845,7 @@ export interface ElectronAPI {
   createLibrarySound: (data: { name: string; category: SoundCategory; file_path: string; hotkey?: string; volume?: number; loop?: number }) => Promise<SoundLibraryEntry>
   updateLibrarySound: (id: number, data: Partial<SoundLibraryEntry>) => Promise<SoundLibraryEntry>
   deleteLibrarySound: (id: number)              => Promise<void>
+  reorderLibrarySounds: (orders: { id: number; sort_order: number }[]) => Promise<void>
 
   // Players (player-facing pages)
   getPlayers:    (campaignId: number)              => Promise<Player[]>
@@ -844,6 +862,10 @@ export interface ElectronAPI {
 
   // Publish the player-facing site
   publishPlayerSite:     (campaignId: number) => Promise<PublishResult>
+  previewPlayerSite:     (campaignId: number, playerId: number) => Promise<PlayerPreviewResult>
+  choosePlayerSiteFolder: (campaignId: number) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string; git?: GitSiteStatus }>
+  playerSiteGitStatus:   (campaignId: number) => Promise<GitSiteStatus>
+  pushPlayerSite:        (campaignId: number) => Promise<PushResult>
 
   // Native context menus — see src/hooks/useContextMenu.ts for the caller side.
   popupMenu:             (template: MenuTemplateItem[]) => Promise<string | null>
@@ -866,7 +888,76 @@ export interface PublishResult {
   error?: string
   canceled?: boolean
   warnings?: string[]
-  stats?: { players: number; articles: number; images: number }
+  // `pruned` counts files from an earlier publish that this one removed —
+  // bundles for renamed/deleted players, images nothing visible references.
+  stats?: { players: number; articles: number; images: number; pruned?: number }
+}
+
+// State of the git repo the published folder sits inside. `inRepo` false means
+// the folder simply is not under version control — publishing still works, there
+// is just nothing to push.
+export interface GitSiteStatus {
+  inRepo: boolean
+  reason?: string            // why not, when inRepo is false
+  repoRoot?: string
+  branch?: string
+  remote?: string            // remote NAME (not always "origin")
+  remoteUrl?: string
+  subPath?: string           // published folder relative to the repo root
+  pendingChanges?: number    // uncommitted files under the published folder
+  ahead?: number             // commits not yet pushed
+  hasUpstream?: boolean
+}
+
+export interface PushResult {
+  success: boolean
+  committed?: boolean
+  pushed?: boolean
+  sha?: string
+  branch?: string
+  remote?: string
+  message?: string
+  error?: string
+  hint?: string
+}
+
+// One player's bundle exactly as publish would build it, handed back
+// unencrypted for preview-as-player. `imagePaths` maps the bundle's relative
+// "images/x.png" basenames to absolute files on disk so the preview can render
+// them without a publish having happened.
+export interface PlayerPreviewResult {
+  success: boolean
+  error?: string
+  bundle?: PlayerBundle
+  imagePaths?: Record<string, string>
+  totals?: { articles: number; maps: number }
+}
+
+export interface PlayerBundleArticle {
+  id: number
+  title: string
+  article_type: string
+  content: string
+  cover_image: string | null
+  portrait_image: string | null
+  tags: string[]
+  infoTracks: { label: string; value: string }[]
+  milestones: { label: string; date: string }[]
+  statblock?: string
+  updated_at: string
+  hash: string
+}
+
+export interface PlayerBundle {
+  player: { username: string; display_name: string; pc_article_id: number | null }
+  articles: PlayerBundleArticle[]
+  backlinks: Record<number, { id: number; title: string }[]>
+  tagIndex: Record<string, number[]>
+  maps: {
+    id: number; name: string; image: string
+    pois: any[]
+    shapes: any[]
+  }[]
 }
 
 

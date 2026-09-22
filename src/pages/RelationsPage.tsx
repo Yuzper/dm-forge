@@ -1,7 +1,7 @@
 // path: src/pages/RelationsPage.tsx
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useStore } from '../store/store'
-import { Network, Plus, ArrowLeft } from 'lucide-react'
+import { ArrowDownUp, Network, Plus, ArrowLeft } from 'lucide-react'
 import {
   type RelationWeb, TEMPLATE_CONFIG,
 } from '../components/relations/relationsShared'
@@ -9,6 +9,9 @@ import RelationsCanvasView from '../components/relations/RelationsCanvasView'
 import { NewWebModal, EditWebModal } from '../components/relations/relationsModals'
 import { WebMenu } from '../components/relations/relationsPanels'
 import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
+import { useLocalPref } from '../hooks/useLocalPref'
+import { toolbarPillStyle } from '../components/wiki/WikiToolbar'
+import { SECTION_ACCENTS } from '../constants/sections'
 import { buildLocationMenu, truncate } from '../utils/contextMenus'
 
 // ── Hub View ───────────────────────────────────────────────────────────────────
@@ -20,6 +23,14 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
   const [editWeb, setEditWeb] = useState<RelationWeb | null>(null)
   const showMenu = useContextMenu()
   const menuCtx = useMenuCtx()
+  // Same switch the wiki grid has. 'recent' is the backend's own order
+  // (relation-webs:get-all sorts by updated_at DESC), so it costs nothing and
+  // stays the default — nothing moves until asked.
+  const [sort, setSort] = useLocalPref<'recent' | 'az'>('relations-list-sort', 'recent')
+
+  const shownWebs = useMemo(() =>
+    sort === 'az' ? [...webs].sort((a, b) => a.name.localeCompare(b.name)) : webs,
+    [webs, sort])
 
   const deleteWeb = async (web: RelationWeb) => {
     await (window as any).api.deleteRelationWeb(web.id)
@@ -52,7 +63,7 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
             >
               <ArrowLeft size={14} /> Back
             </button>
-            <Network size={22} color='#7F77DD' />
+            <Network size={22} color={SECTION_ACCENTS['relations']} />
             <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, letterSpacing: '0.03em', color: 'var(--text-primary)', margin: 0 }}>Relations</h1>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{webs.length} web{webs.length !== 1 ? 's' : ''}</span>
           </div>
@@ -60,7 +71,17 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
             <Plus size={15} /> New web
           </button>
         </div>
-        <div style={{ height: 14 }} />
+        {/* Toolbar row — mirrors the wiki grid's, which is where this lives there. */}
+        <div style={{ display: 'flex', alignItems: 'center', minHeight: 28, paddingBottom: 8 }}>
+          <div style={{ marginLeft: 'auto' }}>
+            {webs.length > 1 && <button
+              onClick={() => setSort(sort === 'az' ? 'recent' : 'az')}
+              title="Switch between alphabetical and most-recently-updated order"
+              style={toolbarPillStyle(sort === 'az', SECTION_ACCENTS['relations'])}>
+              <ArrowDownUp size={11} /> {sort === 'az' ? 'A – Z' : 'Recently updated'}
+            </button>}
+          </div>
+        </div>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
@@ -71,7 +92,7 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-            {webs.map(web => (
+            {shownWebs.map(web => (
               <div key={web.id}
                 style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '16px 18px', cursor: 'pointer', transition: 'border-color var(--transition)', position: 'relative', '--hover-accent': 'var(--border-gold)' } as React.CSSProperties}
                 onClick={() => onOpenWeb(web)}
@@ -182,6 +203,18 @@ export default function RelationsPage() {
       : (setLoading(false), settledRef.current = true)
   }, [])
 
+  // Follow a ghosted branch home: swap this tab to the web it came from,
+  // centred on the same person. The canvas is keyed by web id, so it remounts.
+  const openWebById = useCallback(async (id: number, focus: number | null) => {
+    const { currentCampaign } = useStore.getState()
+    if (!currentCampaign) return
+    const webs: RelationWeb[] = await (window as any).api.getRelationWebs(currentCampaign.id)
+    const target = webs.find(w => w.id === id)
+    if (!target) return
+    setFocusArticleId(focus)
+    setOpenWeb(target)
+  }, [])
+
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 14 }}>
       Loading…
@@ -189,7 +222,15 @@ export default function RelationsPage() {
   )
 
   if (openWeb) {
-    return <RelationsCanvasView key={openWeb.id} web={openWeb} focusArticleId={focusArticleId} onBack={() => { setOpenWeb(null); setFocusArticleId(null) }} />
+    return (
+      <RelationsCanvasView
+        key={openWeb.id}
+        web={openWeb}
+        focusArticleId={focusArticleId}
+        onBack={() => { setOpenWeb(null); setFocusArticleId(null) }}
+        onOpenWeb={openWebById}
+      />
+    )
   }
 
   return <RelationsHubView onOpenWeb={web => { setFocusArticleId(null); setOpenWeb(web) }} />

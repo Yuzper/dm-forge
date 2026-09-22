@@ -1,12 +1,14 @@
 // path: src/pages/SoundboardPage.tsx
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import type { ReactNode } from 'react'
 import { useStore } from '../store/store'
 import {
   Music2, Plus, Trash2, ArrowLeft, Pencil, Check, X, FolderOpen,
-  Volume2, Repeat, Link2, Play, Square, Search, Library, ListPlus,
+  Volume2, Repeat, Link2, Play, Square, Search, Library, ListPlus, GripVertical,
 } from 'lucide-react'
 import type { SoundBoard, Sound, SoundCategory, SoundLibraryEntry, Session } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
+import { reorder, useDragReorder, type DragReorderRowProps } from '../hooks/useDragReorder'
 import Modal from '../components/Modal'
 import DropdownPortal from '../components/DropdownPortal'
 import {
@@ -316,12 +318,15 @@ function AddToBoardButton({ entry, boards, onAdded, compact }: {
 
 // ── Library row ────────────────────────────────────────────────────────────────
 
-function LibraryRow({ entry, boards, onEdit, onDelete, onAddedToBoard }: {
+function LibraryRow({ entry, boards, onEdit, onDelete, onAddedToBoard, drag, dragging, dropLine }: {
   entry: SoundLibraryEntry
   boards: SoundBoard[]
   onEdit: () => void
   onDelete: () => void
   onAddedToBoard: () => void
+  drag?: DragReorderRowProps
+  dragging?: boolean
+  dropLine?: 'before' | 'after' | null
 }) {
   const { confirming, trigger } = useConfirmDelete()
   const bumpSoundsVersion = useStore(s => s.bumpSoundsVersion)
@@ -330,10 +335,16 @@ function LibraryRow({ entry, boards, onEdit, onDelete, onAddedToBoard }: {
 
   return (
     <div
+      {...drag}
       style={{
         display: 'flex', alignItems: 'center', gap: 7,
         padding: '5px 8px', borderBottom: '1px solid var(--border)',
-        transition: 'background 120ms ease',
+        transition: 'background 120ms ease, opacity 120ms ease',
+        cursor: drag?.draggable ? 'grab' : undefined,
+        opacity: dragging ? 0.4 : 1,
+        boxShadow: dropLine === 'before' ? 'inset 0 2px 0 var(--gold)'
+          : dropLine === 'after' ? 'inset 0 -2px 0 var(--gold)'
+          : undefined,
       }}
       className="hover-bg"
       onContextMenu={e => showMenu(e, buildSoundMenu(entry, {
@@ -348,6 +359,9 @@ function LibraryRow({ entry, boards, onEdit, onDelete, onAddedToBoard }: {
         deleteLabel: `Remove “${truncate(entry.name)}” from the library`,
       }))}
     >
+      {drag?.draggable && (
+        <GripVertical size={11} color="var(--text-muted)" style={{ flexShrink: 0, marginLeft: -3, marginRight: -3 }} />
+      )}
       <PreviewButton filePath={entry.file_path} loop={!!entry.loop} volume={entry.volume ?? 1} color={color} size={22} />
 
       <span style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -380,6 +394,44 @@ function LibraryRow({ entry, boards, onEdit, onDelete, onAddedToBoard }: {
       >
         <Trash2 size={12} />
       </button>
+    </div>
+  )
+}
+
+// One category column's rows. A component rather than inline JSX so each column
+// owns its own drag state — three hooks in a fixed order, instead of one hook
+// called from inside a .map().
+function LibraryColumnRows({
+  entries, boards, reorderable, onReorder, onEdit, onDelete, onAddedToBoard, empty,
+}: {
+  entries: SoundLibraryEntry[]
+  boards: SoundBoard[]
+  reorderable: boolean
+  onReorder: (from: number, to: number) => void
+  onEdit: (entry: SoundLibraryEntry) => void
+  onDelete: (id: number) => void
+  onAddedToBoard: () => void
+  empty: ReactNode
+}) {
+  const dnd = useDragReorder(onReorder, { enabled: reorderable })
+
+  return (
+    <div style={{ flex: 1, overflow: 'auto' }} {...dnd.tailProps(entries.length)}>
+      {entries.length === 0 ? empty : entries.map((e, i) => (
+        <LibraryRow
+          key={e.id}
+          entry={e}
+          boards={boards}
+          drag={dnd.rowProps(i)}
+          dragging={dnd.dragIndex === i}
+          dropLine={dnd.isDropBefore(i) ? 'before'
+            : (i === entries.length - 1 && dnd.isDropAtEnd(entries.length)) ? 'after'
+            : null}
+          onEdit={() => onEdit(e)}
+          onDelete={() => onDelete(e.id)}
+          onAddedToBoard={onAddedToBoard}
+        />
+      ))}
     </div>
   )
 }
@@ -429,6 +481,21 @@ function SoundLibraryPanel({ boards, entries, setEntries, onBoardsChanged }: {
   }
 
   const filtered = entries.filter(e => matches(search, e.name, basename(e.file_path)))
+
+  // The shelf is one flat table split across three columns, so a drag only ever
+  // moves an entry inside its own category. Drop the reordered category back
+  // into the full list at the slots it already occupied and renumber once, so
+  // the other two columns keep the sort_orders they had.
+  const reorderWithin = (cat: SoundCategory) => (from: number, to: number) => {
+    const moved = reorder(entries.filter(e => e.category === cat), from, to)
+    let i = 0
+    const next = entries
+      .map(e => e.category === cat ? moved[i++] : e)
+      .map((e, idx) => ({ ...e, sort_order: idx }))
+    setEntries(next)
+    void window.api.reorderLibrarySounds(next.map(e => ({ id: e.id, sort_order: e.sort_order })))
+    bumpSoundsVersion()
+  }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -507,8 +574,15 @@ function SoundLibraryPanel({ boards, entries, setEntries, onBoardsChanged }: {
               </div>
 
               {/* Rows */}
-              <div style={{ flex: 1, overflow: 'auto' }}>
-                {catEntries.length === 0 ? (
+              <LibraryColumnRows
+                entries={catEntries}
+                boards={boards}
+                reorderable={!search}
+                onReorder={reorderWithin(cat.value)}
+                onEdit={setEditing}
+                onDelete={remove}
+                onAddedToBoard={onBoardsChanged}
+                empty={
                   <div style={{
                     padding: '28px 14px', textAlign: 'center', fontSize: 12,
                     color: 'var(--text-muted)', lineHeight: 1.6, fontStyle: 'italic',
@@ -526,17 +600,8 @@ function SoundLibraryPanel({ boards, entries, setEntries, onBoardsChanged }: {
                       </>
                     )}
                   </div>
-                ) : catEntries.map(e => (
-                  <LibraryRow
-                    key={e.id}
-                    entry={e}
-                    boards={boards}
-                    onEdit={() => setEditing(e)}
-                    onDelete={() => remove(e.id)}
-                    onAddedToBoard={onBoardsChanged}
-                  />
-                ))}
-              </div>
+                }
+              />
             </div>
           )
         })}
@@ -667,22 +732,36 @@ function LibraryPickerModal({ entries, existingPaths, onAdd, onClose }: {
 
 // ── Board sound row ────────────────────────────────────────────────────────────
 
-function SoundRow({ sound, onEdit, onDelete }: {
+// The grid template is shared with the column header above the list, so both
+// gain the same leading grip column.
+const SOUND_ROW_COLUMNS = '14px auto 1fr 90px 1fr 72px auto'
+
+function SoundRow({ sound, onEdit, onDelete, drag, dragging, dropLine }: {
   sound: Sound
   onEdit: () => void
   onDelete: () => void
+  drag?: DragReorderRowProps
+  dragging?: boolean
+  dropLine?: 'before' | 'after' | null
 }) {
   const { confirming, trigger } = useConfirmDelete()
   const showMenu = useContextMenu()
   const color = categoryColor(sound.category)
 
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: 'auto 1fr 90px 1fr 72px auto',
-      gap: 8, padding: '7px 12px', alignItems: 'center',
-      borderBottom: '1px solid var(--border)',
-      transition: 'background 120ms ease',
-    }}
+    <div
+      {...drag}
+      style={{
+        display: 'grid', gridTemplateColumns: SOUND_ROW_COLUMNS,
+        gap: 8, padding: '7px 12px', alignItems: 'center',
+        borderBottom: '1px solid var(--border)',
+        transition: 'background 120ms ease, opacity 120ms ease',
+        cursor: drag?.draggable ? 'grab' : undefined,
+        opacity: dragging ? 0.4 : 1,
+        boxShadow: dropLine === 'before' ? 'inset 0 2px 0 var(--gold)'
+          : dropLine === 'after' ? 'inset 0 -2px 0 var(--gold)'
+          : undefined,
+      }}
       className="hover-bg"
       onContextMenu={e => showMenu(e, buildSoundMenu(sound, {
         edit: onEdit,
@@ -690,6 +769,9 @@ function SoundRow({ sound, onEdit, onDelete }: {
         deleteLabel: `Remove “${truncate(sound.name)}” from this board`,
       }))}
     >
+      {drag?.draggable
+        ? <GripVertical size={12} color="var(--text-muted)" />
+        : <span />}
       <PreviewButton filePath={sound.file_path} loop={!!sound.loop} volume={sound.volume ?? 1} color={color} />
 
       <span style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
@@ -825,6 +907,19 @@ function BoardPanel({ board, library, onSoundsChanged }: {
   }
 
   const filtered = sounds.filter(s => matches(search, s.name, basename(s.file_path)))
+
+  // Board order is what the floating widget lays its pads out in, so this is
+  // how the three tracks you actually cue tonight get to sit at the top.
+  const reorderSounds = (from: number, to: number) => {
+    const next = reorder(sounds, from, to).map((s, i) => ({ ...s, sort_order: i }))
+    setSounds(next)
+    void window.api.reorderSounds(next.map(s => ({ id: s.id, sort_order: s.sort_order })))
+    bumpSoundsVersion()
+  }
+
+  // A filtered list has holes in it, so "drop below this row" would mean
+  // something different from what you see. Searching parks the handles.
+  const dnd = useDragReorder(reorderSounds, { enabled: !search })
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -962,18 +1057,18 @@ function BoardPanel({ board, library, onSoundsChanged }: {
 
       {/* Column headers */}
       <div style={{
-        display: 'grid', gridTemplateColumns: 'auto 1fr 90px 1fr 72px auto',
+        display: 'grid', gridTemplateColumns: SOUND_ROW_COLUMNS,
         gap: 8, padding: '6px 12px',
         background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)',
         flexShrink: 0,
       }}>
-        {[<span key="p" style={{ width: 26, display: 'inline-block' }} />, 'NAME', 'CATEGORY', 'FILE', 'HOTKEY', ''].map((h, i) => (
+        {[<span key="g" />, <span key="p" style={{ width: 26, display: 'inline-block' }} />, 'NAME', 'CATEGORY', 'FILE', 'HOTKEY', ''].map((h, i) => (
           <span key={i} style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '1.2px', fontWeight: 600 }}>{h}</span>
         ))}
       </div>
 
       {/* Sounds list */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div style={{ flex: 1, overflow: 'auto' }} {...dnd.tailProps(filtered.length)}>
         {sounds.length === 0 ? (
           <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
             No sounds on this board yet.{' '}
@@ -988,10 +1083,15 @@ function BoardPanel({ board, library, onSoundsChanged }: {
           <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, fontStyle: 'italic' }}>
             No sounds match “{search}”
           </div>
-        ) : filtered.map(s => (
+        ) : filtered.map((s, i) => (
           <SoundRow
             key={s.id}
             sound={s}
+            drag={dnd.rowProps(i)}
+            dragging={dnd.dragIndex === i}
+            dropLine={dnd.isDropBefore(i) ? 'before'
+              : (i === filtered.length - 1 && dnd.isDropAtEnd(filtered.length)) ? 'after'
+              : null}
             onEdit={() => setEditingSound(s)}
             onDelete={() => handleSoundDelete(s.id)}
           />

@@ -8,6 +8,7 @@ import { extractDescription, type HubLink } from '../../utils/hubLinks'
 import { getPoiIcon } from '../../constants/POITypes'
 import SwatchPicker from '../SwatchPicker'
 import MapFeatureEditModal from './MapFeatureEditModal'
+import AudienceControl from '../AudienceControl'
 
 // World-map pins carry their own size. The floor is the diameter below which a
 // type glyph stops reading, so smaller pins render as plain dots instead. Pins
@@ -53,6 +54,7 @@ export default function POIEditModal({
       initialLinks={links}
       sessions={sessions}
       articles={articles}
+      audience={<AudienceControl entityType="poi" entityId={poi.id} />}
       onClose={onClose}
       onDelete={onDelete}
       onSave={({ name, description, links: edited }) => onSave({

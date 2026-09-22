@@ -20,6 +20,11 @@ import {
 const CLOSE_HIT_PX = 12
 // Movement past this (screen px) turns a click into a drag.
 const DRAG_THRESHOLD_PX = 3
+// How many previous geometries to keep for Ctrl+Z. Two is what was asked for:
+// enough to take back an accidental drag (and the one before it), not a full
+// history. The stack lives in memory — it is a working undo, not a revision log,
+// so it starts empty on each visit to a map.
+const UNDO_DEPTH = 2
 
 export interface UseShapeDrawingArgs {
   mapId: number | null
@@ -236,8 +241,43 @@ export function useShapeDrawing({
 
   const persistPoints = useCallback(async (id: number, points: ShapePoint[]) => {
     const updated = await window.api.updateMapShape(id, { points: serializePoints(points) })
+    // Gone from under us (deleted in another pane) — nothing to write back.
+    if (!updated) { setLivePoints(null); return }
     setShapes(prev => prev.map(s => s.id === updated.id ? updated : s))
     setLivePoints(null)
+  }, [setShapes])
+
+  // ── Undo ────────────────────────────────────────────────────────────────────
+  // Every geometry change — body drag, vertex drag, inserting or dropping a
+  // corner — goes through persistPoints, so recording the *previous* points just
+  // before each one gives Ctrl+Z for free. Entries are (shape, points) pairs
+  // rather than per-shape slots: undo should take back the last thing you did,
+  // which is what you expect after nudging the wrong region.
+  const undoStackRef = useRef<{ id: number; points: ShapePoint[] }[]>([])
+  const [canUndo, setCanUndo] = useState(false)
+
+  const pushUndo = useCallback((id: number, previous: ShapePoint[]) => {
+    undoStackRef.current = [...undoStackRef.current, { id, points: previous }].slice(-UNDO_DEPTH)
+    setCanUndo(true)
+  }, [])
+
+  // Positions belong to the map they were measured on.
+  useEffect(() => {
+    undoStackRef.current = []
+    setCanUndo(false)
+  }, [mapId])
+
+  const undoLastEdit = useCallback(async () => {
+    const entry = undoStackRef.current.pop()
+    setCanUndo(undoStackRef.current.length > 0)
+    if (!entry) return
+    // Restoring is not itself undoable: with a depth of two, a redo that ate a
+    // slot would leave you unable to step back twice.
+    const updated = await window.api.updateMapShape(entry.id, { points: serializePoints(entry.points) })
+    if (!updated) return                                  // shape deleted since
+    setShapes(prev => prev.map(s => s.id === updated.id ? updated : s))
+    setLivePoints(null)
+    setSelectedId(entry.id)
   }, [setShapes])
 
   // Shared scaffolding for the three drag gestures: track from a start point,
@@ -250,6 +290,10 @@ export function useShapeDrawing({
     // Write even if the pointer never moved — used when the gesture itself
     // already changed the geometry (inserting a vertex from a midpoint handle).
     alwaysPersist = false,
+    // What undo should restore. Defaults to where the drag started, but the
+    // midpoint gesture begins from an already-modified array, so it passes the
+    // untouched polygon instead.
+    before: ShapePoint[] = startPoints,
   ) => {
     e.preventDefault()
     e.stopPropagation()
@@ -277,6 +321,7 @@ export function useShapeDrawing({
       cleanupRef.current = null
       if (moved || alwaysPersist) {
         if (moved) suppressClickRef.current = true
+        pushUndo(shape.id, before)
         void persistPoints(shape.id, latest)
       } else {
         setLivePoints(null)
@@ -289,7 +334,7 @@ export function useShapeDrawing({
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [persistPoints])
+  }, [persistPoints, pushUndo])
 
   const onVertexDown = useCallback((shape: MapShape, index: number, e: React.MouseEvent) => {
     if (!editing) return
@@ -314,7 +359,8 @@ export function useShapeDrawing({
     // happens on mouseup even for a plain click, since the point exists either way.
     setLivePoints({ id: shape.id, points: inserted })
     beginPointDrag(shape, e, inserted, (pts, _from, to) =>
-      pts.map((p, i) => i === newIndex ? { x: clampPercent(to.x), y: clampPercent(to.y) } : p), true)
+      pts.map((p, i) => i === newIndex ? { x: clampPercent(to.x), y: clampPercent(to.y) } : p),
+      true, original)
   }, [editing, beginPointDrag])
 
   const onBodyDown = useCallback((shape: MapShape, e: React.MouseEvent) => {
@@ -339,8 +385,9 @@ export function useShapeDrawing({
     const points = parsePoints(shape.points)
     // A polygon needs three corners; refuse rather than silently degrade it.
     if (points.length <= MIN_POLYGON_POINTS) return
+    pushUndo(shape.id, points)
     await persistPoints(shape.id, points.filter((_, i) => i !== index))
-  }, [persistPoints])
+  }, [persistPoints, pushUndo])
 
   const onVertexContextMenu = useCallback((shape: MapShape, index: number, e: React.MouseEvent) => {
     if (!editing) return
@@ -389,11 +436,22 @@ export function useShapeDrawing({
       }
       if (e.key === 'Delete' && selectedId != null) {
         void deleteShape(selectedId); e.preventDefault()
+        return
+      }
+
+      // Ctrl+Z puts a shape back where it was. Only the surface that recorded
+      // the edit has a stack, so in a split view the chord lands on the map you
+      // actually dragged in — and with nothing recorded it stays unhandled
+      // rather than swallowing the key.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        if (undoStackRef.current.length === 0) return
+        e.preventDefault()
+        void undoLastEdit()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [enabled, tool, selectedId, closePolygon, deleteShape, onToolFinished])
+  }, [enabled, tool, selectedId, closePolygon, deleteShape, onToolFinished, undoLastEdit])
 
   return {
     /** The active shape primitive, or null when the host's tool isn't one. */
@@ -411,6 +469,9 @@ export function useShapeDrawing({
     onVertexDown, onMidpointDown, onBodyDown, onVertexContextMenu,
     /** Drop a corner. Exposed so the host can offer it as a menu item. */
     removeVertex,
+    /** Ctrl+Z is wired here; hosts can also offer it as a button or menu item. */
+    undoLastEdit,
+    canUndo,
     consumeSuppressedClick,
     deleteShape,
     cancelDraft,

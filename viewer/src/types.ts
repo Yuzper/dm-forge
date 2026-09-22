@@ -12,6 +12,10 @@ export interface PArticle {
   milestones?: { label: string; date: string }[]    // visible subtracks
   statblock?: string              // present only for the player's own PC
   updated_at: string
+  // Fingerprint of everything above, as this player receives it. Drives the
+  // "since your last visit" diff; absent in bundles published before format 2,
+  // where the code falls back to updated_at.
+  hash?: string
 }
 
 export interface PPoi {

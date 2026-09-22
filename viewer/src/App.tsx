@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bundle, SiteInfo, PArticle, EncryptedBundle } from './types'
 import { bundleFileName, decryptBundle } from './crypto'
-import TipTapRenderer from './TipTapRenderer'
+import PlayerContent from '../../shared/PlayerContent'
 import GraphView from './GraphView'
 import MapView from './MapView'
 import StatBlock from './StatBlock'
@@ -88,39 +88,75 @@ function Wiki({ site, bundle, onLogout }: { site: SiteInfo | null; bundle: Bundl
     [articles],
   )
 
-  // ── What's new since last login ─────────────────────────────────────────────
-  // Compare this bundle's {id: updated_at} against the snapshot from last visit
-  // (localStorage, per player). New = newly shared; Updated = content changed;
-  // removed pages are silently dropped. First visit just sets the baseline.
+  // ── What's new since last login ─────────────────────────────
+  // Compare this bundle's {id: hash} against the snapshot from last visit
+  // (localStorage, per player). New = newly shared; Updated = the page changed
+  // *for this player*; removed pages are silently dropped.
+  //
+  // The fingerprint is the bundle's content hash, not updated_at: editing a
+  // DM-only paragraph bumps updated_at without changing anything the player can
+  // see, and flagging that as "Updated" teaches them to ignore the panel.
+  //
+  // The baseline is only written once the summary has been dismissed. Writing it
+  // on mount, as this used to, meant a page refresh silently destroyed the list
+  // before it had been read.
   const [changes, setChanges] = useState<{ added: PArticle[]; updated: PArticle[] } | null>(null)
   const [changesDismissed, setChangesDismissed] = useState(false)
+  const seenKey = `seen:${bundle.player.username.toLowerCase().trim()}`
   const ran = useRef(false)
+
+  const commitSeen = () => {
+    const snap: Record<string, string> = {}
+    for (const a of articles) snap[String(a.id)] = a.hash ?? a.updated_at
+    try { localStorage.setItem(seenKey, JSON.stringify(snap)) } catch { /* private mode */ }
+  }
+
   useEffect(() => {
     if (ran.current) return
     ran.current = true
-    const key = `seen:${bundle.player.username.toLowerCase().trim()}`
     let prev: Record<string, string> = {}
-    try { prev = JSON.parse(localStorage.getItem(key) || '{}') } catch {}
-    const firstVisit = Object.keys(prev).length === 0
-    if (!firstVisit) {
-      const added: PArticle[] = [], updated: PArticle[] = []
-      for (const a of articles) {
-        if (!(String(a.id) in prev)) added.push(a)
-        else if (prev[String(a.id)] !== a.updated_at) updated.push(a)
-      }
-      if (added.length || updated.length) setChanges({ added, updated })
+    try { prev = JSON.parse(localStorage.getItem(seenKey) || '{}') } catch { /* private mode */ }
+    if (Object.keys(prev).length === 0) { commitSeen(); return } // first visit — baseline only
+    const added: PArticle[] = [], updated: PArticle[] = []
+    for (const a of articles) {
+      const fingerprint = a.hash ?? a.updated_at
+      if (!(String(a.id) in prev)) added.push(a)
+      else if (prev[String(a.id)] !== fingerprint) updated.push(a)
     }
-    const snap: Record<string, string> = {}
-    for (const a of articles) snap[String(a.id)] = a.updated_at
-    localStorage.setItem(key, JSON.stringify(snap))
+    if (added.length || updated.length) setChanges({ added, updated })
+    else commitSeen()
   }, [])
+
+  const dismissChanges = () => { commitSeen(); setChangesDismissed(true) }
+
+  // Plain text of each article's body, built once and reused, so search reaches
+  // the prose and not just titles and tags. Derived from the redacted content
+  // already in the bundle — nothing extra is shipped, and a DM-only passage is
+  // as unsearchable as it is unreadable.
+  const plainText = useMemo(() => {
+    const map = new Map<number, string>()
+    const walk = (node: any, out: string[]) => {
+      if (!node || typeof node !== 'object') return
+      if (typeof node.text === 'string') out.push(node.text)
+      if (Array.isArray(node.content)) for (const c of node.content) walk(c, out)
+    }
+    for (const a of articles) {
+      const out: string[] = []
+      try { walk(JSON.parse(a.content), out) } catch { /* unparseable — title search still works */ }
+      map.set(a.id, out.join(' ').toLowerCase())
+    }
+    return map
+  }, [articles])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     let list = typeFilter === 'all' ? articles : articles.filter(a => a.article_type === typeFilter)
-    if (q) list = list.filter(a => a.title.toLowerCase().includes(q) || a.tags.some(t => t.includes(q)))
+    if (q) list = list.filter(a =>
+      a.title.toLowerCase().includes(q) ||
+      a.tags.some(t => t.includes(q)) ||
+      (plainText.get(a.id) ?? '').includes(q))
     return [...list].sort((a, b) => a.title.localeCompare(b.title))
-  }, [articles, search, typeFilter])
+  }, [articles, search, typeFilter, plainText])
 
   const selected = selectedId != null ? byId.get(selectedId) ?? null : null
   const open = (id: number) => { setSelectedId(id); setPane('article') }
@@ -183,7 +219,7 @@ function Wiki({ site, bundle, onLogout }: { site: SiteInfo | null; bundle: Bundl
       </aside>
 
       <main className="content">
-        {showChanges && <WhatsNew changes={changes!} onOpen={open} onDismiss={() => setChangesDismissed(true)} />}
+        {showChanges && <WhatsNew changes={changes!} onOpen={open} onDismiss={dismissChanges} />}
         {pane === 'graph'
           ? <GraphView bundle={bundle} selectedId={selectedId} onOpen={open} />
           : pane === 'map'
@@ -267,7 +303,7 @@ function ArticleView({ article, bundle, onOpenTitle }: {
           </div>
         )}
 
-        <TipTapRenderer json={article.content} onWikiLink={onOpenTitle} />
+        <PlayerContent json={article.content} onWikiLink={onOpenTitle} />
 
         {article.statblock && <StatBlock json={article.statblock} />}
 

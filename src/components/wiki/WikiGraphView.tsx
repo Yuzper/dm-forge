@@ -10,7 +10,7 @@ import ReactFlow, { Background, BackgroundVariant, Controls, Handle, Position, N
 // @ts-ignore
 import 'reactflow/dist/style.css'
 import { forceSimulation, forceLink, forceManyBody, forceX, forceY, forceCollide } from 'd3-force'
-import { Network, X, LayoutGrid, Unlink, Sparkles, Plus, Minus, Clock, Target, SlidersHorizontal, RotateCcw } from 'lucide-react'
+import { Network, X, LayoutGrid, Unlink, Plus, Minus, Clock, Target, SlidersHorizontal, RotateCcw } from 'lucide-react'
 import type { LinkGraph, ArticleType } from '../../types'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
 import {
@@ -37,7 +37,6 @@ interface LayoutNode {
 
 const nodeRadius = (degree: number) => 7 + Math.min(11, degree * 1.5)
 const GHOST_COLOR = '#8a7a5a'    // muted warm gray for broken-link placeholders
-const MENTION_COLOR = '#3fa89b'  // teal for unlinked-mention suggestions
 const RECENCY_COLOR = '#ff952b'  // hot amber — the fresh end of the recency ramp
 
 // ── Force-layout tuning ──────────────────────────────────────────────────────────
@@ -178,7 +177,7 @@ function WikiGraphNode({ data }: NodeProps<GraphNodeData>) {
 
 const GRAPH_NODE_TYPES = { wikiNode: WikiGraphNode }
 
-type EdgeKind = 'real' | 'ghost' | 'mention'
+type EdgeKind = 'real' | 'ghost'
 
 // How loudly an edge is drawn:
 //   normal — resting state
@@ -190,7 +189,7 @@ type EdgeKind = 'real' | 'ghost' | 'mention'
 type EdgeEmphasis = 'normal' | 'hot' | 'match'
 
 // Each kind glows in its own color so emphasis never costs an edge its meaning
-// (a highlighted broken link is still tan, a highlighted suggestion still teal).
+// (a highlighted broken link is still tan).
 const glowFor = (color: string) => `drop-shadow(0 0 3px color-mix(in srgb, ${color} 55%, transparent))`
 
 // An SVG filter per edge is not free. A half-typed query ("e" on the way to
@@ -207,12 +206,6 @@ function edgeStyle(kind: EdgeKind, dim: boolean, emphasis: EdgeEmphasis, glow = 
     ...base, stroke: GHOST_COLOR, strokeWidth: match ? 1.75 : 1,
     strokeDasharray: '4 3', opacity: dim ? 0.05 : match ? 1 : hot ? 0.75 : 0.35,
     filter: lit ? glowFor(GHOST_COLOR) : undefined,
-  }
-  if (kind === 'mention') return {
-    ...base, stroke: MENTION_COLOR, strokeWidth: match ? 1.75 : 1,
-    strokeDasharray: '1 4', strokeLinecap: 'round',
-    opacity: dim ? 0.05 : match ? 1 : hot ? 0.85 : 0.4,
-    filter: lit ? glowFor(MENTION_COLOR) : undefined,
   }
   return {
     ...base, stroke: hot || match ? 'var(--gold)' : 'var(--border-light)',
@@ -323,13 +316,11 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
   const [searchFields, setSearchFields] = useState<SearchFields>(loadSearchFields)
   useEffect(() => { localStorage.setItem(SEARCH_FIELDS_KEY, JSON.stringify(searchFields)) }, [searchFields])
   const [hoverId, setHoverId] = useState<number | null>(null)
-  // Overlays: ghost nodes for broken links (on), unlinked-mention suggestions
-  // (off — can be noisy), and an orphan-only focus toggle (transient).
+  // Overlays: ghost nodes for broken links (on) and an orphan-only focus
+  // toggle (transient).
   const [showGhosts, setShowGhosts] = useState(() => localStorage.getItem('wiki-graph-ghosts') !== 'off')
-  const [showMentions, setShowMentions] = useState(() => localStorage.getItem('wiki-graph-mentions') === 'on')
   const [orphanOnly, setOrphanOnly] = useState(false)
   const toggleGhosts = () => setShowGhosts(v => { localStorage.setItem('wiki-graph-ghosts', v ? 'off' : 'on'); return !v })
-  const toggleMentions = () => setShowMentions(v => { localStorage.setItem('wiki-graph-mentions', v ? 'off' : 'on'); return !v })
   // Recency lens: recolor nodes by last-edited age instead of by article type.
   const [recencyOn, setRecencyOn] = useState(() => localStorage.getItem('wiki-graph-recency') === 'on')
   const toggleRecency = () => setRecencyOn(v => { localStorage.setItem('wiki-graph-recency', v ? 'off' : 'on'); return !v })
@@ -374,14 +365,10 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
     return () => { cancelled = true }
   }, [currentCampaign?.id, reloadNonce])
 
-  // Visible article ids (after type exclusion) — mentions are filtered to these.
+  // Visible article ids (after type exclusion).
   const visibleIds = useMemo(
     () => new Set((graph?.nodes ?? []).filter(n => !excludedTypes.has(n.article_type)).map(n => n.id)),
     [graph, excludedTypes],
-  )
-  const visibleMentions = useMemo(
-    () => (graph?.mentions ?? []).filter(e => visibleIds.has(e.from) && visibleIds.has(e.to)),
-    [graph, visibleIds],
   )
 
   // Run the force layout. Re-runs when type exclusion or the ghost toggle change
@@ -435,8 +422,8 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
     setLoaded(true)
   }, [graph, excludedTypes, showGhosts, force])
 
-  // Adjacency for hover highlighting — spans real, ghost, and (when shown)
-  // mention edges so hovering any node lights everything connected to it.
+  // Adjacency for hover highlighting — spans real and ghost edges so hovering
+  // any node lights everything connected to it.
   const neighbors = useMemo(() => {
     const m = new Map<number, Set<number>>()
     const add = (a: number, b: number) => {
@@ -446,9 +433,8 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
     }
     for (const e of links) add(e.from, e.to)
     for (const e of ghostLinks) add(e.from, e.to)
-    if (showMentions) for (const e of visibleMentions) add(e.from, e.to)
     return m
-  }, [links, ghostLinks, showMentions, visibleMentions])
+  }, [links, ghostLinks])
 
   // Percentile rank (0 = stalest, 1 = freshest) of each article's last edit
   // among the currently visible ones — drives the recency lens.
@@ -545,9 +531,8 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
     setRfEdges([
       ...links.map((e, i) => mk(e, i, 'real')),
       ...ghostLinks.map((e, i) => mk(e, i, 'ghost')),
-      ...(showMentions ? visibleMentions.map((e, i) => mk(e, i, 'mention')) : []),
     ])
-  }, [layout, links, ghostLinks, showMentions, visibleMentions, recencyOn, recencyRank])
+  }, [layout, links, ghostLinks, recencyOn, recencyRank])
 
   useEffect(() => {
     const q = search.trim().toLowerCase()
@@ -677,27 +662,16 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
           />
           <ToolbarDivider />
           <WikiTypeFilters excluded={excludedTypes} value={typeFilter} onChange={setTypeFilter} />
-          {(ghostCount > 0 || visibleMentions.length > 0 || showMentions) && (
+          {ghostCount > 0 && (
             <>
               <ToolbarDivider />
-              {ghostCount > 0 && (
-                <button
-                  onClick={toggleGhosts}
-                  title="Show placeholder nodes for [[links]] pointing at articles that don't exist yet"
-                  style={toolbarPillStyle(showGhosts, GHOST_COLOR)}>
-                  <Unlink size={11} /> Broken links
-                  <span style={pillCountStyle(GHOST_COLOR)}>{ghostCount}</span>
-                </button>
-              )}
-              {(visibleMentions.length > 0 || showMentions) && (
-                <button
-                  onClick={toggleMentions}
-                  title="Suggest connections: article titles mentioned in prose but not yet linked"
-                  style={toolbarPillStyle(showMentions, MENTION_COLOR)}>
-                  <Sparkles size={11} /> Suggestions
-                  {visibleMentions.length > 0 && <span style={pillCountStyle(MENTION_COLOR)}>{visibleMentions.length}</span>}
-                </button>
-              )}
+              <button
+                onClick={toggleGhosts}
+                title="Show placeholder nodes for [[links]] pointing at articles that don't exist yet"
+                style={toolbarPillStyle(showGhosts, GHOST_COLOR)}>
+                <Unlink size={11} /> Broken links
+                <span style={pillCountStyle(GHOST_COLOR)}>{ghostCount}</span>
+              </button>
             </>
           )}
           {articleNodes.length > 0 && (
@@ -836,7 +810,7 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
         })()}
 
         {/* Legend — only for the overlays whose meaning isn't obvious */}
-        {loaded && ((showGhosts && ghostCount > 0) || (showMentions && visibleMentions.length > 0) || (recencyOn && recencyRank.size > 0)) && (
+        {loaded && ((showGhosts && ghostCount > 0) || (recencyOn && recencyRank.size > 0)) && (
           <div style={{ position: 'absolute', left: 12, bottom: 12, display: 'flex', flexDirection: 'column', gap: 5, background: 'color-mix(in srgb, var(--bg-elevated) 92%, transparent)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', pointerEvents: 'none' }}>
             {recencyOn && recencyRank.size > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, color: 'var(--text-muted)' }}>
@@ -848,12 +822,6 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, color: 'var(--text-muted)' }}>
                 <svg width="26" height="12"><circle cx="6" cy="6" r="5" fill="none" stroke={GHOST_COLOR} strokeWidth="1.5" strokeDasharray="3 2" /><line x1="12" y1="6" x2="26" y2="6" stroke={GHOST_COLOR} strokeWidth="1" strokeDasharray="4 3" /></svg>
                 Broken link — article doesn't exist (click to create)
-              </div>
-            )}
-            {showMentions && visibleMentions.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, color: 'var(--text-muted)' }}>
-                <svg width="26" height="12"><line x1="0" y1="6" x2="26" y2="6" stroke={MENTION_COLOR} strokeWidth="1.5" strokeDasharray="1 4" strokeLinecap="round" /></svg>
-                Mentioned in text but not linked
               </div>
             )}
           </div>

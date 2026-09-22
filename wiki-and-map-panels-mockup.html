@@ -1,0 +1,430 @@
+<!-- path: wiki-and-map-panels-mockup.html
+     Throwaway design mockup, round two: the three wiki-oriented panels
+     (needs attention, recently updated, articles by type) absorbed into the
+     wiki page, and a new map-native overlay set for the hub.
+     Static HTML, open directly in a browser. Not wired to the app. -->
+<!DOCTYPE html>
+<html lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<title>Wiki panels + map-native overlays</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=EB+Garamond&family=Raleway:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-base:#0d0b09; --bg-surface:#15120e; --bg-elevated:#1e1a14; --bg-hover:#26211a; --bg-active:#2e2820;
+  --gold:#c8a84b; --gold-dim:#8a7035; --gold-glow:rgba(200,168,75,.15);
+  --danger:#e05555; --success:#49c185; --warning:#e88c3a; --info:#5b9fe8;
+  --text-primary:#e8dcc8; --text-secondary:#a09070; --text-muted:#5a5040;
+  --border:#2a2318; --border-light:#3a3028;
+  --shadow-md:0 4px 20px rgba(0,0,0,.6);
+  --font-display:'Cinzel',serif; --font-body:'EB Garamond',Georgia,serif; --font-ui:'Raleway',system-ui,sans-serif;
+  --radius-md:8px; --radius-lg:12px;
+  --sec-wiki:#5b9fe8; --sec-notes:#fe6565; --sec-loot:#49c185; --sec-rel:#b07de8; --sec-time:#e88c3a; --sec-sound:#4cc9d6;
+  --glass:color-mix(in srgb,var(--bg-surface) 88%,transparent);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg-base);color:var(--text-primary);font-family:var(--font-ui);font-size:14px;-webkit-font-smoothing:antialiased;padding:28px 24px 80px}
+.page{max-width:1180px;margin:0 auto}
+h1{font-family:var(--font-display);font-size:24px;font-weight:600;letter-spacing:.04em;margin-bottom:6px}
+.lede{color:var(--text-secondary);font-family:var(--font-body);font-size:17px;max-width:74ch}
+h2{font-family:var(--font-display);font-size:18px;font-weight:600;letter-spacing:.03em;margin:36px 0 2px;color:var(--gold)}
+h3{font-family:var(--font-display);font-size:14px;font-weight:600;letter-spacing:.03em;margin-bottom:3px;color:var(--text-primary)}
+.sub{color:var(--text-secondary);font-size:13px;margin-bottom:12px}
+.hint{color:var(--text-muted);font-size:12px;margin-top:8px;font-style:italic}
+.ic{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.stage-wrap{position:relative;width:100%;overflow:hidden;border-radius:var(--radius-lg);border:1px solid var(--border-light)}
+.stage{position:absolute;top:0;left:0;width:1100px;height:620px;transform-origin:top left;background:var(--bg-base);overflow:hidden;font-family:var(--font-ui)}
+.rail{position:absolute;left:0;top:0;bottom:0;width:54px;background:var(--bg-surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;z-index:30}
+.rail-btn{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)}
+.rail-btn.on{background:var(--bg-hover);color:var(--gold)}
+.rail .ic{width:17px;height:17px}
+.maparea{position:absolute;left:54px;top:0;right:0;bottom:0;overflow:hidden}
+.tabs{position:absolute;left:54px;top:0;right:0;height:34px;background:color-mix(in srgb,var(--bg-surface) 92%,transparent);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:2px;padding:0 10px;z-index:20;backdrop-filter:blur(6px)}
+.tab{font-size:11.5px;color:var(--text-muted);padding:4px 10px;border-radius:6px}
+.tab.on{color:var(--text-primary);background:var(--bg-hover)}
+.ctitle{font-family:var(--font-display);font-size:22px;letter-spacing:.04em;text-shadow:0 1px 10px rgba(0,0,0,.85)}
+.badge{font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:99px;border:1px solid rgba(200,168,75,.3);color:var(--gold);background:var(--gold-glow)}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:99px;font-size:11px;background:var(--glass);border:1px solid var(--border-light);color:var(--text-muted);backdrop-filter:blur(8px)}
+.glass{background:var(--glass);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-md)}
+.phead{display:flex;align-items:center;justify-content:space-between;padding:9px 12px 7px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
+.pbody{padding:0 12px 11px}
+.row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)}
+.row:last-child{border-bottom:none}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.name{flex:1;font-size:13px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta{font-size:10.5px;color:var(--text-muted);flex-shrink:0}
+.pill{font-size:10px;padding:1px 7px;border-radius:99px;flex-shrink:0;white-space:nowrap}
+.sechead{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin:9px 0 3px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;border:1px solid var(--border-light);background:transparent;color:var(--text-secondary);font-size:12.5px;font-family:var(--font-ui);cursor:pointer}
+.btn-primary{background:var(--gold);border-color:var(--gold);color:#0d0b09;font-weight:600}
+.fpill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:99px;font-size:11.5px;cursor:pointer;border:1px solid var(--border-light);background:transparent;color:var(--text-muted)}
+.card{background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
+.gallery{display:flex;flex-wrap:wrap;gap:16px;margin-top:14px}
+.gcell{width:300px}
+.gcap{font-size:12px;color:var(--text-secondary);margin-top:8px;line-height:1.5}
+.gwrap{background:#161a1e;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M11.5 3.2 13 8.4a2 2 0 0 0 1.4 1.4l5.2 1.5-5.2 1.5a2 2 0 0 0-1.4 1.4l-1.5 5.2-1.5-5.2a2 2 0 0 0-1.4-1.4L3.4 11.3l5.2-1.5A2 2 0 0 0 10 8.4z"/></symbol>
+<symbol id="i-bag" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0"/></symbol>
+<symbol id="i-net" viewBox="0 0 24 24"><path d="M9 2h6v6H9zM2 16h6v6H2zM16 16h6v6h-6zM12 8v4M6 16v-2h12v2"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 1.8"/></symbol>
+<symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></symbol>
+<symbol id="i-scroll" viewBox="0 0 24 24"><path d="M19 17V5a2 2 0 0 0-2-2H4M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2h4"/></symbol>
+<symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.7 18-8-14a2 2 0 0 0-3.5 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3zM12 9v4M12 17h.01"/></symbol>
+<symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3.5 2"/></symbol>
+<symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-eyeoff" viewBox="0 0 24 24"><path d="M10.7 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-2.6 3.7M6.6 6.6A18 18 0 0 0 2 12s3.5 7 10 7a10.9 10.9 0 0 0 5.4-1.4M2 2l20 20M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5zM3 12l9 5 9-5M3 17l9 5 9-5"/></symbol>
+<symbol id="i-ruler" viewBox="0 0 24 24"><path d="M3 15 15 3l6 6L9 21z"/><path d="M7 11l2 2M10 8l2 2M13 5l2 2"/></symbol>
+<symbol id="i-boot" viewBox="0 0 24 24"><path d="M4 3h5l1 8h3l4 4h3a2 2 0 0 1 2 2v4H4z"/><path d="M4 16h4"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="m6 4 14 8-14 8z"/></symbol>
+<symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+<symbol id="i-sort" viewBox="0 0 24 24"><path d="M4 7h13M4 12h9M4 17h5M17 13l3 3 3-3"/></symbol>
+<symbol id="worldmap" viewBox="0 0 1046 620" preserveAspectRatio="xMidYMid slice">
+  <rect width="1046" height="620" fill="#111820"/>
+  <g stroke="rgba(200,168,75,.045)" stroke-width="1">
+    <path d="M90 0V620M250 0V620M410 0V620M570 0V620M730 0V620M890 0V620M0 100H1046M0 220H1046M0 340H1046M0 460H1046M0 580H1046"/>
+  </g>
+  <path d="M-20 130C110 66 250 96 350 74 460 50 556 100 656 84 780 64 880 112 1066 96L1066 566C956 606 836 560 716 584 596 608 516 556 396 574 296 589 156 550-20 570Z" fill="#23201a" stroke="#584b30" stroke-width="2"/>
+  <path d="M-20 150C110 88 252 116 352 94 462 70 556 120 656 104 780 84 880 130 1066 114" fill="none" stroke="#6d5c38" stroke-width="1" opacity=".45"/>
+  <path d="M1066 300C956 288 898 330 880 382c-14 42 42 70 186 58Z" fill="#111820" stroke="#584b30" stroke-width="1.6"/>
+  <ellipse cx="596" cy="336" rx="86" ry="52" fill="#141d26" stroke="#55492f" stroke-width="1.4"/>
+  <g fill="none" stroke="#2f4f60" stroke-width="2.4" stroke-linecap="round" opacity=".85">
+    <path d="M878 384C806 366 740 350 682 340"/><path d="M520 322C486 372 442 414 392 462"/><path d="M596 284C606 236 640 200 688 178"/>
+  </g>
+  <g stroke="#7a6842" stroke-width="1.5" fill="none" opacity=".7">
+    <path d="M150 224l18-24 18 24M186 224l16-21 16 21M228 212l20-26 20 26M278 216l16-20 16 20M330 200l20-25 20 25M382 192l17-22 17 22"/>
+    <path d="M742 226l18-23 18 23M786 232l15-20 15 20M828 220l19-24 19 24"/>
+  </g>
+  <g fill="#27331f" opacity=".85">
+    <circle cx="232" cy="424" r="9"/><circle cx="252" cy="438" r="11"/><circle cx="272" cy="420" r="8"/><circle cx="292" cy="440" r="10"/><circle cx="212" cy="444" r="8"/>
+    <circle cx="760" cy="462" r="10"/><circle cx="784" cy="476" r="9"/><circle cx="806" cy="458" r="11"/><circle cx="828" cy="474" r="8"/>
+  </g>
+  <g fill="none" stroke="#4d422c" stroke-width="1.6" stroke-dasharray="6 6" opacity=".6">
+    <path d="M300 430C400 400 470 360 545 300M545 300C610 262 660 254 700 250M700 250C790 280 860 360 905 452M300 430C260 360 218 300 196 236"/>
+  </g>
+  <text x="112" y="336" font-family="Cinzel,serif" font-size="17" fill="#7a6842" letter-spacing="5" opacity=".6">THE GREY MARCHES</text>
+  <text x="876" y="556" font-family="Cinzel,serif" font-size="14" fill="#3f566a" letter-spacing="4" opacity=".8">SALT SEA</text>
+</symbol>
+</defs></svg>
+
+<div class="page">
+<h1>Wiki panels, and what stays on the map</h1>
+<p class="lede">Needs attention, recently updated and articles by type move into the wiki as native furniture rather than three more cards. The hub keeps only what the map can answer, plus four new overlays that only make sense over a map.</p>
+
+<h2>1 · The three, absorbed into the wiki</h2>
+<p class="sub">Counts land on the filter pills you already have, recency becomes a sort plus a resume strip, and needs attention becomes a filter over the grid. Click the pills, the sort, and the attention chip.</p>
+<div class="stage-wrap" id="wrapW"><div class="stage" id="stageW">
+  <div class="rail" id="railNavW"></div>
+  <div style="position:absolute;left:54px;top:0;right:0;bottom:0;display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:18px 28px 12px;border-bottom:1px solid var(--border);flex-shrink:0" id="wikiHead"></div>
+    <div style="flex:1;overflow:hidden;padding:16px 28px" id="wikiBody"></div>
+  </div>
+</div></div>
+<p class="hint">The attention chip only appears when there is something wrong, and its three reasons become sub-filters — so the maintenance list is the grid, at full width, sortable, with the reason on the card.</p>
+
+<h2>2 · The hub, with only map-answerable overlays</h2>
+<p class="sub">Three left: locations, threads, pressure. Four new: the party and their trail, layers, travel, ambience. Toggle the rail chips on the right; the party strip and trail are always on.</p>
+<div class="stage-wrap" id="wrapM"><div class="stage" id="stageM">
+  <div class="rail" id="railNavM"></div>
+  <div class="maparea">
+    <svg width="1046" height="620"><use href="#worldmap"/></svg>
+    <svg width="1046" height="620" style="position:absolute;left:0;top:0" id="mapOverlaySvg"></svg>
+  </div>
+  <div class="tabs" id="tabsM"></div>
+  <div style="position:absolute;left:70px;right:16px;top:44px;display:flex;align-items:flex-start;justify-content:space-between;z-index:24" id="titleM"></div>
+  <div id="pinsM" style="position:absolute;left:54px;top:0;right:0;bottom:0;z-index:22"></div>
+  <div id="partyM" class="glass" style="position:absolute;left:70px;bottom:14px;z-index:26;width:296px"></div>
+  <div id="railM" class="glass" style="position:absolute;right:14px;top:92px;width:44px;z-index:27"></div>
+  <div id="drawerM" class="glass" style="position:absolute;right:66px;top:92px;width:290px;z-index:26;overflow:hidden"></div>
+</div></div>
+<p class="hint">Locations, threads and pressure sit in the drawer; layers, travel and ambience are controls, which is exactly what a drawer is good at. The party strip is not a panel — it is always visible, like a status bar.</p>
+
+<h2>3 · The four new ones, up close</h2>
+<p class="sub">Each at its real width of 290px.</p>
+<div class="gallery" id="galleryEl"></div>
+</div>
+
+<script>
+var ico=function(n,sz){return '<svg class="ic"'+(sz?' style="width:'+sz+'px;height:'+sz+'px"':'')+'><use href="#i-'+n+'"/></svg>';};
+var SECTIONS=[['book','Wiki','var(--sec-wiki)'],['spark','Notes','var(--sec-notes)'],['bag','Loot','var(--sec-loot)'],['net','Relations','var(--sec-rel)'],['clock','Timeline','var(--sec-time)'],['music','Sound','var(--sec-sound)']];
+var TC={character:'#5bbfb0',playerCharacter:'#49c185',creature:'#36a502',location:'#c8a84b',faction:'#e88c3a',item:'#9b7de8',quest:'#5b9fe8',lore:'#db55e0',event:'#e05555'};
+var QC={Main:'#e88c3a',Side:'#5b9fe8',Personal:'#9b7de8',Faction:'#49c185'};
+
+function railNav(id,active){
+ document.getElementById(id).innerHTML='<div class="rail-btn'+(active==='hub'?' on':'')+'">'+ico('grid')+'</div><div style="height:8px"></div>'+
+  SECTIONS.map(function(s,i){var on=active==='wiki'&&i===0;
+   return '<div class="rail-btn" style="'+(on?'background:var(--bg-hover);':'')+'color:'+s[2]+'">'+ico(s[0])+'</div>';}).join('');
+}
+railNav('railNavW','wiki');railNav('railNavM','hub');
+document.getElementById('tabsM').innerHTML='<div class="tab on">Grey Marches</div><div class="tab">Mirebank</div><div class="tab">Thornhollow crypts</div><div class="tab">+</div>';
+document.getElementById('titleM').innerHTML=
+ '<div style="display:flex;align-items:center;gap:10px"><div class="ctitle">Bells of the Drowned Coast</div><div class="badge">D&amp;D 5e</div></div>'+
+ '<div style="display:flex;gap:8px"><div class="chip">'+ico('grid',11)+'Classic view</div><div class="chip">'+ico('users',11)+'Players</div><div class="chip">'+ico('eye',11)+'Customise</div></div>';
+
+/* ─── 1 · Wiki ─────────────────────────────────────────────────────────── */
+
+var TYPES=[['character',34],['location',28],['item',19],['faction',12],['quest',9],['lore',7],['event',6],['creature',14]];
+var TOTAL=129;
+var ARTICLES=[
+ {t:'Ilyana Vas',ty:'character',tags:['party','noble'],up:'12m ago'},
+ {t:'The Drowned Bell',ty:'quest',tags:['main'],up:'1h ago'},
+ {t:'Ashford Cartel',ty:'faction',tags:['rival'],up:'3h ago'},
+ {t:'Mirebank',ty:'location',tags:['town','fen'],up:'Yesterday'},
+ {t:'Tidecaller’s horn',ty:'item',tags:['relic'],up:'2d ago'},
+ {t:'The Sundering',ty:'lore',tags:['ancient'],up:'4d ago'},
+ {t:'Bram Kettle',ty:'character',tags:['party'],up:'5d ago'},
+ {t:'Thornhollow Abbey',ty:'location',tags:['ruin'],up:'1w ago'}];
+var PROBLEMS=[
+ {t:'Saltcross',ty:'location',reason:'short',group:'stub',tags:['port']},
+ {t:'Serath Vane',ty:'character',reason:'empty',group:'stub',tags:[]},
+ {t:'Thornhollow Abbey',ty:'location',reason:'unlinked',group:'orphan',tags:['ruin']},
+ {t:'Tidecaller’s horn',ty:'item',reason:'unlinked',group:'orphan',tags:['relic']},
+ {t:'The Sundering',ty:'lore',reason:'unlinked',group:'orphan',tags:['ancient']},
+ {t:'[[Grey Marches]]',ty:'event',reason:'broken · in 3',group:'broken',tags:[]}];
+var wFilter='all',wAttn=false,wSort='recent',wGroup='all';
+
+function typePills(){
+ var pills='<div data-w="all" class="fpill" style="'+(wFilter==='all'?'border-color:var(--gold-dim);background:var(--gold-glow);color:var(--gold)':'')+'">All <span style="color:var(--text-muted)">'+TOTAL+'</span></div>';
+ return pills+TYPES.map(function(t){var on=wFilter===t[0];
+  return '<div data-w="'+t[0]+'" class="fpill" style="text-transform:capitalize;'+(on?'border-color:'+TC[t[0]]+';background:'+TC[t[0]]+'18;color:'+TC[t[0]]:'')+'">'+
+   '<span class="dot" style="background:'+TC[t[0]]+'"></span>'+t[0]+' <span style="color:'+(on?TC[t[0]]:'var(--text-muted)')+';opacity:.8">'+t[1]+'</span></div>';}).join('');
+}
+function distBar(){
+ return '<div style="display:flex;height:4px;border-radius:99px;overflow:hidden;margin-top:10px;gap:1px" title="Articles by type">'+
+  TYPES.map(function(t){return '<div style="width:'+(t[1]/TOTAL*100)+'%;background:'+TC[t[0]]+';opacity:'+(wFilter==='all'||wFilter===t[0]?'1':'.28')+'"></div>';}).join('')+'</div>';
+}
+function card(a,reason){
+ return '<div class="card" style="position:relative">'+
+  '<div style="height:6px;background:'+TC[a.ty]+'44"></div>'+
+  '<div style="padding:11px 13px">'+
+   '<div style="display:flex;align-items:center;gap:6px;margin-bottom:7px">'+
+    '<span class="pill" style="border:1px solid '+TC[a.ty]+'55;background:'+TC[a.ty]+'12;color:'+TC[a.ty]+';font-weight:600;text-transform:capitalize">'+a.ty+'</span>'+
+    (reason?'<span class="pill" style="border:1px solid rgba(224,85,85,.35);background:rgba(224,85,85,.12);color:var(--danger);margin-left:auto">'+reason+'</span>':'')+'</div>'+
+   '<div style="font-family:var(--font-display);font-size:14.5px;letter-spacing:.02em;margin-bottom:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:'+(reason&&reason.indexOf('broken')===0?'var(--danger)':'var(--text-primary)')+'">'+a.t+'</div>'+
+   (a.tags.length?'<div style="display:flex;gap:4px;margin-bottom:7px">'+a.tags.map(function(g){return '<span class="pill" style="background:var(--bg-elevated);border:1px solid var(--border-light);color:var(--text-muted)">#'+g+'</span>';}).join('')+'</div>':'')+
+   '<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted)">'+ico('cal',10)+'Updated '+(a.up||'2 Aug 1492')+'</div>'+
+  '</div></div>';
+}
+function renderW(){
+ var shown=wAttn?PROBLEMS.filter(function(p){return wGroup==='all'||p.group===wGroup;}):ARTICLES.filter(function(a){return wFilter==='all'||a.ty===wFilter;});
+ document.getElementById('wikiHead').innerHTML=
+  '<div style="display:flex;align-items:center;gap:10px;margin-bottom:13px">'+
+   '<span style="color:var(--sec-wiki);display:flex">'+ico('book',19)+'</span>'+
+   '<div style="font-family:var(--font-display);font-size:20px;letter-spacing:.03em">Campaign Wiki</div>'+
+   '<div style="font-size:12px;color:var(--text-muted)">'+TOTAL+' articles</div>'+
+   '<div style="margin-left:auto;display:flex;gap:8px"><div class="btn">'+ico('net',13)+'Graph view</div><div class="btn btn-primary">'+ico('plus',13)+'New Article</div></div></div>'+
+  '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+   '<div style="display:flex;align-items:center;gap:7px;padding:5px 11px;border:1px solid var(--border-light);border-radius:99px;width:236px;color:var(--text-muted);font-size:12px">'+ico('search',13)+'Search 129 articles</div>'+
+   '<div style="width:1px;height:20px;background:var(--border)"></div>'+
+   '<div data-attn="1" class="fpill" style="'+(wAttn?'border-color:rgba(224,85,85,.5);background:rgba(224,85,85,.12);color:var(--danger)':'color:var(--danger);border-color:rgba(224,85,85,.3)')+'">'+ico('alert',11)+'Needs attention <b style="font-weight:600">6</b></div>'+
+   '<div data-sort="1" class="fpill">'+ico('sort',11)+'Sort: '+(wSort==='recent'?'Recently updated':'A – Z')+'</div>'+
+   '<div style="margin-left:auto"><div class="fpill">'+ico('eyeoff',11)+'Hide types</div></div></div>'+
+  (wAttn
+    ? '<div style="display:flex;align-items:center;gap:6px;margin-top:10px">'+
+      [['all','Everything',6],['stub','Empty or short',2],['orphan','No connections',3],['broken','Broken links',1]].map(function(g){
+       var on=wGroup===g[0];
+       return '<div data-g="'+g[0]+'" class="fpill" style="'+(on?'border-color:var(--gold-dim);background:var(--gold-glow);color:var(--gold)':'')+'">'+g[1]+' <span style="color:var(--text-muted)">'+g[2]+'</span></div>';}).join('')+
+      '<span style="font-size:11px;color:var(--text-muted);margin-left:6px;font-style:italic">the grid is the maintenance list</span></div>'
+    : '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:10px">'+typePills()+'</div>'+distBar());
+
+ document.getElementById('wikiBody').innerHTML=
+  (wAttn?'':'<div style="display:flex;align-items:center;gap:8px;margin-bottom:13px">'+
+    '<span style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-right:2px">Jump back in</span>'+
+    ARTICLES.slice(0,4).map(function(a){return '<div class="chip" style="background:var(--bg-surface)"><span class="dot" style="background:'+TC[a.ty]+'"></span><span style="color:var(--text-primary)">'+a.t+'</span><span style="color:var(--text-muted)">'+a.up+'</span></div>';}).join('')+'</div>')+
+  '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;align-content:start">'+
+   shown.map(function(a){return card(a,wAttn?a.reason:null);}).join('')+'</div>';
+
+ Array.prototype.forEach.call(document.querySelectorAll('[data-w]'),function(el){el.onclick=function(){wFilter=el.dataset.w;renderW();};});
+ Array.prototype.forEach.call(document.querySelectorAll('[data-g]'),function(el){el.onclick=function(){wGroup=el.dataset.g;renderW();};});
+ document.querySelector('[data-attn]').onclick=function(){wAttn=!wAttn;wGroup='all';renderW();};
+ document.querySelector('[data-sort]').onclick=function(){wSort=wSort==='recent'?'az':'recent';renderW();};
+}
+
+/* ─── 2 · Map ──────────────────────────────────────────────────────────── */
+
+function dial(f,s,size,color){
+ var p='',c=size/2,r=c-1.5,i,a0,a1,x0,y0,x1,y1;
+ for(i=0;i<s;i++){a0=-Math.PI/2+i/s*Math.PI*2;a1=-Math.PI/2+(i+1)/s*Math.PI*2;
+  x0=c+r*Math.cos(a0);y0=c+r*Math.sin(a0);x1=c+r*Math.cos(a1);y1=c+r*Math.sin(a1);
+  p+='<path d="M '+c+' '+c+' L '+x0.toFixed(1)+' '+y0.toFixed(1)+' A '+r+' '+r+' 0 '+(a1-a0>Math.PI?1:0)+' 1 '+x1.toFixed(1)+' '+y1.toFixed(1)+' Z" fill="'+(i<f?color:'transparent')+'" stroke="var(--border-light)" stroke-width="1"/>';}
+ return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" style="flex-shrink:0;display:block">'+p+'</svg>';
+}
+
+var LAYERS={regions:true,trail:true,pois:true,player:false};
+var PLACES=[{x:300,y:430,n:'Mirebank'},{x:196,y:250,n:'Thornhollow Abbey'},{x:700,y:262,n:'Ashford'},{x:880,y:470,n:'Saltcross'}];
+var TRAIL=[{x:700,y:262,s:'S10'},{x:545,y:320,s:'S11'},{x:300,y:430,s:'S12'}];
+
+function mapOverlay(){
+ var svg='';
+ if(LAYERS.regions){
+  svg+='<path d="M60 300C120 200 240 170 330 210 400 240 380 380 300 440 210 505 90 420 60 300Z" fill="rgba(200,168,75,.09)" stroke="rgba(200,168,75,.45)" stroke-width="1.5" stroke-dasharray="7 5"/>'+
+   '<text x="150" y="405" font-family="Cinzel,serif" font-size="11" fill="#c8a84b" letter-spacing="3" opacity=".8">HOLLOW FEN</text>'+
+   '<path d="M620 190C700 150 830 175 880 250 915 305 860 360 780 350 690 340 600 265 620 190Z" fill="rgba(232,140,58,.08)" stroke="rgba(232,140,58,.4)" stroke-width="1.5" stroke-dasharray="7 5"/>'+
+   '<text x="700" y="330" font-family="Cinzel,serif" font-size="11" fill="#e88c3a" letter-spacing="3" opacity=".8">ASHFORD REACH</text>';
+ }
+ if(LAYERS.trail){
+  svg+='<path d="M700 262C640 285 590 305 545 320 470 348 380 392 300 430" fill="none" stroke="#49c185" stroke-width="2.5" stroke-dasharray="1 7" stroke-linecap="round" opacity=".9"/>'+
+   TRAIL.map(function(t,i){var last=i===TRAIL.length-1;
+    return '<circle cx="'+t.x+'" cy="'+t.y+'" r="'+(last?6:4)+'" fill="'+(last?'#49c185':'#15120e')+'" stroke="#49c185" stroke-width="2"/>'+
+     '<text x="'+(t.x+9)+'" y="'+(t.y-7)+'" font-size="10" fill="#49c185" font-family="Raleway,sans-serif" opacity="'+(last?1:.75)+'">'+t.s+'</text>';}).join('');
+ }
+ document.getElementById('mapOverlaySvg').innerHTML=svg;
+ document.getElementById('pinsM').innerHTML=!LAYERS.pois?'':PLACES.map(function(p){
+  return '<div style="position:absolute;left:'+p.x+'px;top:'+p.y+'px;transform:translate(-50%,-50%);display:flex;align-items:center;gap:6px">'+
+   '<div style="width:9px;height:9px;border-radius:50%;background:#c8a84b;border:2px solid rgba(0,0,0,.6)"></div>'+
+   '<span style="font-family:var(--font-display);font-size:11.5px;color:#d8c48a;letter-spacing:.04em;text-shadow:0 1px 6px rgba(0,0,0,.9)">'+p.n+'</span></div>';}).join('');
+}
+
+function partyStrip(){
+ return '<div style="padding:9px 12px 10px">'+
+  '<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">'+
+   '<span style="color:var(--success);display:flex">'+ico('boot',13)+'</span>'+
+   '<span style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--success);font-weight:600">The party</span>'+
+   '<span style="margin-left:auto;font-size:10.5px;color:var(--text-muted)">after session 12</span></div>'+
+  '<div style="display:flex;align-items:baseline;gap:7px;margin-bottom:5px">'+
+   '<span style="font-family:var(--font-display);font-size:15px;color:var(--gold);letter-spacing:.03em">Mirebank</span>'+
+   '<span style="font-size:11px;color:var(--text-muted)">the Hollow Fen</span></div>'+
+  '<div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-secondary);font-family:var(--font-body)">'+
+   ico('cal',11)+'14th of Hollowmoon, 1492 · 3 days since Ashford</div>'+
+  '<div style="display:flex;gap:6px;margin-top:9px">'+
+   '<div data-l="trail" class="chip" style="background:'+(LAYERS.trail?'rgba(73,193,133,.12)':'transparent')+';border-color:'+(LAYERS.trail?'rgba(73,193,133,.4)':'var(--border-light)')+';color:'+(LAYERS.trail?'var(--success)':'var(--text-muted)')+';cursor:pointer">Trail</div>'+
+   '<div class="chip" style="cursor:pointer">'+ico('scroll',11)+'Session 13 prep</div>'+
+   '<div class="chip" style="cursor:pointer">'+ico('clock',11)+'Advance time</div></div></div>';
+}
+
+var PANELS={
+ locations:{label:'Locations',icon:'pin',count:12,cc:'var(--gold)'},
+ threads:{label:'Threads in play',icon:'flag',count:5,cc:'#e88c3a'},
+ pressure:{label:'Pressure',icon:'clock',count:3,cc:'var(--warning)'},
+ layers:{label:'Layers',icon:'layers',count:0,cc:'var(--info)'},
+ travel:{label:'Travel',icon:'ruler',count:0,cc:'#5bbfb0'},
+ ambience:{label:'Ambience',icon:'music',count:0,cc:'var(--sec-sound)'}};
+var MORDER=['locations','threads','pressure','layers','travel','ambience'];
+var openM='threads';
+
+function bodyLocations(){
+ return [['Mirebank','town','here'],['Thornhollow Abbey','ruin',''],['Ashford','city','S10'],['Saltcross','port',''],['The Hollow Fen','region',''],['Gallow Ford','crossing','']].map(function(l){
+  return '<div class="row"><span class="dot" style="background:#c8a84b"></span><span class="name">'+l[0]+'</span>'+
+   (l[2]?'<span class="pill" style="background:rgba(73,193,133,.12);border:1px solid rgba(73,193,133,.35);color:var(--success)">'+l[2]+'</span>':'')+
+   '<span class="meta">'+l[1]+'</span></div>';}).join('');
+}
+function bodyThreads(){
+ var groups=[['Mirebank',[['The Drowned Bell','Main',3,5],['A letter never sent','Personal',2,3]]],
+             ['Ashford',[['Debt to the Ashford Cartel','Faction',1,4]]],
+             ['Thornhollow Abbey',[['The tithe of Thornhollow','Side',1,2]]],
+             ['Not placed yet',[['Where the wolves went','Side',0,3]]]];
+ return groups.map(function(g){
+  return '<div class="sechead" style="display:flex;align-items:center;gap:5px">'+(g[0]==='Not placed yet'?'':'<span style="color:#c8a84b;display:flex">'+ico('pin',10)+'</span>')+g[0]+'</div>'+
+   g[1].map(function(q){
+    return '<div style="padding:5px 0 7px">'+
+     '<div style="display:flex;align-items:center;gap:7px"><span class="dot" style="background:'+QC[q[1]]+'"></span>'+
+     '<span class="name">'+q[0]+'</span><span class="meta">'+q[2]+'/'+q[3]+'</span></div>'+
+     '<div style="height:2px;background:var(--border-light);border-radius:1px;margin:5px 0 0 14px"><div style="height:2px;width:'+(q[2]/q[3]*100)+'%;background:'+QC[q[1]]+';border-radius:1px"></div></div></div>';}).join('');}).join('');
+}
+function bodyPressure(){
+ return [['Cult reaches the third seal',5,8,'Hollow Fen','#c8a84b'],["Baron Ashford's patience",2,4,'Ashford Reach','#e88c3a'],['Winter closes the pass',3,6,'Grey Marches','#c8a84b']].map(function(c){
+  return '<div class="row" style="gap:10px">'+dial(c[1],c[2],30,'var(--gold)')+
+   '<div style="flex:1;min-width:0"><div class="name">'+c[0]+'</div>'+
+   '<div style="display:flex;align-items:center;gap:4px;font-size:10.5px;color:'+c[4]+'">'+ico('pin',9)+'presses on '+c[3]+'</div></div>'+
+   '<span class="meta">'+c[1]+'/'+c[2]+'</span></div>';}).join('');
+}
+function layerRow(key,label,note,color,on){
+ return '<div data-l="'+key+'" class="row" style="cursor:pointer;padding:6px 0">'+
+  '<span style="width:9px;height:9px;border-radius:2px;flex-shrink:0;border:1.5px solid '+color+';background:'+(on?color:'transparent')+'"></span>'+
+  '<span class="name" style="color:'+(on?'var(--text-primary)':'var(--text-muted)')+'">'+label+'</span>'+
+  '<span class="meta">'+note+'</span>'+
+  '<span style="color:'+(on?'var(--text-secondary)':'var(--text-muted)')+';display:flex">'+ico(on?'eye':'eyeoff',12)+'</span></div>';
+}
+function bodyLayers(){
+ return '<div class="sechead">This map</div>'+
+  layerRow('pois','Points of interest','12',"#c8a84b",LAYERS.pois)+
+  layerRow('regions','Regions','2 shapes','#5b9fe8',LAYERS.regions)+
+  layerRow('trail','Party trail','S10 – S12','#49c185',LAYERS.trail)+
+  '<div class="sechead">Session visits</div>'+
+  '<div class="row" style="padding:6px 0"><span class="dot" style="background:#49c185"></span><span class="name">S12 · Bells beneath the water</span><span class="meta">4 pins</span></div>'+
+  '<div class="row" style="padding:6px 0"><span class="dot" style="background:var(--text-muted)"></span><span class="name" style="color:var(--text-muted)">S11 · The long road west</span><span class="meta">2 pins</span></div>'+
+  '<div class="sechead">Player site</div>'+
+  layerRow('player','Show what players see','7 of 12 pins','#b07de8',LAYERS.player);
+}
+function bodyTravel(){
+ return '<div style="display:flex;align-items:center;gap:7px;padding:7px 0 9px;border-bottom:1px solid var(--border)">'+
+  '<span style="color:#5bbfb0;display:flex">'+ico('ruler',13)+'</span>'+
+  '<span style="font-size:12px;color:var(--text-secondary)">Scale</span>'+
+  '<span style="margin-left:auto;font-size:12px;color:var(--text-primary)">1 in = 24 miles</span></div>'+
+  '<div class="sechead">Last route</div>'+
+  '<div style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin-bottom:8px">'+
+   '<span style="color:var(--gold)">Mirebank</span><span style="color:var(--text-muted)">→</span>'+
+   '<span style="color:var(--gold)">Thornhollow</span><span style="margin-left:auto;color:var(--text-primary)">41 mi</span></div>'+
+  '<div style="display:flex;flex-direction:column;gap:5px;font-size:11.5px">'+
+   '<div style="display:flex;gap:8px"><span style="color:var(--text-muted);width:74px">On foot</span><span style="color:var(--text-primary)">1½ days</span><span style="color:var(--text-muted);margin-left:auto">24 mi/day</span></div>'+
+   '<div style="display:flex;gap:8px"><span style="color:var(--text-muted);width:74px">Mounted</span><span style="color:var(--text-primary)">1 day</span><span style="color:var(--text-muted);margin-left:auto">48 mi/day</span></div>'+
+   '<div style="display:flex;gap:8px"><span style="color:var(--text-muted);width:74px">Forced march</span><span style="color:var(--warning)">DC 10 Con</span><span style="color:var(--text-muted);margin-left:auto">+8 mi</span></div></div>'+
+  '<div style="display:flex;gap:6px;margin-top:11px"><div class="chip" style="cursor:pointer">'+ico('ruler',11)+'Measure</div>'+
+   '<div class="chip" style="cursor:pointer">'+ico('cal',11)+'Advance 1½ days</div></div>';
+}
+function bodyAmbience(){
+ return '<div style="font-size:11.5px;color:var(--text-muted);padding:4px 0 8px">From Mirebank’s board</div>'+
+  [['Rain on rooftops','playing'],['Fen at night',''],['Tavern murmur',''],['Distant bell',''] ].map(function(s){
+   var on=s[1]==='playing';
+   return '<div class="row" style="cursor:pointer;padding:6px 0"><span style="color:'+(on?'var(--sec-sound)':'var(--text-muted)')+';display:flex">'+ico('play',12)+'</span>'+
+    '<span class="name" style="color:'+(on?'var(--text-primary)':'var(--text-secondary)')+'">'+s[0]+'</span>'+
+    (on?'<span class="pill" style="background:rgba(76,201,214,.12);border:1px solid rgba(76,201,214,.35);color:var(--sec-sound)">playing</span>':'')+'</div>';}).join('')+
+  '<div style="display:flex;gap:6px;margin-top:9px"><div class="chip" style="cursor:pointer">'+ico('music',11)+'Open board</div>'+
+   '<div class="chip" style="cursor:pointer">Follow the party</div></div>';
+}
+var BODY={locations:bodyLocations,threads:bodyThreads,pressure:bodyPressure,layers:bodyLayers,travel:bodyTravel,ambience:bodyAmbience};
+
+function renderM(){
+ mapOverlay();
+ document.getElementById('partyM').innerHTML=partyStrip();
+ document.getElementById('railM').innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0">'+
+  MORDER.map(function(k){var p=PANELS[k],on=openM===k;
+   return '<div data-m="'+k+'" title="'+p.label+'" style="position:relative;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:'+(on?'var(--bg-hover)':'transparent')+';color:'+(on?p.cc:'var(--text-muted)')+'">'+ico(p.icon,16)+
+    (p.count?'<span style="position:absolute;top:1px;right:1px;font-size:8.5px;min-width:12px;height:12px;border-radius:99px;background:'+p.cc+';color:#0d0b09;font-weight:600;display:flex;align-items:center;justify-content:center;padding:0 3px">'+p.count+'</span>':'')+'</div>';}).join('')+'</div>';
+ var p=PANELS[openM];
+ document.getElementById('drawerM').innerHTML='<div class="phead" style="color:'+p.cc+'"><span style="display:flex;align-items:center;gap:6px">'+ico(p.icon,12)+p.label+(p.count?' · '+p.count:'')+'</span><span style="color:var(--text-muted)">'+ico('x',12)+'</span></div>'+
+  '<div class="pbody" style="max-height:360px;overflow:auto">'+BODY[openM]()+'</div>';
+ Array.prototype.forEach.call(document.querySelectorAll('[data-m]'),function(el){el.onclick=function(){openM=el.dataset.m;renderM();};});
+ Array.prototype.forEach.call(document.querySelectorAll('[data-l]'),function(el){el.onclick=function(){LAYERS[el.dataset.l]=!LAYERS[el.dataset.l];renderM();};});
+}
+
+/* ─── 3 · Gallery ──────────────────────────────────────────────────────── */
+
+var GALLERY=[
+ ['party','The party','boot','var(--success)',partyStrip,'Not a panel — a status strip that is always on. Current location, the in-world date the timeline already tracks, days elapsed, and the trail toggle. Answers "where are we and when" before you ask.'],
+ ['layers','Layers','layers','var(--info)',function(){return '<div class="pbody" style="padding-top:2px">'+bodyLayers()+'</div>';},'The map page already has a Contents panel; the hub needs the same. POI layers, region shapes, the per-session visit layers, and a "what players see" preview that reuses the player-pages grants.'],
+ ['travel','Travel','ruler','#5bbfb0',function(){return '<div class="pbody" style="padding-top:2px">'+bodyTravel()+'</div>';},'Surfaces Measure mode instead of hiding it in a toolbar: the map scale, the last route you drew, and 5e travel times with the forced-march save. "Advance time" writes the days back to the campaign date.'],
+ ['ambience','Ambience','music','var(--sec-sound)',function(){return '<div class="pbody" style="padding-top:2px">'+bodyAmbience()+'</div>';},'Optional, and the weakest of the four. The board attached to wherever the party is, one click from play. "Follow the party" swaps the board when they move.']];
+
+function renderGallery(){
+ document.getElementById('galleryEl').innerHTML=GALLERY.map(function(g){
+  var body=g[4]();
+  return '<div class="gcell"><div class="gwrap"><div class="glass" style="border-radius:var(--radius-md)">'+
+   (g[0]==='party'?body:'<div class="phead" style="color:'+g[3]+'"><span style="display:flex;align-items:center;gap:6px">'+ico(g[2],12)+g[1]+'</span><span style="color:var(--text-muted)">'+ico('x',12)+'</span></div>'+body)+
+   '</div></div><h3 style="margin-top:10px">'+g[1]+'</h3><div class="gcap">'+g[5]+'</div></div>';}).join('');
+}
+
+renderW();renderM();renderGallery();
+function fit(){['W','M'].forEach(function(k){
+ var w=document.getElementById('wrap'+k),s=document.getElementById('stage'+k),sc=Math.min(1,(w.clientWidth||1100)/1100);
+ s.style.transform='scale('+sc+')';s.style.left=Math.round((w.clientWidth-1100*sc)/2)+'px';w.style.height=Math.round(620*sc)+'px';});}
+fit();addEventListener('resize',fit);
+</script>
+</body>
+</html>

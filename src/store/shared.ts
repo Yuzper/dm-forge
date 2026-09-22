@@ -9,6 +9,7 @@
 import { createStore } from 'zustand/vanilla'
 import type { Campaign, Session, Arc, ArticleSummary,
   Player, VisibilityGrant, VisibilityEntityType, Grantee, CreatePlayerInput, SoundBoard } from '../types'
+import { getTrackTags } from '../../shared/tracks'
 import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
 import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
 import {
@@ -91,6 +92,11 @@ export interface SharedSlice {
   setSoundboardOpen: (v: boolean) => void
   soundboardMinimized: boolean
   setSoundboardMinimized: (v: boolean) => void
+  // A board another surface wants the widget to switch to (the hub's ambience
+  // panel). The nonce lets the same board be asked for twice — picking it,
+  // switching away in the widget, then picking it again has to work.
+  soundBoardRequest: { boardId: number; nonce: number } | null
+  requestSoundBoard: (boardId: number) => void
   soundBoards: SoundBoard[]
   soundsVersion: number
   bumpSoundsVersion: () => void
@@ -142,6 +148,8 @@ export interface SharedSlice {
   pinnedLocations: Location[]
   isPinned: (loc: Location) => boolean
   togglePin: (loc: Location) => void
+  /** Adopt a whole new pin order — the sidebar's drag-to-reorder. */
+  reorderPins: (next: Location[]) => void
 
   // Display names for locations whose label lives outside the campaign caches —
   // a relation web, a DM notes page. Without these, two relation tabs both read
@@ -243,18 +251,14 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
 
             // Build a merged, deduplicated tags array:
             //  • explicit tags from the data (comma-separated string)
-            //  • tags derived from every plain-text track value (mirroring WikiPage's getTrackTags logic)
-            const NON_TAG_TRACKS = new Set(['In_World_Date', 'Death_Date', 'Timeline_Milestones'])
+            //  • tags derived from every plain-text track value
+            // getTrackTags comes from shared/tracks.ts — the same derivation the
+            // wiki UI and the player-site exporter use, so seeded creatures can't
+            // start out tagged differently from ones the DM writes by hand.
             const explicitTags = m.tags
               ? m.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
               : []
-            const trackTags = Object.entries(m.tracks)
-              .filter(([k, v]) =>
-                !NON_TAG_TRACKS.has(k) && !k.endsWith('_Date') &&
-                v && !v.startsWith('{') && !v.startsWith('[')
-              )
-              .map(([, v]) => v.toLowerCase().replace(/\s+/g, '-'))
-            const tags = JSON.stringify(Array.from(new Set([...explicitTags, ...trackTags])))
+            const tags = JSON.stringify(Array.from(new Set([...explicitTags, ...getTrackTags(m.tracks)])))
 
             return window.api.createArticle({
               campaign_id: campaign.id,
@@ -492,6 +496,14 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
   setSoundboardOpen: (soundboardOpen) => set({ soundboardOpen }),
   soundboardMinimized: false,
   setSoundboardMinimized: (soundboardMinimized) => set({ soundboardMinimized }),
+  soundBoardRequest: null,
+  // Asking for a board also brings the widget up — a request nobody can see
+  // answered is just a silent no-op. Whether it sits expanded is the widget's
+  // own business (it minimises itself outside a session).
+  requestSoundBoard: (boardId) => set({
+    soundBoardRequest: { boardId, nonce: Date.now() },
+    soundboardOpen: true,
+  }),
 
   soundBoards: [],
   soundsVersion: 0,
@@ -732,5 +744,10 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
       : [...pinnedLocations, loc]
     set({ pinnedLocations: next })
     savePins(currentCampaign?.id, next)
+  },
+
+  reorderPins: (next) => {
+    set({ pinnedLocations: next })
+    savePins(get().currentCampaign?.id, next)
   },
 }))

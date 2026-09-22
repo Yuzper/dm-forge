@@ -2,9 +2,21 @@
 import { ipcMain } from 'electron'
 import { db } from '../db'
 
-const VALID_TYPES = new Set(['article', 'map', 'poi', 'layer'])
+// Shape drawing-layers are granted separately from POI visit-layers: the two
+// live in different tables whose ids overlap, so one 'layer' type couldn't tell
+// them apart.
+const VALID_TYPES = new Set(['article', 'map', 'poi', 'shape', 'layer', 'shape_layer'])
 const assertType = (t: string) => {
   if (!VALID_TYPES.has(t)) throw new Error(`Invalid visibility entity_type: ${t}`)
+}
+
+// Grants are polymorphic, so SQLite can't cascade them — whichever module owns
+// an entity calls this when it deletes one. Article ids are AUTOINCREMENT and
+// never reused, so a stale row is normally just litter; it stops being litter the
+// moment a database is restored or merged with explicit ids.
+export function purgeGrantsFor(entityType: string, entityId: number) {
+  db.prepare('DELETE FROM visibility_grants WHERE entity_type = ? AND entity_id = ?')
+    .run(entityType, entityId)
 }
 
 export function registerPlayerIPC() {
@@ -86,7 +98,7 @@ export function registerPlayerIPC() {
   })
 
   // Replace an entity's whole audience with the given grantee set, atomically —
-  // this is what the audience control on an article/POI calls.
+  // this is what the audience control on an article/POI/shape calls.
   ipcMain.handle('visibility:set-audience', (_e, campaignId: number, entityType: string, entityId: number, grantees: (number | null)[]) => {
     assertType(entityType)
     const tx = db.transaction(() => {

@@ -2,6 +2,7 @@
 // Loads a map's drawing layers and shapes and owns their CRUD, so both map
 // surfaces (the campaign world map and article/session maps) stay thin.
 import { useCallback, useEffect, useState } from 'react'
+import { reorder } from './useDragReorder'
 import type { MapShape, MapShapeLayer } from '../types'
 
 export function useMapShapes(mapId: number | null) {
@@ -58,6 +59,14 @@ export function useMapShapes(mapId: number | null) {
     setActiveLayerId(prev => prev === layer.id ? null : prev)
   }, [])
 
+  // List order is paint order (see paintOrder), so this restacks the canvas as
+  // well as the panel. Optimistic, like every other reorder in the app.
+  const reorderLayers = useCallback((from: number, to: number) => {
+    const next = reorder(layers, from, to).map((l, i) => ({ ...l, sort_order: i }))
+    setLayers(next)
+    void window.api.reorderShapeLayers(next.map(l => ({ id: l.id, sort_order: l.sort_order })))
+  }, [layers])
+
   const updateShape = useCallback(async (id: number, data: Partial<MapShape>) => {
     const updated = await window.api.updateMapShape(id, data)
     setShapes(prev => prev.map(s => s.id === updated.id ? updated : s))
@@ -69,6 +78,7 @@ export function useMapShapes(mapId: number | null) {
     layers, setLayers,
     activeLayerId, setActiveLayerId,
     createLayer, toggleLayerVisible, toggleLayerLocked, renameLayer, deleteLayer,
+    reorderLayers,
     updateShape,
   }
 }

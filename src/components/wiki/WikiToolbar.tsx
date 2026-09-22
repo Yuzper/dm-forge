@@ -156,11 +156,13 @@ export function WikiSearchBox({ value, onChange, fields, onFieldsChange, matchCo
 // line and it wraps its pills in place instead. Use it only where nothing needs to
 // sit tight against the pills — a growing block pushes later siblings to the far
 // right of the row.
-export function WikiTypeFilters({ excluded, value, onChange, grow }: {
+export function WikiTypeFilters({ excluded, value, onChange, grow, counts }: {
   excluded: Set<string>
   value: WikiTypeFilter
   onChange: (v: WikiTypeFilter) => void
   grow?: boolean
+  /** How many articles each type holds. Omit to render bare labels. */
+  counts?: Record<string, number>
 }) {
   return (
     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', ...(grow ? { flex: '1 1 0' } : null) }}>
@@ -168,11 +170,56 @@ export function WikiTypeFilters({ excluded, value, onChange, grow }: {
         const Icon = f.icon
         const active = value === f.value
         const color = f.value === 'all' ? 'var(--gold)' : f.color
+        const count = counts?.[f.value]
         return (
           <button key={f.value} onClick={() => onChange(active ? 'all' : (f.value as WikiTypeFilter))}
             style={toolbarPillStyle(active, color)}>
             <Icon size={11} /> {f.label}
+            {count !== undefined && (
+              <span style={{ fontSize: 10, color: active ? color : 'var(--text-muted)', opacity: active ? 0.85 : 1 }}>
+                {count}
+              </span>
+            )}
           </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Type distribution bar ──────────────────────────────────────────────────────
+
+// The hub's "Articles by type" chart, reduced to one 4px strip under the
+// filters: same proportions, but every segment is the filter it stands for.
+// Types hidden by "Hide types" leave the bar as well, so it always describes
+// exactly the set the grid is drawn from.
+export function TypeDistributionBar({ counts, excluded, value, onChange }: {
+  counts: Record<string, number>
+  excluded: Set<string>
+  value: WikiTypeFilter
+  onChange: (v: WikiTypeFilter) => void
+}) {
+  const slices = ALL_FILTERS
+    .filter(f => f.value !== 'all' && !excluded.has(f.value) && (counts[f.value] ?? 0) > 0)
+    .map(f => ({ type: f.value, label: f.label, color: f.color, count: counts[f.value] }))
+  const total = slices.reduce((sum, s) => sum + s.count, 0)
+  if (total === 0) return null
+
+  return (
+    <div style={{ display: 'flex', gap: 1, height: 4, borderRadius: 99, overflow: 'hidden', marginTop: 10 }}>
+      {slices.map(s => {
+        const dimmed = value !== 'all' && value !== s.type
+        return (
+          <button
+            key={s.type}
+            onClick={() => onChange(value === s.type ? 'all' : (s.type as WikiTypeFilter))}
+            title={`${s.label} · ${s.count}`}
+            style={{
+              width: `${(s.count / total) * 100}%`, height: '100%', padding: 0,
+              border: 'none', cursor: 'pointer', background: s.color,
+              opacity: dimmed ? 0.28 : 1, transition: 'opacity 120ms ease',
+            }}
+          />
         )
       })}
     </div>

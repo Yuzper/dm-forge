@@ -7,6 +7,7 @@ import type { MapShape, MapShapeLayer, Session } from '../../types'
 import { extractDescription, makeDescriptionDoc, type HubLink } from '../../utils/hubLinks'
 import SwatchPicker from '../SwatchPicker'
 import MapFeatureEditModal from './MapFeatureEditModal'
+import AudienceControl from '../AudienceControl'
 
 export interface ShapeEditResult {
   label: string
@@ -55,6 +56,7 @@ export default function ShapeEditModal({
       initialLinks={links}
       sessions={sessions}
       articles={articles}
+      audience={<AudienceControl entityType="shape" entityId={shape.id} />}
       onClose={onClose}
       onDelete={onDelete}
       onSave={({ name, description, links: edited }) => onSave({

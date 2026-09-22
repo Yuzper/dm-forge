@@ -14,9 +14,10 @@
 // sit next to each other here.
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Eye, EyeOff, History, Layers, List, Lock, Pencil, Plus, Trash2, Unlock, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, History, Layers, List, Lock, Pencil, Plus, Trash2, Unlock, X } from 'lucide-react'
 import type { MapLayer, MapShape, MapShapeLayer, POI } from '../../types'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
+import { useDragReorder } from '../../hooks/useDragReorder'
 import { layerLabel } from '../../utils/visitLayers'
 import { poiColor } from './MapPOIMarker'
 
@@ -308,7 +309,7 @@ function ShapeRow({ shape, indent, onSelect }: {
 
 function DrawingLayersSection({
   layers, shapes, activeLayerId, editable,
-  onSetActive, onToggleVisible, onToggleLocked, onRename, onDelete, onCreate, onSelectShape,
+  onSetActive, onToggleVisible, onToggleLocked, onRename, onDelete, onCreate, onReorder, onSelectShape,
 }: {
   layers: MapShapeLayer[]
   shapes: MapShape[]
@@ -320,11 +321,15 @@ function DrawingLayersSection({
   onRename: (layer: MapShapeLayer, name: string) => void
   onDelete: (layer: MapShapeLayer) => void
   onCreate: () => void
+  onReorder: (from: number, to: number) => void
   onSelectShape: (shape: MapShape) => void
 }) {
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const unfiled = shapes.filter(s => s.layer_id == null)
+  // Renaming puts a text input in the row; a draggable ancestor would steal the
+  // cursor's selection drag from it.
+  const dnd = useDragReorder(onReorder, { enabled: editable && renamingId === null })
 
   return (
     <Section
@@ -347,17 +352,28 @@ function DrawingLayersSection({
         </div>
       )}
 
-      {layers.map(layer => {
+      {layers.map((layer, layerIndex) => {
         const layerShapes = shapes.filter(s => s.layer_id === layer.id)
         const isActive = activeLayerId === layer.id
         const expanded = expandedId === layer.id
         return (
-          <div key={layer.id}>
+          <div key={layer.id} {...dnd.rowProps(layerIndex)}
+            style={{
+              opacity: dnd.dragIndex === layerIndex ? 0.4 : 1,
+              boxShadow: dnd.isDropBefore(layerIndex) ? 'inset 0 2px 0 #c8733a'
+                : (layerIndex === layers.length - 1 && dnd.isDropAtEnd(layers.length)) ? 'inset 0 -2px 0 #c8733a'
+                : undefined,
+              transition: 'opacity 120ms ease',
+            }}>
             <div style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
               background: isActive ? 'rgba(200,115,58,0.16)' : 'transparent',
               borderLeft: `2px solid ${isActive ? '#c8733a' : 'transparent'}`,
+              cursor: editable ? 'grab' : 'default',
             }}>
+              {editable && (
+                <GripVertical size={11} style={{ color: 'rgba(255,255,255,0.28)', flexShrink: 0, marginLeft: -4, marginRight: -4 }} />
+              )}
               <button
                 onClick={() => onToggleVisible(layer)}
                 title={layer.visible === 1 ? 'Hide layer' : 'Show layer'}
@@ -445,7 +461,7 @@ export default function MapContentsPanel({
   visits,
   layers, shapes, activeLayerId, editable,
   onSetActiveLayer, onToggleLayerVisible, onToggleLayerLocked,
-  onRenameLayer, onDeleteLayer, onCreateLayer, onSelectShape,
+  onRenameLayer, onDeleteLayer, onCreateLayer, onReorderLayers, onSelectShape,
 }: {
   /** Rendered in a panel column (static flow) rather than floating. */
   stacked: boolean
@@ -474,6 +490,7 @@ export default function MapContentsPanel({
   onRenameLayer: (layer: MapShapeLayer, name: string) => void
   onDeleteLayer: (layer: MapShapeLayer) => void
   onCreateLayer: () => void
+  onReorderLayers: (from: number, to: number) => void
   onSelectShape: (shape: MapShape) => void
 }) {
   return (
@@ -529,6 +546,7 @@ export default function MapContentsPanel({
           onRename={onRenameLayer}
           onDelete={onDeleteLayer}
           onCreate={onCreateLayer}
+          onReorder={onReorderLayers}
           onSelectShape={onSelectShape}
         />
       </div>
@@ -538,6 +556,7 @@ export default function MapContentsPanel({
           {activeLayerId != null
             ? 'New shapes go on the highlighted layer'
             : 'Pick a layer to draw onto'}
+          {layers.length > 1 && <><br />Drag layers to restack — lower in the list draws on top.</>}
         </div>
       )}
     </div>

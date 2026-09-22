@@ -7,6 +7,7 @@ import type { GameMap, MapLayer, POI } from '../types'
 import type { MapContextValue } from '../context/MapContext'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
 import { useMapCollection } from '../hooks/useMapCollection'
+import { useDragReorder } from '../hooks/useDragReorder'
 import { ARTICLE_SCOPE, loadVisitView, saveVisitView } from '../utils/visitLayers'
 import Modal from './Modal'
 
@@ -137,7 +138,7 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
   const {
     maps, currentMap, importing,
     selectMap: handleSelectMap, addMap: handleUploadNew,
-    renameMap, replaceImage, deleteMap: handleDeleteMap, patchMap,
+    renameMap, replaceImage, deleteMap: handleDeleteMap, patchMap, reorderMaps,
   } = useMapCollection({
     owner: { kind: 'article', id: articleId },
     onSelect: map => {
@@ -153,6 +154,9 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
       window.api.getMapLayers(map.id).then(setLayers)
     },
   })
+
+  // Same rule as the world map: tab order is an edit, so it follows Read/Edit.
+  const tabDnd = useDragReorder(reorderMaps, { axis: 'x', enabled: editMode })
 
   const handleReplaceMapImage = (map: GameMap) => replaceImage(map)
 
@@ -228,20 +232,27 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
         borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)', borderTop: '1px solid var(--border)',
         overflow: 'hidden',
       }}>
-        {maps.map(map => (
+        {maps.map((map, mapIndex) => (
           <div
             key={map.id}
+            {...tabDnd.rowProps(mapIndex)}
             onClick={() => handleSelectMap(map)}
+            title={editMode ? 'Drag to reorder' : undefined}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '0 10px 0 12px', height: 36,
-              cursor: 'pointer',
+              cursor: editMode ? 'grab' : 'pointer',
               borderRight: '1px solid var(--border)',
               borderBottom: currentMap?.id === map.id ? '2px solid var(--gold)' : '2px solid transparent',
               background: currentMap?.id === map.id ? 'var(--bg-active)' : 'transparent',
               color: currentMap?.id === map.id ? 'var(--gold)' : 'var(--text-secondary)',
               fontSize: 12, fontWeight: currentMap?.id === map.id ? 600 : 400,
               transition: 'all var(--transition)', whiteSpace: 'nowrap', userSelect: 'none',
+              opacity: tabDnd.dragIndex === mapIndex ? 0.4 : 1,
+              // A rule in the tab seam marks where it lands.
+              boxShadow: tabDnd.isDropBefore(mapIndex) ? 'inset 2px 0 0 var(--gold)'
+                : (mapIndex === maps.length - 1 && tabDnd.isDropAtEnd(maps.length)) ? 'inset -2px 0 0 var(--gold)'
+                : undefined,
             }}
             className={(currentMap?.id !== map.id) ? 'hover-bg' : ''}
           >

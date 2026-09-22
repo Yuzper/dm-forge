@@ -228,6 +228,7 @@ export function initDatabase() {
       description TEXT    NOT NULL DEFAULT '',
       template    TEXT    NOT NULL DEFAULT 'custom',
       ranks       TEXT    NOT NULL DEFAULT '[]',
+      node_style  TEXT    NOT NULL DEFAULT '',
       article_id  INTEGER REFERENCES articles(id) ON DELETE SET NULL,
       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -240,6 +241,7 @@ export function initDatabase() {
       label      TEXT    NOT NULL DEFAULT 'New node',
       node_type  TEXT    NOT NULL DEFAULT 'person',
       rank_id    TEXT    NOT NULL DEFAULT '',
+      frame      TEXT    NOT NULL DEFAULT '',
       pos_x      REAL    NOT NULL DEFAULT 100,
       pos_y      REAL    NOT NULL DEFAULT 100,
       created_at TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -344,7 +346,7 @@ export function initDatabase() {
     CREATE TABLE IF NOT EXISTS visibility_grants (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-      entity_type TEXT    NOT NULL,   -- 'article' | 'map' | 'poi' | 'layer'
+      entity_type TEXT    NOT NULL,   -- article|map|poi|shape|layer|shape_layer
       entity_id   INTEGER NOT NULL,
       player_id   INTEGER          REFERENCES players(id) ON DELETE CASCADE,  -- NULL = party
       created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -474,6 +476,13 @@ export function initDatabase() {
   if (!campaignCols.some(c => c.name === 'timeline_show_lifespans')) {
     db.exec(`ALTER TABLE campaigns ADD COLUMN timeline_show_lifespans INTEGER NOT NULL DEFAULT 0`)
   }
+  // Where this campaign's player site was last published. Remembered so the
+  // usual publish is one click into the same folder — which is also what lets
+  // the exporter prune bundles and images it no longer produces (a renamed
+  // player's old bundle is still decryptable with the password they have).
+  if (!campaignCols.some(c => c.name === 'player_site_path')) {
+    db.exec(`ALTER TABLE campaigns ADD COLUMN player_site_path TEXT`)
+  }
   // Calendar definition (JSON: unitName, spans[], campaign start date). NULL
   // falls back to a single 365-day span anchored to timeline_base_year.
   if (!campaignCols.some(c => c.name === 'timeline_calendar')) {
@@ -587,6 +596,11 @@ export function initDatabase() {
   if (!webCols.some(c => c.name === 'article_id')) {
     db.exec(`ALTER TABLE relation_webs ADD COLUMN article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL`)
   }
+  // Per-web node presentation (compact rows vs framed portrait cards). JSON blob
+  // so new knobs don't each need their own column; '' means "app defaults".
+  if (!webCols.some(c => c.name === 'node_style')) {
+    db.exec(`ALTER TABLE relation_webs ADD COLUMN node_style TEXT NOT NULL DEFAULT ''`)
+  }
   // Many-to-many web↔article links. Backfill from the legacy single article_id
   // (which is retained as the "primary" link used by hierarchy derivation).
   db.exec(`
@@ -607,6 +621,11 @@ export function initDatabase() {
   }
   if (!nodeCols2.some(c => c.name === 'rank_id')) {
     db.exec(`ALTER TABLE relation_nodes ADD COLUMN rank_id TEXT NOT NULL DEFAULT ''`)
+  }
+  // Per-node portrait frame override. '' inherits the web's default frame; a
+  // built-in id ('gold') or a JSON blob (custom image + aperture inset) wins.
+  if (!nodeCols2.some(c => c.name === 'frame')) {
+    db.exec(`ALTER TABLE relation_nodes ADD COLUMN frame TEXT NOT NULL DEFAULT ''`)
   }
   const edgeCols2 = db.pragma('table_info(relation_edges)') as { name: string }[]
   if (!edgeCols2.some(c => c.name === 'edge_type')) {

@@ -10,6 +10,7 @@
 // pinned into this list and resolves its own label here.
 import { Pin, PinOff, ChevronDown, ChevronRight, Scroll, BookOpen, Clock,
   FileText, Layers, Sparkles, ShoppingBag, Network, Music2 } from 'lucide-react'
+import { reorder, useDragReorder } from '../../hooks/useDragReorder'
 import { useStore } from '../../store/store'
 import type { Location } from '../../store/location'
 import { locationLabel, sameLocation } from '../../store/location'
@@ -39,7 +40,7 @@ export default function SidebarPinned({ grow, open, onToggleOpen }: {
   onToggleOpen: () => void
 }) {
   const {
-    pinnedLocations, togglePin, currentCampaign,
+    pinnedLocations, togglePin, reorderPins, currentCampaign,
     tabs, activeTabId, selectTab, openTab,
     sessions, drafts, allArticles, locationNames,
   } = useStore()
@@ -53,6 +54,17 @@ export default function SidebarPinned({ grow, open, onToggleOpen }: {
     .filter((x): x is { loc: Location; label: string } => x.label !== null)
 
   const activeLocation = tabs.find(t => t.id === activeTabId)?.location
+
+  // Pinning appends, which is right for building the list but wrong for living
+  // with it — a bookmark bar you can't arrange is just a log. Rows are indexed
+  // against the *visible* list, so put the reordered ones back into the slots
+  // they occupied and leave any unresolvable pin sitting where it was.
+  const dnd = useDragReorder((from, to) => {
+    const moved = reorder(rows.map(r => r.loc), from, to)
+    let i = 0
+    reorderPins(pinnedLocations.map(loc =>
+      rows.some(r => sameLocation(r.loc, loc)) ? moved[i++] : loc))
+  })
 
   // Reuse a tab already pointed there, else open one — the same rule the Recent
   // list used, and what makes a pinned row feel like a bookmark bar.
@@ -91,7 +103,7 @@ export default function SidebarPinned({ grow, open, onToggleOpen }: {
       />
 
       {open && (
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }} {...dnd.tailProps(rows.length)}>
           {rows.length === 0 ? (
             <div style={{
               padding: '4px 10px 8px', fontSize: 10.5, lineHeight: 1.5,
@@ -100,30 +112,43 @@ export default function SidebarPinned({ grow, open, onToggleOpen }: {
               Right-click an article, session or section and choose <span style={{ fontStyle: 'normal' }}>Pin to sidebar</span> to keep it here.
             </div>
           ) : rows.map(({ loc, label }, i) => (
-            <NavRow
+            <div
               key={`${loc.type}:${i}`}
-              size="sm"
-              className="pin-row"
-              icon={pinIcon(loc)}
-              label={label}
-              title={label}
-              active={!!activeLocation && sameLocation(activeLocation, loc)}
-              onClick={() => go(loc)}
-              onContextMenu={e => showMenu(e, buildLocationMenu(loc, menuCtx, {
-                label: `Open “${truncate(label)}”`,
-              }))}
-              trailing={
-                <span
-                  role="button"
-                  title="Unpin"
-                  className="pin-unpin"
-                  onClick={e => { e.stopPropagation(); togglePin(loc) }}
-                  style={{ display: 'flex', alignItems: 'center', flexShrink: 0, padding: '0 1px' }}
-                >
-                  <PinOff size={11} />
-                </span>
-              }
-            />
+              {...dnd.rowProps(i)}
+              style={{
+                opacity: dnd.dragIndex === i ? 0.4 : 1,
+                // A hairline in the gap above (or below the last row) rather
+                // than a border on the row, which would nudge the list.
+                boxShadow: dnd.isDropBefore(i) ? 'inset 0 2px 0 -1px var(--gold)'
+                  : (i === rows.length - 1 && dnd.isDropAtEnd(rows.length)) ? 'inset 0 -2px 0 -1px var(--gold)'
+                  : undefined,
+                transition: 'opacity 120ms ease',
+              }}
+            >
+              <NavRow
+                size="sm"
+                className="pin-row"
+                icon={pinIcon(loc)}
+                label={label}
+                title={label}
+                active={!!activeLocation && sameLocation(activeLocation, loc)}
+                onClick={() => go(loc)}
+                onContextMenu={e => showMenu(e, buildLocationMenu(loc, menuCtx, {
+                  label: `Open “${truncate(label)}”`,
+                }))}
+                trailing={
+                  <span
+                    role="button"
+                    title="Unpin"
+                    className="pin-unpin"
+                    onClick={e => { e.stopPropagation(); togglePin(loc) }}
+                    style={{ display: 'flex', alignItems: 'center', flexShrink: 0, padding: '0 1px' }}
+                  >
+                    <PinOff size={11} />
+                  </span>
+                }
+              />
+            </div>
           ))}
         </div>
       )}

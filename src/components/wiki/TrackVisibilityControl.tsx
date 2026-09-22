@@ -5,15 +5,17 @@
 import { useRef, useState } from 'react'
 import { Eye, EyeOff, Users } from 'lucide-react'
 import DropdownPortal from '../DropdownPortal'
+import { defaultTrackMode } from '../../../shared/tracks'
 import type { TrackVisibility, TrackVisMode } from '../../types'
 
-// Stored mode for a field, applying the defaults: fields inherit (visible to
-// anyone who can see the page) except *_Date fields, which start DM-only.
-// Mirrors trackMode() in electron/main/ipc/publishCore.ts — keep them in step.
+// Stored mode for a field, falling back to the shared default when the DM has
+// never touched its eye. defaultTrackMode lives in shared/tracks.ts and is the
+// same function the exporter calls, so this icon can't disagree with what
+// publish actually does — which is the whole job of this control.
 export function effectiveTrackMode(tv: TrackVisibility, key: string, isMilestone = false): TrackVisMode {
   const e = (isMilestone ? tv.milestones : tv.tracks)?.[key]
   if (e?.mode) return e.mode
-  return (!isMilestone && key.endsWith('_Date')) ? 'dm' : 'inherit'
+  return defaultTrackMode(key, isMilestone)
 }
 
 export function trackModePlayers(tv: TrackVisibility, key: string, isMilestone = false): number[] {

@@ -18,7 +18,7 @@ import { useMapViewport } from '../hooks/useMapViewport'
 import { useMapMeasure } from '../hooks/useMapMeasure'
 import { useShapeDrawing } from '../hooks/useShapeDrawing'
 import { centroidOf, parsePoints } from '../utils/mapShapeGeometry'
-import { parseHubLinks } from '../utils/hubLinks'
+import { parseHubLinks, resolveHubLinks } from '../utils/hubLinks'
 import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
 import { openItems, truncate, type MenuItem } from '../utils/contextMenus'
 
@@ -184,7 +184,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
   const [cursorStyle, setCursorStyle] = useState('grab')
 
   // ── Drawing shapes (districts, zones, wards…) ─────────────────────────────
-  const { currentCampaign, sessions, navigateToArticleByTitle, navigateToSessionById } = useStore()
+  const { currentCampaign, sessions, allArticles, navigateToArticleByTitle, navigateToSessionById } = useStore()
   // One tool owns canvas clicks, matching the world map. 'select' is the
   // resting state — which is what finally makes a drawn region clickable on an
   // article map, where POI placement used to be permanently armed.
@@ -355,19 +355,20 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
   // ── Context menus ───────────────────────────────────────────────────────────
 
   const poiMenu = useCallback((poi: POI, e: React.MouseEvent) => {
-    const links = parseHubLinks(poi.hub_links)
+    // Resolved, so a renamed session doesn't offer to open its old name.
+    const links = resolveHubLinks(parseHubLinks(poi.hub_links), { sessions, articles: allArticles })
     const article = links.find(l => l.type === 'wiki' && l.article_id)
     const session = links.find(l => l.type === 'session' && l.session_id)
     const menu: MenuItem[] = []
     // A pin's links are the reason to right-click it: the pin is a pointer, and
     // the thing it points at is what you actually want open beside the map.
-    if (article) {
+    if (article && !article.missing) {
       menu.push(...openItems(
         { type: 'article', articleId: article.article_id! }, menuCtx,
         `Open “${truncate(article.title ?? 'linked article')}”`,
       ))
     }
-    if (session) {
+    if (session && !session.missing) {
       menu.push({
         label: `Open ${truncate(session.name ?? 'linked session')}`,
         click: () => menuCtx.go({ type: 'session', sessionId: session.session_id! }),
@@ -385,7 +386,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
   }, [menuCtx, showMenu, selectPOI, deletePOI, editMode, readMode])
 
   const shapeMenu = useCallback((shape: MapShape, e: React.MouseEvent) => {
-    const links = parseHubLinks(shape.hub_links)
+    const links = resolveHubLinks(parseHubLinks(shape.hub_links), { sessions, articles: allArticles })
     const article = links.find(l => l.type === 'wiki' && l.article_id)
     const menu: MenuItem[] = []
     if (article) {
@@ -562,6 +563,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
             onRenameLayer={shapeStore.renameLayer}
             onDeleteLayer={shapeStore.deleteLayer}
             onCreateLayer={() => shapeStore.createLayer()}
+            onReorderLayers={shapeStore.reorderLayers}
             onSelectShape={focusShape}
           />
         </div>
@@ -611,6 +613,10 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
             : isShapeTool(tool) && shapeStore.layers.length === 0
               ? 'Add a drawing layer in the Layers panel, then draw onto it'
               : toolHint(tool, drawing.isDrawing)}
+          {/* Only mentioned once there is something to take back. */}
+          {drawing.canUndo && !measureMode && !drawing.isDrawing && (
+            <span style={{ color: 'var(--text-muted)', opacity: 0.8 }}> · Ctrl+Z undoes the last region edit</span>
+          )}
         </div>
       )}
 

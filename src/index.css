@@ -348,6 +348,39 @@ svg g[data-menu-target] > circle {
 .ProseMirror mark { background: rgba(200,168,75,0.2); color: var(--gold); border-radius: 2px; padding: 0 2px; }
 /* DM-only spans: tinted so the DM sees what will be stripped from the player export. */
 .dm-only { background: rgba(224,85,85,0.15); border-bottom: 1px dashed rgba(224,85,85,0.55); border-radius: 2px; }
+/* Leaf blocks (images, rules) carry DM-only as a node attribute, not a mark.
+   They get a ring rather than a text tint so a redacted image is as obvious as
+   a redacted sentence — the old feature failed quietly because it wasn't. */
+.dm-only-block { outline: 2px dashed rgba(224,85,85,0.65); outline-offset: 2px; border-radius: 3px; opacity: 0.75; }
+
+/* Preview-as-player. The published site ships its own stylesheet (viewer.css),
+   which the DM app never loads, so the shared renderer needs enough here to read
+   like prose rather than like an unstyled dump. */
+.player-preview-prose .prose { font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
+.player-preview-prose .prose p { margin: 0 0 9px; }
+.player-preview-prose .prose h1,
+.player-preview-prose .prose h2,
+.player-preview-prose .prose h3 { color: var(--text-primary); margin: 14px 0 6px; line-height: 1.3; }
+.player-preview-prose .prose h1 { font-size: 17px; }
+.player-preview-prose .prose h2 { font-size: 15px; }
+.player-preview-prose .prose h3 { font-size: 13px; }
+.player-preview-prose .prose ul,
+.player-preview-prose .prose ol { margin: 0 0 9px; padding-left: 20px; }
+.player-preview-prose .prose blockquote {
+  margin: 0 0 9px; padding-left: 10px;
+  border-left: 2px solid var(--border-light); color: var(--text-muted);
+}
+.player-preview-prose .prose img { max-width: 100%; border-radius: 4px; }
+.player-preview-prose .prose a,
+.player-preview-prose .prose .wikilink { color: var(--gold); cursor: pointer; text-decoration: none; }
+.player-preview-prose .prose table { border-collapse: collapse; width: 100%; margin: 0 0 9px; }
+.player-preview-prose .prose th,
+.player-preview-prose .prose td {
+  border: 1px solid var(--border); padding: 4px 7px; font-size: 12px;
+  /* Redacted cells are blanked, not removed, so an empty one still needs height. */
+  min-height: 20px;
+}
+.player-preview-prose .prose th { background: var(--bg-raised, rgba(255,255,255,0.03)); }
 
 .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
@@ -417,6 +450,21 @@ svg g[data-menu-target] > circle {
   border-bottom-color: #e05555 !important;
   opacity: 0.85;
 }
+
+/* Web links inside editor — the only link type that leaves the app, so it is
+   the only one drawn in the classic underlined-link way. */
+.web-link {
+  color: #4cc9d6;
+  border-bottom: 1px solid #4cc9d644;
+  cursor: pointer;
+  transition: color var(--transition);
+  text-decoration: none;
+  word-break: break-word;
+}
+.web-link:hover { color: #7ee0ea; border-bottom-color: #7ee0ea; }
+/* While editing, a plain click places the caret (Ctrl+click opens), so the
+   pointer must not promise a jump. */
+.ProseMirror[contenteditable="true"] .web-link { cursor: text; }
 
 /* Tables */
 .ProseMirror table {

@@ -103,6 +103,20 @@ export function registerSoundIPC() {
     return db.prepare('SELECT * FROM sounds WHERE id = ?').get(id)
   })
 
+  // Both lists already read ORDER BY sort_order; this is what finally writes it.
+  const reorderStmt = (table: 'sounds' | 'sound_library') =>
+    db.prepare(`UPDATE ${table} SET sort_order = @sort_order WHERE id = @id`)
+
+  const applyOrder = (table: 'sounds' | 'sound_library', orders: { id: number; sort_order: number }[]) => {
+    const stmt = reorderStmt(table)
+    db.transaction((list: { id: number; sort_order: number }[]) => {
+      for (const o of list) stmt.run(o)
+    })(orders)
+  }
+
+  ipcMain.handle('sounds:reorder', (_e, orders: { id: number; sort_order: number }[]) =>
+    applyOrder('sounds', orders))
+
   ipcMain.handle('sounds:delete', (_e, id: number) => {
     const sound = db.prepare('SELECT file_path FROM sounds WHERE id = ?').get(id) as { file_path: string } | undefined
     db.prepare('DELETE FROM sounds WHERE id = ?').run(id)
@@ -140,6 +154,9 @@ export function registerSoundIPC() {
 
   // Removing a library entry leaves board copies alone — they keep playing the
   // file, which is only unlinked once nothing references it any more.
+  ipcMain.handle('soundlib:reorder', (_e, orders: { id: number; sort_order: number }[]) =>
+    applyOrder('sound_library', orders))
+
   ipcMain.handle('soundlib:delete', (_e, id: number) => {
     const entry = db.prepare('SELECT file_path FROM sound_library WHERE id = ?').get(id) as { file_path: string } | undefined
     db.prepare('DELETE FROM sound_library WHERE id = ?').run(id)

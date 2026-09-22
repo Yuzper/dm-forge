@@ -1,8 +1,8 @@
 # Player-Facing Pages — Project Plan
 
-Branch: `player-pages`
-Status: planning → implementation
-Last updated: 2026-07-25
+Branch: `player-pages` → hardening on `player-pages-hardening`
+Status: implemented; phases 1–5 shipped, 6–7 partial
+Last updated: 2026-09-22
 
 ---
 
@@ -233,6 +233,51 @@ The model is only as good as how easy it is to set:
 
 ---
 
+## 9a. Hardening pass (2026-09-22)
+
+A review of the shipped pipeline found the redaction model sound in shape —
+whitelisted fields, project-then-index — but leaking at the edges. What changed:
+
+- **DM-only reached text only.** `toggleMark` cannot touch a block node, so images
+  and rules inside a "redacted" passage published intact. There is now a `dmOnly`
+  node attribute (`DM_ONLY_NODE_TYPES` in `src/components/DmOnlyMark.ts`) driven by
+  the same toolbar button, and the exporter drops nodes flagged either way.
+- **Marks are a whitelist** (`KEEP_MARKS`). `sessionLink` was shipping session
+  titles in its attrs; `spellLink` likewise. Dropping a mark keeps its text.
+- **Redacted table cells are blanked, not removed.** Removing one shifted every
+  later value in the row under the wrong heading. A table with nothing left in any
+  cell is dropped whole.
+- **One source of truth for tracks** (`shared/tracks.ts`). `NON_TAG_TRACKS` existed
+  in three copies and two had drifted — `Age` was excluded from tags in the UI but
+  became a `#317` tag on the player site. `Status` now defaults to DM-only, per §3.5.
+- **Stale output is pruned.** A renamed or deleted player used to leave their old
+  bundle in `data/`, still decryptable with the password they already had. Publish
+  now removes bundles and images it no longer produces, which is why the
+  destination folder is remembered on `campaigns.player_site_path`.
+- **An empty password is refused,** not warned about: the KDF parameters are public
+  in `site.json`, so that bundle was plaintext.
+- **Change tracking uses a content hash,** not `updated_at` (editing a DM-only
+  paragraph was flagging pages as "Updated" for players whose view hadn't changed),
+  and the seen-baseline is committed on dismiss rather than on mount, so a refresh
+  no longer destroys the summary before it's read.
+- **Map features carry their own grants** (`poi`, `shape`, and `shape_layer` entity
+  types), with "follow the linked page" as the explicit default rather than an
+  implicit rule. Shapes no longer publish based on `map_shape_layers.visible`,
+  which was the DM's own screen state.
+- **Preview-as-player** (§8) is built: `publish:preview` runs the real
+  `buildPlayerBundle` and renders it through the same `shared/PlayerContent` the
+  published site uses.
+
+Still open after this pass:
+- Article-attached location maps are still not exported; only campaign-level maps are.
+- `layer` / `shape_layer` grants have no UI yet — the plumbing works, nothing sets them.
+- Images remain unencrypted and pooled across players; secrecy rests on unguessable
+  filenames and the host not listing directories. Stated plainly in the output README.
+- No coverage matrix, no pre-publish leak warnings, no bundle-size warnings (§8).
+- Publishing still ends at a folder; getting it to the host is manual.
+
+---
+
 ## 10. Decisions
 
 Resolved:
@@ -243,6 +288,17 @@ Resolved:
   filtered track set (`getTrackTags`). Hand-typed DM tags are dropped entirely — no per-tag
   toggle needed, no leak vector. ✓
 
+- **KDF: PBKDF2-SHA256, 150k iterations**, AES-256-GCM. Chosen over Argon2id to stay
+  dependency-free on both sides (node `crypto` and WebCrypto both have it natively).
+  Parameters are published in `site.json` so the viewer reads them rather than
+  assuming. ✓
+- **Per-player file naming: `sha256(lowercased-username).enc`**, so the roster isn't
+  listed anywhere public. ✓
+- **Publish destination is remembered per campaign** and republished into in place,
+  because pruning stale bundles only works if the folder is stable. ✓
+
 Still open:
-- Publish cadence & repo layout (one repo per campaign? per-player file naming).
-- KDF choice (Argon2id preferred; PBKDF2 fallback if bundle-size/deps matter).
+- Repo layout (one repo per campaign?) and how the folder actually reaches the host.
+- Whether a third audience tier deserves its own UI. Granting a pin without its
+  article already produces it — a labelled, unclickable marker: the party knows the
+  place exists but has no page for it.

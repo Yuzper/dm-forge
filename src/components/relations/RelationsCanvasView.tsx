@@ -13,14 +13,18 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 import {
   Network, Plus, ArrowLeft, Pencil, Check, X, ExternalLink, Filter, GitMerge, LayoutGrid,
-  Users, Layers, Unlink, Link2, Palette, Hand, MousePointer2,
+  Users, Layers, Unlink, Link2, Palette, Hand, MousePointer2, Frame as FrameIcon, Waypoints,
 } from 'lucide-react'
 import {
   type Rank, type ColorByConfig, TEMPLATE_CONFIG, type RelationWeb, type DBRelationNode, type DBRelationEdge,
+  type NodeStyle, type NodeRenderCtx, type BridgeRef, type OpenBridge, type NodeData,
   parentRoleFromUnionLabel, findFreePosition, RANK_PALETTE,
+  parseNodeStyle, serializeNodeStyle, nodeFootprint, DEFAULT_NODE_STYLE,
+  isGhostId, ghostNodeToRF, ghostEdgeToRF, bridgeTetherEdge,
   dbNodeToRF, dbEdgeToRF, NODE_TYPES, EDGE_TYPES,
 } from './relationsShared'
-import { TrackFilterPanel, RankPanel, ColorByPanel, LinkedArticlePill } from './relationsPanels'
+import { parseFrame, serializeFrame, FramePicker } from './relationsFrames'
+import { TrackFilterPanel, RankPanel, ColorByPanel, LinkedArticlePill, NodeStylePanel } from './relationsPanels'
 import { trackValues } from '../wiki/wikiConstants'
 import { SECTION_ACCENTS } from '../../constants/sections'
 import {
@@ -30,9 +34,35 @@ import {
 import { useContextMenu, useMenuCtx } from '../../hooks/useContextMenu'
 import { buildArticleMenu, truncate } from '../../utils/contextMenus'
 
+// Where to drop a ghosted branch: keep the other web's own arrangement intact
+// and slide the whole thing to the right of the bridged node, far enough out
+// that it doesn't land on top of the real tree.
+function ghostBranchOffset(
+  host: DBRelationNode,
+  anchor: DBRelationNode,
+  branchNodes: DBRelationNode[],
+  realNodes: DBRelationNode[],
+): { dx: number; dy: number } {
+  const CLEAR_X = 190, CLEAR_Y = 120
+  const dy = host.pos_y - anchor.pos_y
+  for (let gap = 300; gap <= 2400; gap += 80) {
+    const dx = host.pos_x + gap - anchor.pos_x
+    const clash = branchNodes.some(g => realNodes.some(r =>
+      Math.abs(g.pos_x + dx - r.pos_x) < CLEAR_X && Math.abs(g.pos_y + dy - r.pos_y) < CLEAR_Y))
+    if (!clash) return { dx, dy }
+  }
+  return { dx: host.pos_x + 2400 - anchor.pos_x, dy }
+}
+
 // ── Canvas View ────────────────────────────────────────────────────────────────
 
-export default function RelationsCanvasView({ web, onBack, focusArticleId }: { web: RelationWeb; onBack: () => void; focusArticleId?: number | null }) {
+export default function RelationsCanvasView({ web, onBack, focusArticleId, onOpenWeb }: {
+  web: RelationWeb
+  onBack: () => void
+  focusArticleId?: number | null
+  // Jump to another web (a ghosted branch's home), optionally centred on an article.
+  onOpenWeb?: (webId: number, focusArticleId: number | null) => void
+}) {
   const { currentCampaign, navigateToArticleByTitle } = useStore()
   const showMenu = useContextMenu()
   const menuCtx = useMenuCtx()
@@ -117,6 +147,46 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     try { await (window as any).api.updateRelationWeb(web.id, { ranks: JSON.stringify(next) }) } catch {}
   }, [web.id])
 
+  // ── Node style (compact rows vs framed portrait cards) ──────────────────────
+  const [nodeStyle, setNodeStyle] = useState<NodeStyle>(() => parseNodeStyle(web.node_style))
+  const [showStylePanel, setShowStylePanel] = useState(false)
+
+  const saveNodeStyle = useCallback(async (next: NodeStyle) => {
+    setNodeStyle(next)
+    try { await (window as any).api.updateRelationWeb(web.id, { node_style: serializeNodeStyle(next) }) } catch {}
+  }, [web.id])
+
+  // ── Cross-web bridges ───────────────────────────────────────────────────────
+  // People who also appear in another web (married in, seconded to another
+  // order…). Derived from the shared article, so there's nothing to wire up.
+  const [bridges, setBridges] = useState<Record<number, BridgeRef[]>>({})
+  const [openBridge, setOpenBridge] = useState<OpenBridge | null>(null)
+  const [ghostNodes, setGhostNodes] = useState<RFNode[]>([])
+  const [ghostEdges, setGhostEdges] = useState<RFEdge[]>([])
+
+  // Where each ghosted branch sits, keyed by "<hostNodeId>:<targetWebId>". Seeded
+  // by auto-placement, then overwritten as the DM drags the branch about, so it
+  // stays put across depth changes and re-expansions for the rest of the session.
+  const ghostOffsetsRef = useRef<Record<string, { dx: number; dy: number }>>({})
+  const openBridgeRef = useRef<OpenBridge | null>(null)
+  openBridgeRef.current = openBridge
+  // Set while a ghost is actually being dragged, so releasing the drag doesn't
+  // also fire the click that navigates to the other web.
+  const ghostDraggedRef = useRef(false)
+
+  const reloadBridges = useCallback(async () => {
+    try {
+      const rows: any[] = await (window as any).api.getRelationBridges(web.id)
+      const byNode: Record<number, BridgeRef[]> = {}
+      for (const r of rows) {
+        (byNode[r.node_id] ||= []).push({
+          web_id: r.web_id, web_name: r.web_name, web_template: r.web_template, target_node_id: r.target_node_id,
+        })
+      }
+      setBridges(byNode)
+    } catch { setBridges({}) }
+  }, [web.id])
+
   // Derive which article types are actually present in this web
   const articleTypesInWeb = Array.from(
     new Set(dbNodes.map(n => n.article_type).filter(Boolean) as string[])
@@ -185,6 +255,40 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
   // its structure is read-only here — only repositioning (which persists) is allowed.
   const isTerritory = web.template === 'territory'
 
+  // Expanding a bridge is exclusive — two ghosted branches at once turns the
+  // canvas into soup, so opening one closes the other.
+  const toggleBridge = useCallback((nodeId: number, bridge: BridgeRef) => {
+    setOpenBridge(prev =>
+      prev && prev.nodeId === nodeId && prev.webId === bridge.web_id
+        ? null
+        : {
+            nodeId, webId: bridge.web_id, targetNodeId: bridge.target_node_id,
+            webName: bridge.web_name, depth: prev?.depth ?? 2,
+          })
+  }, [])
+
+  const bumpBridgeDepth = useCallback((delta: number) => {
+    setOpenBridge(prev => prev ? { ...prev, depth: Math.max(1, Math.min(6, prev.depth + delta)) } : prev)
+  }, [])
+
+  // Everything a node needs to render itself, in one bag.
+  const renderCtx = useMemo<NodeRenderCtx>(() => ({
+    onCreateArticle: (nodeId: number) => handleCreateArticleRef.current(nodeId),
+    trackFilters,
+    ranksById,
+    colorBy: effectiveColorBy,
+    style: nodeStyle,
+    bridges,
+    openBridge,
+    onToggleBridge: toggleBridge,
+    onBridgeDepth: bumpBridgeDepth,
+  }), [trackFilters, ranksById, effectiveColorBy, nodeStyle, bridges, openBridge, toggleBridge, bumpBridgeDepth])
+
+  // Callbacks fired from React Flow (node added, union spawned) build nodes
+  // outside of render, so they read the context through a ref.
+  const renderCtxRef = useRef(renderCtx)
+  renderCtxRef.current = renderCtx
+
   // ── Use a ref so loadWebData can be called from handleTidyUp without a dep cycle ──
   const loadWebDataRef = useRef<() => void>(() => {})
 
@@ -192,12 +296,18 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     const data = await (window as any).api.getRelationWebData(web.id)
     setDbNodes(data.nodes)
     setDbEdges(data.edges)
-    setNodes(data.nodes.map((n: DBRelationNode) => dbNodeToRF(n, handleCreateArticleRef.current, trackFilters, ranksById, effectiveColorBy)))
-    setEdges(data.edges.map((e: DBRelationEdge) => dbEdgeToRF(e)))
-  }, [web.id, trackFilters, ranksById, effectiveColorBy])
+    setNodes(prev => [
+      ...data.nodes.map((n: DBRelationNode) => dbNodeToRF(n, renderCtxRef.current)),
+      ...prev.filter((n: RFNode) => isGhostId(n.id)),
+    ])
+    setEdges(prev => [
+      ...data.edges.map((e: DBRelationEdge) => dbEdgeToRF(e)),
+      ...prev.filter((e: RFEdge) => isGhostId(e.id)),
+    ])
+  }, [web.id])
 
   useEffect(() => { loadWebDataRef.current = loadWebData }, [loadWebData])
-  useEffect(() => { loadWebData() }, [web.id])
+  useEffect(() => { loadWebData(); reloadBridges() }, [web.id])
 
   // Deep-link: once nodes are loaded, select + center the node linked to the
   // focus article (set when opening the web from an article's sidebar).
@@ -207,20 +317,100 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     if (!target || !rfRef.current) return
     didFocusRef.current = true
     setSelectedNodeId(String(target.id))
-    // Center on the node's middle (node footprint ≈ 160×60).
-    rfRef.current.setCenter(target.pos_x + 80, target.pos_y + 30, { zoom: 1.2, duration: 600 })
-  }, [focusArticleId, dbNodes])
+    const fp = nodeFootprint(nodeStyle, target.node_type || 'person')
+    rfRef.current.setCenter(target.pos_x + fp.width / 2, target.pos_y + fp.height / 2, { zoom: 1.2, duration: 600 })
+  }, [focusArticleId, dbNodes, nodeStyle])
 
   useEffect(() => { focusOnArticleNode() }, [focusOnArticleNode])
 
-  // Re-render nodes when track filters, ranks or coloring change (without reloading from DB)
+  // Re-render nodes when track filters, ranks, coloring, style or bridges change
+  // (without reloading from DB)
   useEffect(() => {
     setNodes(prev => prev.map(n => {
       const dbNode = dbNodes.find(d => String(d.id) === n.id)
       if (!dbNode) return n
-      return dbNodeToRF(dbNode, handleCreateArticleRef.current, trackFilters, ranksById, effectiveColorBy)
+      return { ...dbNodeToRF(dbNode, renderCtx), selected: n.selected, position: n.position }
     }))
-  }, [trackFilters, ranksById, effectiveColorBy])
+  }, [renderCtx, dbNodes])
+
+  // ── Ghosted branch ──────────────────────────────────────────────────────────
+  // Fetch the slice of the other web around the bridged person and drop it onto
+  // the canvas as read-only scenery. Ghosts live only in React Flow state.
+  useEffect(() => {
+    if (!openBridge) { setGhostNodes([]); setGhostEdges([]); return }
+    let cancelled = false
+    ;(async () => {
+      const branch = await (window as any).api.getRelationGhostBranch(
+        openBridge.webId, openBridge.targetNodeId, openBridge.depth,
+      )
+      if (cancelled) return
+      const host = dbNodes.find(n => n.id === openBridge.nodeId)
+      const anchor = branch?.nodes?.find((n: DBRelationNode) => n.id === openBridge.targetNodeId)
+      if (!branch || !host || !anchor) { setGhostNodes([]); setGhostEdges([]); return }
+
+      const offsetKey = `${openBridge.nodeId}:${openBridge.webId}`
+      const remembered = ghostOffsetsRef.current[offsetKey]
+      const offset = remembered ?? ghostBranchOffset(host, anchor, branch.nodes, dbNodes)
+      ghostOffsetsRef.current[offsetKey] = offset
+      setGhostNodes(branch.nodes.map((n: DBRelationNode) => ghostNodeToRF(n, renderCtx, {
+        webId: openBridge.webId,
+        webName: openBridge.webName,
+        anchorNodeId: openBridge.targetNodeId,
+        onOpen: () => {
+          // A drag ends in a click; don't treat that as "take me to that web".
+          if (ghostDraggedRef.current) return
+          onOpenWeb?.(openBridge.webId, n.article_id ?? null)
+        },
+      }, offset)))
+      // The borrowed branch plus one tether from the real person to their double
+      // in the other web — without it the ghosts read as an unrelated island.
+      setGhostEdges([
+        ...branch.edges.map((e: DBRelationEdge) => ghostEdgeToRF(e, openBridge.webId)),
+        bridgeTetherEdge(openBridge.nodeId, openBridge.webId, openBridge.targetNodeId),
+      ])
+
+      // A branch parked off-screen looks like nothing happened, so bring the
+      // person and everything ghosted in beside them into view together. Only on
+      // first placement — once it has been dragged somewhere, leave the camera be.
+      if (rfRef.current && !remembered) {
+        const style = renderCtx.style ?? undefined
+        const box = (n: { pos_x: number; pos_y: number; node_type?: string }, dx = 0, dy = 0) => {
+          const fp = nodeFootprint(style ?? DEFAULT_NODE_STYLE, (n.node_type as any) || 'person')
+          return { x1: n.pos_x + dx, y1: n.pos_y + dy, x2: n.pos_x + dx + fp.width, y2: n.pos_y + dy + fp.height }
+        }
+        const boxes = [box(host), ...branch.nodes.map((n: DBRelationNode) => box(n, offset.dx, offset.dy))]
+        const x1 = Math.min(...boxes.map(b => b.x1)), y1 = Math.min(...boxes.map(b => b.y1))
+        const x2 = Math.max(...boxes.map(b => b.x2)), y2 = Math.max(...boxes.map(b => b.y2))
+        rfRef.current.fitBounds(
+          { x: x1, y: y1, width: x2 - x1, height: y2 - y1 },
+          { padding: 0.12, duration: 500 },
+        )
+      }
+    })()
+    return () => { cancelled = true }
+  }, [openBridge, dbNodes, renderCtx, onOpenWeb])
+
+  // A bridge that vanished (the article was unlinked, or the other web deleted)
+  // must not leave its ghosts stranded on the canvas.
+  useEffect(() => {
+    if (!openBridge) return
+    const still = (bridges[openBridge.nodeId] ?? []).some(b => b.web_id === openBridge.webId)
+    if (!still) setOpenBridge(null)
+  }, [bridges, openBridge])
+
+  // Ghosts have to sit in the same arrays React Flow writes back to. It reports
+  // measured node dimensions *through* onNodesChange, so a node kept outside
+  // useNodesState never receives its width/height — and React Flow silently
+  // skips every edge attached to an unmeasured node. Merging here (rather than
+  // concatenating at render time) keeps that round-trip intact, and running only
+  // when the ghost set itself changes preserves the dimensions already applied.
+  useEffect(() => {
+    setNodes(prev => [...prev.filter((n: RFNode) => !isGhostId(n.id)), ...ghostNodes])
+  }, [ghostNodes])
+
+  useEffect(() => {
+    setEdges(prev => [...prev.filter((e: RFEdge) => !isGhostId(e.id)), ...ghostEdges])
+  }, [ghostEdges])
 
   const syncDerivedRelations = useCallback(async () => {
     // Family trees derive relations; hierarchies derive the leader track. Both
@@ -232,7 +422,8 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
   // Tier layout for ranked hierarchy webs: rows by rank order, x ordered within
   // each row near the (primary) superior. Unranked nodes drop to the bottom row.
   const handleTierLayout = useCallback(async () => {
-    const ROW_H = 130, COL_W = 200, baseY = 80
+    const fp = nodeFootprint(nodeStyle, 'person')
+    const ROW_H = fp.height + 90, COL_W = fp.width + 60, baseY = 80
     const persons = dbNodes.filter(n => n.node_type === 'person')
     const tierOf = (n: DBRelationNode) => {
       const idx = ranks.findIndex(r => r.id === n.rank_id)
@@ -262,7 +453,7 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     })
     await Promise.all(updates.map(u => (window as any).api.updateRelationNode(u.id, { pos_x: u.pos_x, pos_y: u.pos_y })))
     loadWebDataRef.current()
-  }, [dbNodes, dbEdges, ranks])
+  }, [dbNodes, dbEdges, ranks, nodeStyle])
 
   const handleTidyUp = useCallback(async () => {
     if (cfg.ranked) return handleTierLayout()
@@ -271,23 +462,21 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
       const dagre = (await import('dagre' as any)).default ?? (await import('dagre' as any))
       const g = new dagre.graphlib.Graph()
       g.setDefaultEdgeLabel(() => ({}))
-      g.setGraph({ rankdir: cfg.dagreDir, rankSep: 80, nodeSep: 40 })
-      dbNodes.forEach(n => g.setNode(String(n.id), {
-        width:  n.node_type === 'union' ? 26 : 140,
-        height: n.node_type === 'union' ? 26 : 40,
-      }))
+      g.setGraph({ rankdir: cfg.dagreDir, rankSep: nodeStyle.layout === 'card' ? 110 : 80, nodeSep: 40 })
+      dbNodes.forEach(n => g.setNode(String(n.id), nodeFootprint(nodeStyle, n.node_type || 'person')))
       dbEdges.forEach(e => g.setEdge(String(e.from_node_id), String(e.to_node_id)))
       dagre.layout(g)
       await Promise.all(dbNodes.map(n => {
         const gn = g.node(String(n.id))
+        const fp = nodeFootprint(nodeStyle, n.node_type || 'person')
         return (window as any).api.updateRelationNode(n.id, {
-          pos_x: gn.x - (n.node_type === 'union' ? 13 : 70),
-          pos_y: gn.y - (n.node_type === 'union' ? 13 : 20),
+          pos_x: gn.x - fp.width / 2,
+          pos_y: gn.y - fp.height / 2,
         })
       }))
       loadWebDataRef.current()
     } catch (err) { console.error('Tidy up failed:', err) }
-  }, [dbNodes, dbEdges, cfg.dagreDir, cfg.ranked, handleTierLayout])
+  }, [dbNodes, dbEdges, cfg.dagreDir, cfg.ranked, handleTierLayout, nodeStyle])
 
   // Inline "+ Create article" opens a modal to pick the article type first.
   const handleCreateArticleRef = useRef<(nodeId: number) => void>(() => {})
@@ -324,24 +513,58 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     }
     setCreatingArticleFor(null)
     loadWebDataRef.current()
+    reloadBridges()
     syncDerivedRelations()
-  }, [currentCampaign, dbNodes, syncDerivedRelations])
+  }, [currentCampaign, dbNodes, syncDerivedRelations, reloadBridges])
 
   // Link / unlink an existing article on a node.
   const linkArticle = useCallback(async (nodeId: number, articleId: number) => {
     await (window as any).api.updateRelationNode(nodeId, { article_id: articleId })
     setLinkingArticleFor(null)
     loadWebDataRef.current()
+    reloadBridges()
     syncDerivedRelations()
-  }, [syncDerivedRelations])
+  }, [syncDerivedRelations, reloadBridges])
+
+  // Per-node frame override. '' falls back to the web's default frame.
+  const saveNodeFrame = useCallback(async (nodeId: number, raw: string) => {
+    await (window as any).api.updateRelationNode(nodeId, { frame: raw })
+    setDbNodes(prev => prev.map(n => n.id === nodeId ? { ...n, frame: raw } : n))
+  }, [])
 
   const unlinkArticle = useCallback(async (nodeId: number) => {
     await (window as any).api.updateRelationNode(nodeId, { article_id: null })
     loadWebDataRef.current()
+    reloadBridges()
     syncDerivedRelations()
-  }, [syncDerivedRelations])
+  }, [syncDerivedRelations, reloadBridges])
+
+  // Ghosts move as one rigid body. React Flow only moves the node under the
+  // cursor, so the shared offset is re-derived from that node's own base
+  // position and every other ghost is repositioned from its own base — which
+  // keeps the other web's internal arrangement exactly as its DM left it.
+  const onNodeDragStart = useCallback((_evt: any, node: RFNode) => {
+    if (isGhostId(node.id)) ghostDraggedRef.current = false
+  }, [])
+
+  const onNodeDrag = useCallback((_evt: any, node: RFNode<NodeData>) => {
+    const base = node.data?.ghost?.base
+    if (!isGhostId(node.id) || !base) return
+    ghostDraggedRef.current = true
+    const dx = node.position.x - base.x
+    const dy = node.position.y - base.y
+    const ob = openBridgeRef.current
+    if (ob) ghostOffsetsRef.current[`${ob.nodeId}:${ob.webId}`] = { dx, dy }
+    setNodes(prev => prev.map((n: RFNode<NodeData>) => {
+      if (!isGhostId(n.id) || n.id === node.id) return n
+      const b = n.data?.ghost?.base
+      return b ? { ...n, position: { x: b.x + dx, y: b.y + dy } } : n
+    }))
+  }, [setNodes])
 
   const onNodeDragStop = useCallback(async (_evt: any, node: RFNode) => {
+    // Ghost positions are presentation only — never written back to the DB.
+    if (isGhostId(node.id)) return
     await (window as any).api.updateRelationNode(Number(node.id), {
       pos_x: node.position.x, pos_y: node.position.y,
     })
@@ -351,7 +574,7 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
   // them needs its new position written — React Flow reports the group here
   // rather than through onNodeDragStop.
   const onSelectionDragStop = useCallback(async (_evt: any, dragged: RFNode[]) => {
-    await Promise.all(dragged.map(n => (window as any).api.updateRelationNode(Number(n.id), {
+    await Promise.all(dragged.filter(n => !isGhostId(n.id)).map(n => (window as any).api.updateRelationNode(Number(n.id), {
       pos_x: n.position.x, pos_y: n.position.y,
     })))
   }, [])
@@ -432,7 +655,10 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     syncDerivedRelations()
   }
 
-  const onNodesDelete: OnNodesDelete = useCallback(async (deletedNodes) => {
+  const onNodesDelete: OnNodesDelete = useCallback(async (rawDeleted) => {
+    // Ghosts belong to another web — they can't be deleted from here.
+    const deletedNodes = rawDeleted.filter((n: RFNode) => !isGhostId(n.id))
+    if (deletedNodes.length === 0) return
     for (const node of deletedNodes) {
       await (window as any).api.deleteRelationNode(Number(node.id))
     }
@@ -441,8 +667,9 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
       String(e.from_node_id) === d.id || String(e.to_node_id) === d.id
     )))
     setSelectedNodeId(null)
+    reloadBridges()
     syncDerivedRelations()
-  }, [syncDerivedRelations])
+  }, [syncDerivedRelations, reloadBridges])
 
   // ── Node context menu ───────────────────────────────────────────────────────
   // A node is either a linked article — in which case it gets the same menu as
@@ -477,7 +704,9 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
     ])
   }, [dbNodes, isTerritory, web.id, menuCtx, showMenu, onNodesDelete, unlinkArticle, requestCreateArticle])
 
-  const onEdgesDelete: OnEdgesDelete = useCallback(async (deletedEdges) => {
+  const onEdgesDelete: OnEdgesDelete = useCallback(async (rawDeleted) => {
+    const deletedEdges = rawDeleted.filter((e: RFEdge) => !isGhostId(e.id))
+    if (deletedEdges.length === 0) return
     for (const edge of deletedEdges) {
       await (window as any).api.deleteRelationEdge(Number(edge.id))
     }
@@ -487,8 +716,9 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
 
   const handleNodeAdded = (newNodes: DBRelationNode[]) => {
     setDbNodes(prev => [...prev, ...newNodes])
-    setNodes(prev => [...prev, ...newNodes.map(n => dbNodeToRF(n, requestCreateArticle, trackFilters, ranksById, effectiveColorBy))])
+    setNodes(prev => [...prev, ...newNodes.map(n => dbNodeToRF(n, renderCtxRef.current))])
     setShowAddNode(false)
+    reloadBridges()
     syncDerivedRelations()
   }
 
@@ -499,8 +729,8 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
       web_id: web.id, label: '∪', node_type: 'union', pos_x: x, pos_y: y,
     })
     setDbNodes(prev => [...prev, node])
-    setNodes(prev => [...prev, dbNodeToRF(node, requestCreateArticle, trackFilters, ranksById, effectiveColorBy)])
-  }, [dbNodes, web.id, trackFilters, ranksById, effectiveColorBy, requestCreateArticle])
+    setNodes(prev => [...prev, dbNodeToRF(node, renderCtxRef.current)])
+  }, [dbNodes, web.id])
 
   const saveWebName = async () => {
     if (!webName.trim()) { setWebName(web.name); setEditingName(false); return }
@@ -602,9 +832,28 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
               <GitMerge size={13} /> Add union
             </button>
           )}
+          {/* Node style (compact rows ↔ framed portrait cards) */}
+          <button
+            onClick={() => { setShowStylePanel(v => !v); setShowColorPanel(false); setShowFilterPanel(false) }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '5px 10px', fontSize: 12, cursor: 'pointer',
+              background: showStylePanel ? 'var(--bg-elevated)' : 'transparent',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
+              transition: 'background var(--transition)',
+            }}
+            className="hover-bg-elevated"
+          >
+            <FrameIcon size={13} />
+            Style
+            {nodeStyle.layout === 'card' && (
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7F77DD', flexShrink: 0 }} />
+            )}
+          </button>
           {/* Color-by-track button */}
           <button
-            onClick={() => { setShowColorPanel(v => !v); setShowFilterPanel(false) }}
+            onClick={() => { setShowColorPanel(v => !v); setShowFilterPanel(false); setShowStylePanel(false) }}
             style={{
               display: 'flex', alignItems: 'center', gap: 5,
               padding: '5px 10px', fontSize: 12, cursor: 'pointer',
@@ -623,7 +872,7 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
           </button>
           {/* Filter button */}
           <button
-            onClick={() => { setShowFilterPanel(v => !v); setShowColorPanel(false) }}
+            onClick={() => { setShowFilterPanel(v => !v); setShowColorPanel(false); setShowStylePanel(false) }}
             style={{
               display: 'flex', alignItems: 'center', gap: 5,
               padding: '5px 10px', fontSize: 12, cursor: 'pointer',
@@ -660,6 +909,15 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
         {/* Rank panel */}
         {showRankPanel && (
           <RankPanel ranks={ranks} onChange={saveRanks} onClose={() => setShowRankPanel(false)} />
+        )}
+
+        {/* Node style panel */}
+        {showStylePanel && (
+          <NodeStylePanel
+            style={nodeStyle}
+            onChange={saveNodeStyle}
+            onClose={() => setShowStylePanel(false)}
+          />
         )}
 
         {/* Color-by-track panel */}
@@ -710,6 +968,8 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
             onConnect={isTerritory ? undefined : onConnect}
             onNodesDelete={isTerritory ? undefined : onNodesDelete} onEdgesDelete={isTerritory ? undefined : onEdgesDelete}
+            onNodeDragStart={onNodeDragStart}
+            onNodeDrag={onNodeDrag}
             onNodeDragStop={onNodeDragStop}
             onSelectionDragStop={onSelectionDragStop}
             // Select mode turns a left-drag on empty canvas into a marquee and
@@ -724,7 +984,7 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
             // Ctrl (or Cmd) click adds a node to the selection.
             selectionKeyCode={['Shift', 'Control+Shift']}
             multiSelectionKeyCode={['Control', 'Meta']}
-            onNodeClick={(_e: any, node: RFNode) => setSelectedNodeId(prev => prev === node.id ? null : node.id)}
+            onNodeClick={(_e: any, node: RFNode) => { if (isGhostId(node.id)) return; setSelectedNodeId(prev => prev === node.id ? null : node.id) }}
             onNodeContextMenu={onNodeContextMenu}
             onEdgeDoubleClick={isTerritory ? undefined : (_e: any, edge: RFEdge) => {
               const db = dbEdges.find(e => String(e.id) === edge.id)
@@ -806,6 +1066,44 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId }: { w
                         <option value="">— Unranked —</option>
                         {ranks.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                       </select>
+                    </div>
+                  )}
+                  {/* Per-node frame — only meaningful once the web draws cards */}
+                  {nodeStyle.layout === 'card' && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Frame</div>
+                      <FramePicker
+                        value={parseFrame(selectedNode.frame) ?? nodeStyle.frame ?? { id: 'none' }}
+                        inheriting={!selectedNode.frame}
+                        allowInherit
+                        onInherit={() => saveNodeFrame(selectedNode.id, '')}
+                        onChange={spec => saveNodeFrame(selectedNode.id, serializeFrame(spec))}
+                      />
+                    </div>
+                  )}
+                  {/* Other webs this person also lives in */}
+                  {(bridges[selectedNode.id] ?? []).length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Also in</div>
+                      {(bridges[selectedNode.id] ?? []).map(b => (
+                        <div key={b.web_id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
+                          <Waypoints size={11} color="#7F77DD" style={{ flexShrink: 0 }} />
+                          <span style={{ flex: 1, fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.web_name}</span>
+                          <button
+                            onClick={() => toggleBridge(selectedNode.id, b)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7F77DD', fontSize: 10, padding: 0 }}
+                          >
+                            {openBridge?.nodeId === selectedNode.id && openBridge.webId === b.web_id ? 'Hide' : 'Ghost'}
+                          </button>
+                          <button
+                            onClick={() => onOpenWeb?.(b.web_id, selectedNode.article_id ?? null)}
+                            title="Open that web"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 1 }}
+                          >
+                            <ExternalLink size={11} />
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </>

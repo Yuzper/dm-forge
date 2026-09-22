@@ -4,7 +4,8 @@
 // them, so only the swatch is supplied by the caller.
 import type { ReactNode } from 'react'
 import { BookOpen, ExternalLink, Pencil, Scroll, X } from 'lucide-react'
-import type { HubLink } from '../../utils/hubLinks'
+import { resolveHubLinks, sessionLinkLabel, type HubLink } from '../../utils/hubLinks'
+import { useStore } from '../../store/store'
 import { SECTION_ACCENTS } from '../../constants/sections'
 
 // Read during render — see the note in constants/sections.ts.
@@ -42,8 +43,13 @@ export default function MapFeaturePopup({
   onNavigateSession: (sessionId: number) => void
 }) {
   const WIKI_ACCENT = SECTION_ACCENTS['wiki']
-  const wikis = links.filter(l => l.type === 'wiki')
-  const sessions = links.filter(l => l.type === 'session')
+  // Links carry a snapshot of their target's name; resolve through the ids so a
+  // renamed session or article reads (and navigates) correctly here.
+  const allSessions = useStore(s => s.sessions)
+  const allArticles = useStore(s => s.allArticles)
+  const resolved = resolveHubLinks(links, { sessions: allSessions, articles: allArticles })
+  const wikis = resolved.filter(l => l.type === 'wiki')
+  const sessions = resolved.filter(l => l.type === 'session')
 
   return (
     <div
@@ -87,10 +93,13 @@ export default function MapFeaturePopup({
           <div style={{ padding: '6px 11px', borderBottom: sessions.length > 0 ? '1px solid var(--border)' : 'none' }}>
             <div style={groupLabel}>Wiki</div>
             {wikis.map((l, i) => (
-              <button key={i} onClick={() => onNavigateWiki(l.title!)} className="hover-bg-active" style={linkBtn}>
-                <BookOpen size={11} style={{ color: WIKI_ACCENT, flexShrink: 0 }} />
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</span>
-                <ExternalLink size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+              <button key={i} onClick={() => !l.missing && onNavigateWiki(l.title!)}
+                className={l.missing ? undefined : 'hover-bg-active'}
+                title={l.missing ? 'That article no longer exists' : undefined}
+                style={{ ...linkBtn, cursor: l.missing ? 'default' : 'pointer', color: l.missing ? 'var(--text-muted)' : linkBtn.color }}>
+                <BookOpen size={11} style={{ color: l.missing ? 'var(--text-muted)' : WIKI_ACCENT, flexShrink: 0 }} />
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: l.missing ? 'line-through' : undefined }}>{l.title}</span>
+                {!l.missing && <ExternalLink size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
               </button>
             ))}
           </div>
@@ -100,12 +109,15 @@ export default function MapFeaturePopup({
           <div style={{ padding: '6px 11px' }}>
             <div style={groupLabel}>Sessions</div>
             {sessions.map((l, i) => (
-              <button key={i} onClick={() => onNavigateSession(l.session_id!)} className="hover-bg-active" style={linkBtn}>
-                <Scroll size={11} style={{ color: 'var(--gold)', flexShrink: 0 }} />
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  Session {l.session_number}{l.session_sub}: {l.name}
+              <button key={i} onClick={() => !l.missing && onNavigateSession(l.session_id!)}
+                className={l.missing ? undefined : 'hover-bg-active'}
+                title={l.missing ? 'That session no longer exists' : undefined}
+                style={{ ...linkBtn, cursor: l.missing ? 'default' : 'pointer', color: l.missing ? 'var(--text-muted)' : linkBtn.color }}>
+                <Scroll size={11} style={{ color: l.missing ? 'var(--text-muted)' : 'var(--gold)', flexShrink: 0 }} />
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: l.missing ? 'line-through' : undefined }}>
+                  {sessionLinkLabel(l)}
                 </span>
-                <ExternalLink size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                {!l.missing && <ExternalLink size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
               </button>
             ))}
           </div>

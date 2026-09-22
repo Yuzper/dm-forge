@@ -12,6 +12,10 @@ contextBridge.exposeInMainWorld('api', {
   // Sessions
   getSessions:        (campaignId: number) => ipcRenderer.invoke('sessions:get-all', campaignId),
   getSessionPoiTexts: (campaignId: number) => ipcRenderer.invoke('sessions:get-poi-texts', campaignId),
+
+  // Opens a web link in the user's own browser. Returns false when the URL
+  // isn't an http/https/mailto address, which is the main process refusing.
+  openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   createSession:   (data: any)    => ipcRenderer.invoke('sessions:create', data),
   updateSession:   (id: number, data: any) => ipcRenderer.invoke('sessions:update', id, data),
   deleteSession:   (id: number)   => ipcRenderer.invoke('sessions:delete', id),
@@ -61,6 +65,8 @@ contextBridge.exposeInMainWorld('api', {
   createShapeLayer:   (mapId: number, name?: string) => ipcRenderer.invoke('shape-layers:create', mapId, name),
   updateShapeLayer:   (id: number, data: any) => ipcRenderer.invoke('shape-layers:update', id, data),
   deleteShapeLayer:   (id: number) => ipcRenderer.invoke('shape-layers:delete', id),
+  reorderShapeLayers: (orders: { id: number; sort_order: number }[]) =>
+                        ipcRenderer.invoke('shape-layers:reorder', orders),
 
   getMapShapes:    (mapId: number) => ipcRenderer.invoke('shapes:get-all', mapId),
   createMapShape:  (data: any) => ipcRenderer.invoke('shapes:create', data),
@@ -186,6 +192,9 @@ contextBridge.exposeInMainWorld('api', {
   getRelationWebForArticle: (articleId: number) => ipcRenderer.invoke('relation-webs:get-for-article', articleId),
   listRelationWebsForArticle: (articleId: number) => ipcRenderer.invoke('relation-webs:list-for-article', articleId),
   listRelationWebsForMember:  (articleId: number) => ipcRenderer.invoke('relation-webs:list-for-member', articleId),
+  getRelationBridges:       (webId: number) => ipcRenderer.invoke('relation-webs:get-bridges', webId),
+  getRelationGhostBranch:   (webId: number, anchorNodeId: number, depth: number) =>
+    ipcRenderer.invoke('relation-webs:get-ghost-branch', webId, anchorNodeId, depth),
   getRelationWebArticles:   (webId: number) => ipcRenderer.invoke('relation-webs:get-linked-articles', webId),
   linkRelationWebArticle:   (webId: number, articleId: number) => ipcRenderer.invoke('relation-webs:link-article', webId, articleId),
   unlinkRelationWebArticle: (webId: number, articleId: number) => ipcRenderer.invoke('relation-webs:unlink-article', webId, articleId),
@@ -206,6 +215,8 @@ contextBridge.exposeInMainWorld('api', {
   createSound:       (data: any)                 => ipcRenderer.invoke('sounds:create', data),
   updateSound:       (id: number, data: any)     => ipcRenderer.invoke('sounds:update', id, data),
   deleteSound:       (id: number)                => ipcRenderer.invoke('sounds:delete', id),
+  reorderSounds:     (orders: { id: number; sort_order: number }[]) =>
+                       ipcRenderer.invoke('sounds:reorder', orders),
   selectAudioFile:   ()                          => ipcRenderer.invoke('sounds:select-file'),
   selectAudioFiles:  ()                          => ipcRenderer.invoke('sounds:select-files'),
 
@@ -214,6 +225,8 @@ contextBridge.exposeInMainWorld('api', {
   createLibrarySound:(data: any)                 => ipcRenderer.invoke('soundlib:create', data),
   updateLibrarySound:(id: number, data: any)     => ipcRenderer.invoke('soundlib:update', id, data),
   deleteLibrarySound:(id: number)                => ipcRenderer.invoke('soundlib:delete', id),
+  reorderLibrarySounds: (orders: { id: number; sort_order: number }[]) =>
+                       ipcRenderer.invoke('soundlib:reorder', orders),
 
   // Players (player-facing pages)
   getPlayers:   (campaignId: number)         => ipcRenderer.invoke('players:get-all', campaignId),
@@ -234,6 +247,14 @@ contextBridge.exposeInMainWorld('api', {
 
   // Publish the player-facing site (encrypted per-player static bundle)
   publishPlayerSite:   (campaignId: number) => ipcRenderer.invoke('publish:export', campaignId),
+  previewPlayerSite:   (campaignId: number, playerId: number) =>
+                         ipcRenderer.invoke('publish:preview', campaignId, playerId),
+  choosePlayerSiteFolder: (campaignId: number) =>
+                         ipcRenderer.invoke('publish:choose-folder', campaignId),
+  playerSiteGitStatus: (campaignId: number) =>
+                         ipcRenderer.invoke('publish:git-status', campaignId),
+  pushPlayerSite:      (campaignId: number) =>
+                         ipcRenderer.invoke('publish:git-push', campaignId),
 
   // Native context menus. The template is data only; the renderer keeps the
   // behaviour and dispatches on the id that comes back (null = dismissed).

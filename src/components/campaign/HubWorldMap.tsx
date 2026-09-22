@@ -12,6 +12,7 @@ import Modal from '../Modal'
 import EmptyState from '../EmptyState'
 import TravelMeasurePanel from '../map/TravelMeasurePanel'
 import MeasureOverlay from '../map/MeasureOverlay'
+import PartyTrailOverlay from '../map/PartyTrailOverlay'
 import MapContentsPanel from '../map/MapContentsPanel'
 import MapPOIMarker from '../map/MapPOIMarker'
 import MapShapeLayer from '../map/MapShapeLayer'
@@ -25,10 +26,12 @@ import POIEditModal, {
 import { useMapShapes } from '../../hooks/useMapShapes'
 import { useMapViewport } from '../../hooks/useMapViewport'
 import { useMapCollection } from '../../hooks/useMapCollection'
+import { useDragReorder } from '../../hooks/useDragReorder'
 import { useMapMeasure } from '../../hooks/useMapMeasure'
 import { useShapeDrawing } from '../../hooks/useShapeDrawing'
 import { centroidOf, parsePoints } from '../../utils/mapShapeGeometry'
-import { makeDescriptionDoc as makePoiContent, parseHubLinks } from '../../utils/hubLinks'
+import type { TrailStop } from '../../utils/partyTrail'
+import { makeDescriptionDoc as makePoiContent, parseHubLinks, resolveHubLinks } from '../../utils/hubLinks'
 import { useContextMenu, useMenuCtx } from '../../hooks/useContextMenu'
 import { openItems, truncate, type MenuItem } from '../../utils/contextMenus'
 
@@ -38,26 +41,46 @@ const TAB_STRIP_H = 34
 
 // ── Hub World Map ──────────────────────────────────────────────────────────────
 
-export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSlot = null }: {
+export default function HubWorldMap({
+  fullBleed = false, onHasMapsChange, panelSlot = null,
+  contentsOpen, onContentsToggle, measureOpen, onMeasureToggle,
+  onPoisChange, trail = [], showTrail = false, focusPoi = null,
+}: {
   fullBleed?: boolean
   onHasMapsChange?: (has: boolean) => void
-  // In the map hub, the location list is portaled into this left-stack slot so it
-  // stacks below the floating panels instead of overlapping them.
-  listSlot?: HTMLElement | null
+  // In the map hub, Contents and Travel are portaled into this slot so they
+  // sit in the hub's overlay drawer instead of floating over the map.
+  panelSlot?: HTMLElement | null
+  // The map hub owns an overlay rail, so it drives Contents and the measure
+  // tool from out there. Both are controlled/uncontrolled in the usual way:
+  // omit the prop and the map keeps its own state, as the classic hub does.
+  contentsOpen?: boolean
+  onContentsToggle?: () => void
+  measureOpen?: boolean
+  onMeasureToggle?: (on: boolean) => void
+  // The hub derives the party trail from these pins, then hands the route back
+  // to be drawn — the map owns the pins, the hub owns the sessions.
+  onPoisChange?: (pois: POI[]) => void
+  trail?: TrailStop[]
+  showTrail?: boolean
+  /** Centre on this pin when the hub asks. The nonce re-fires the same pin. */
+  focusPoi?: { id: number; nonce: number } | null
 }) {
-  const { currentCampaign, sessions, navigateToArticleByTitle, navigateToSessionById } = useStore()
+  const { currentCampaign, sessions, allArticles, navigateToArticleByTitle, navigateToSessionById } = useStore()
   const showMenu = useContextMenu()
   const menuCtx = useMenuCtx()
 
   const [localArticles, setLocalArticles] = useState<{ id: number; title: string }[]>([])
   const [pois, setPois] = useState<POI[]>([])
+  // The hub reads these to work out where the party has been.
+  useEffect(() => { onPoisChange?.(pois) }, [pois])
 
   // The campaign's owned maps and their lifecycle. Selecting a map reloads its
   // pins here; the collection itself knows nothing about a map's contents.
   const {
     maps, currentMap, importing,
     selectMap: handleSelectMap, addMap: handleUploadNew,
-    renameMap, replaceImage, deleteMap: handleDeleteMap, patchMap,
+    renameMap, replaceImage, deleteMap: handleDeleteMap, patchMap, reorderMaps,
   } = useMapCollection({
     owner: currentCampaign ? { kind: 'campaign', id: currentCampaign.id } : null,
     // Historical key, kept so existing remembered selections still load.
@@ -77,6 +100,13 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
   // and regions are both clickable.
   const [tool, setTool] = useState<MapTool>('select')
   const backToSelect = useCallback(() => setTool('select'), [])
+  // The hub's Travel rail item drives the measure tool from outside. Only the
+  // enter/leave edges are mirrored, so picking another tool in here is still
+  // the map's own decision — it just tells the rail afterwards.
+  useEffect(() => {
+    if (measureOpen === undefined) return
+    setTool(t => measureOpen ? 'measure' : (t === 'measure' ? 'select' : t))
+  }, [measureOpen])
 
   // Browsing is the default: the hub map is something you look at far more often
   // than you edit, and a stray click shouldn't be able to drop a pin or nudge a
@@ -105,9 +135,11 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
   const [selectedPOI, setSelectedPOI] = useState<POI | null>(null)
   const [hoveredPoiId, setHoveredPoiId] = useState<number | null>(null)
   // One panel lists everything on the map — pins and drawing layers both.
-  const [showContents, setShowContents] = useState(() => localStorage.getItem('worldmap-contents') === 'true')
+  const [ownContents, setOwnContents] = useState(() => localStorage.getItem('worldmap-contents') === 'true')
   const [poiListFilter, setPoiListFilter] = useState('')
-  const toggleContents = () => setShowContents(v => { localStorage.setItem('worldmap-contents', String(!v)); return !v })
+  const showContents = contentsOpen ?? ownContents
+  const toggleContents = onContentsToggle
+    ?? (() => setOwnContents(v => { localStorage.setItem('worldmap-contents', String(!v)); return !v }))
   const [editingPOI, setEditingPOI] = useState<POI | null>(null)
   const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null)
@@ -256,6 +288,14 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
     setPopupPos(computePopupPos(poi))
   }
 
+  // The hub asks for a pin by id (clicking the party strip). It bumps the prop
+  // to a new value each time, so asking for the same pin twice still centres.
+  useEffect(() => {
+    if (!focusPoi) return
+    const poi = pois.find(p => p.id === focusPoi.id)
+    if (poi) focusPOIFromList(poi)
+  }, [focusPoi])
+
   // ── Shape interactions ────────────────────────────────────────────────────
   // The popup anchors on the shape's centroid, converted through the current
   // transform into map-panel space, exactly as computePopupPos does for a pin.
@@ -283,7 +323,8 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
   // it, so the menu leads with opening that — a border you can't click through
   // is just decoration.
   const shapeMenu = useCallback((shape: MapShape, e: React.MouseEvent) => {
-    const article = parseHubLinks(shape.hub_links).find(l => l.type === 'wiki' && l.article_id)
+    const article = resolveHubLinks(parseHubLinks(shape.hub_links), { sessions, articles: allArticles })
+      .find(l => l.type === 'wiki' && l.article_id)
     const menu: MenuItem[] = []
     if (article) {
       menu.push(...openItems(
@@ -395,6 +436,10 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
   // plus 4px of movement, so this can't fire while measuring or drawing.
   const canDragPOI = editable && (tool === 'select' || tool === 'pin')
 
+  // Tab order is a layout decision like pin placement, so it rides the same
+  // Edit toggle rather than being live while browsing.
+  const tabDnd = useDragReorder(reorderMaps, { axis: 'x', enabled: editable })
+
   const handlePOIMouseDown = (poi: POI, e: React.MouseEvent) => {
     if (!canDragPOI) return
     e.preventDefault(); e.stopPropagation()
@@ -459,7 +504,8 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
   // The world map's pins are the campaign's index of places, so the menu leads
   // with wherever a pin points rather than with editing it.
   const poiMenu = useCallback((poi: POI, e: React.MouseEvent) => {
-    const links = parseHubLinks((poi as any).hub_links || '[]')
+    // Resolved, so a renamed session doesn't offer to open its old name.
+    const links = resolveHubLinks(parseHubLinks((poi as any).hub_links || '[]'), { sessions, articles: allArticles })
     const article = links.find(l => l.type === 'wiki' && l.article_id)
     const session = links.find(l => l.type === 'session' && l.session_id)
     const menu: MenuItem[] = []
@@ -469,7 +515,7 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
         `Open “${truncate(article.title ?? 'linked article')}”`,
       ))
     }
-    if (session) {
+    if (session && !session.missing) {
       menu.push({
         label: `Open ${truncate(session.name ?? 'linked session')}`,
         click: () => menuCtx.go({ type: 'session', sessionId: session.session_id! }),
@@ -483,6 +529,13 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
     )
     showMenu(e, menu)
   }, [menuCtx, showMenu])
+
+  // A panel the hub wants in its drawer goes through the portal; everywhere
+  // else it keeps floating where it always did.
+  const renderInSlot = (node: React.ReactNode) =>
+    fullBleed && panelSlot
+      ? createPortal(node, panelSlot)
+      : <div style={{ position: 'absolute', top: 42, right: 10, zIndex: 16 }}>{node}</div>
 
   // ── Contents panel ────────────────────────────────────────────────────────
   // `stacked` = the map hub's left panel column; otherwise it floats over the
@@ -509,6 +562,7 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
       onRenameLayer={shapeStore.renameLayer}
       onDeleteLayer={shapeStore.deleteLayer}
       onCreateLayer={() => shapeStore.createLayer()}
+      onReorderLayers={shapeStore.reorderLayers}
       onSelectShape={focusShape}
     />
   )
@@ -516,9 +570,9 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={fullBleed ? { height: '100%' } : undefined}>
-      {/* Map-hub contents panel — portaled into MapHub's left stack so it sits
-          below the floating panels rather than overlapping them. */}
-      {fullBleed && listSlot && maps.length > 0 && showContents && createPortal(renderContents(true), listSlot)}
+      {/* Map-hub panels — portaled into the hub's rail drawer rather than
+          floating over the map, so the rail owns one column of chrome. */}
+      {fullBleed && panelSlot && maps.length > 0 && showContents && createPortal(renderContents(true), panelSlot)}
 
       {/* Map panel */}
       <div
@@ -538,12 +592,22 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
         onMouseLeave={handlePanUp}
         onClick={handleMapClick}
       >
-        {/* Tab strip */}
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 34, display: 'flex', alignItems: 'stretch', background: 'rgba(0,0,0,0.55)', borderBottom: '1px solid rgba(255,255,255,0.07)', zIndex: 10 }}>
-          {maps.map(map => (
+        {/* Tab strip. It sits inside the pan container, so it has to refuse the
+            gesture itself: an HTML5 tab drag never delivers the mouseup that
+            would otherwise disarm panning, leaving the map glued to the cursor. */}
+        <div
+          onMouseDown={e => e.stopPropagation()}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 34, display: 'flex', alignItems: 'stretch', background: 'rgba(0,0,0,0.55)', borderBottom: '1px solid rgba(255,255,255,0.07)', zIndex: 10 }}>
+          {maps.map((map, mapIndex) => (
             <div key={map.id}
+              {...tabDnd.rowProps(mapIndex)}
               onClick={e => { e.stopPropagation(); handleSelectMap(map) }}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px 0 12px', cursor: 'pointer', borderRight: '1px solid rgba(255,255,255,0.07)', borderBottom: currentMap?.id === map.id ? '2px solid #c8733a' : '2px solid transparent', background: currentMap?.id === map.id ? 'rgba(200,115,58,0.12)' : 'transparent', color: currentMap?.id === map.id ? '#c8733a' : 'rgba(255,255,255,0.45)', fontSize: 11, fontWeight: currentMap?.id === map.id ? 600 : 400, whiteSpace: 'nowrap', userSelect: 'none', transition: 'all var(--transition)', position: 'relative' }}
+              title={editable ? 'Drag to reorder' : undefined}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px 0 12px', cursor: editable ? 'grab' : 'pointer', borderRight: '1px solid rgba(255,255,255,0.07)', borderBottom: currentMap?.id === map.id ? '2px solid #c8733a' : '2px solid transparent', background: currentMap?.id === map.id ? 'rgba(200,115,58,0.12)' : 'transparent', color: currentMap?.id === map.id ? '#c8733a' : 'rgba(255,255,255,0.45)', fontSize: 11, fontWeight: currentMap?.id === map.id ? 600 : 400, whiteSpace: 'nowrap', userSelect: 'none', transition: 'all var(--transition)', position: 'relative', opacity: tabDnd.dragIndex === mapIndex ? 0.4 : 1,
+                // A vertical rule in the tab seam marks where it lands.
+                boxShadow: tabDnd.isDropBefore(mapIndex) ? 'inset 2px 0 0 #c8733a'
+                  : (mapIndex === maps.length - 1 && tabDnd.isDropAtEnd(maps.length)) ? 'inset -2px 0 0 #c8733a'
+                  : undefined }}
               onMouseEnter={e => { if (currentMap?.id !== map.id) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)' }}
               onMouseLeave={e => { if (currentMap?.id !== map.id) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
             >
@@ -685,6 +749,8 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
                   calibPts={measure.calibPts}
                 />
               )}
+              {/* The party's route, under the pins so a stop never hides a town. */}
+              {showTrail && <PartyTrailOverlay scale={scale} trail={trail} />}
               {pois.map(poi => (
                 <MapPOIMarker
                   key={poi.id}
@@ -728,6 +794,7 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
               onPick={next => {
                 setTool(next)
                 setSelectedPOI(null)
+                if (next !== 'measure') onMeasureToggle?.(false)
                 // Picking a draw tool without the contents panel would hide the
                 // only place to choose which layer receives the new shape.
                 if (isShapeTool(next) && !showContents) toggleContents()
@@ -798,19 +865,24 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
               : isShapeTool(tool) && shapeStore.layers.length === 0
                 ? 'Add a drawing layer in the Layers panel, then draw onto it'
                 : toolHint(tool, drawing.isDrawing)}
+          {/* Only mentioned once there is something to take back. */}
+          {drawing.canUndo && !measureMode && !drawing.isDrawing && (
+            <span style={{ color: 'var(--text-muted)', opacity: 0.8 }}> · Ctrl+Z undoes the last region edit</span>
+          )}
           </div>
         )}
 
-        {/* Travel / measure panel — top-right, clear of the location list & zoom */}
-        {maps.length > 0 && measureMode && (mapVisible || fullBleed) && (
-          <div style={{ position: 'absolute', top: 42, right: 10, zIndex: 16 }} onMouseDown={e => e.stopPropagation()}>
+        {/* Travel / measure panel — in the hub's drawer when it has one, else
+            top-right, clear of the location list & zoom */}
+        {maps.length > 0 && measureMode && (mapVisible || fullBleed) && renderInSlot(
+          <div onMouseDown={e => e.stopPropagation()}>
             <TravelMeasurePanel
               scale={measure.mapScale}
               natural={imgNatural}
               waypoints={measure.waypoints}
               isCalibrating={measure.isCalibrating}
               calibDraft={measure.calibDraft}
-              onExit={() => { backToSelect(); measure.reset() }}
+              onExit={() => { backToSelect(); measure.reset(); onMeasureToggle?.(false) }}
               onBeginCalibrate={measure.beginCalibrate}
               onCancelCalibrate={measure.cancelCalibrate}
               onCommitScale={measure.commitScale}

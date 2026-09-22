@@ -118,7 +118,7 @@ export function registerMapIPC(imagesPath: string) {
       LEFT JOIN pois p ON p.map_id = m.id
       WHERE m.article_id = ?
       GROUP BY m.id
-      ORDER BY m.created_at ASC
+      ORDER BY m.sort_order ASC, m.created_at ASC
     `).all(articleId)
   })
 
@@ -200,7 +200,7 @@ export function registerMapIPC(imagesPath: string) {
       LEFT JOIN pois p ON p.map_id = m.id
       WHERE m.campaign_id = ?
       GROUP BY m.id
-      ORDER BY m.created_at ASC
+      ORDER BY m.sort_order ASC, m.created_at ASC
     `).all(campaignId)
   })
 
@@ -290,6 +290,15 @@ export function registerMapIPC(imagesPath: string) {
     const fields = Object.keys(data).map(k => `${k} = @${k}`).join(', ')
     if (fields) db.prepare(`UPDATE map_shape_layers SET ${fields} WHERE id = @id`).run({ ...data, id })
     return db.prepare('SELECT * FROM map_shape_layers WHERE id = ?').get(id)
+  })
+
+  // Layer order is paint order (see paintOrder in utils/mapShapeGeometry), so
+  // this is how a border set gets pushed under the districts drawn on top of it.
+  ipcMain.handle('shape-layers:reorder', (_e, orders: { id: number; sort_order: number }[]) => {
+    const stmt = db.prepare('UPDATE map_shape_layers SET sort_order = @sort_order WHERE id = @id')
+    db.transaction((list: { id: number; sort_order: number }[]) => {
+      for (const o of list) stmt.run(o)
+    })(orders)
   })
 
   // Shapes on the layer cascade away with it.

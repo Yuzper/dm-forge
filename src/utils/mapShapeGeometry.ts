@@ -192,17 +192,30 @@ export function shapeArea(points: ShapePoint[]): number {
 
 export interface ResolvedShape { shape: MapShape; points: ShapePoint[]; area: number }
 
-// Paint order is largest-first, so a district drawn inside a kingdom ends up on
-// top and wins both the click (SVG hit-tests the topmost painted element) and
-// the visual stacking — without the user ever managing z-order. sort_order and
-// id only break ties, keeping the order stable across reloads.
-export function paintOrder(shapes: MapShape[]): ResolvedShape[] {
+// Paint order is largest-first *within a layer*, so a district drawn inside a
+// kingdom ends up on top and wins both the click (SVG hit-tests the topmost
+// painted element) and the visual stacking — without the user ever managing
+// z-order inside a layer. sort_order and id only break ties, keeping the order
+// stable across reloads.
+//
+// Layers sit outside that rule: the panel's list order decides which layer's
+// shapes paint over which, because area alone can't express "these borders go
+// under everything I draw on top of them". Shapes drawn before layers existed
+// (layer_id null) rank below every layer.
+//
+// `layerRank` maps a layer id to its position in the list. Omit it and every
+// shape ranks equally, which is exactly the old area-only behaviour.
+export function paintOrder(shapes: MapShape[], layerRank?: Map<number, number>): ResolvedShape[] {
+  const rankOf = (shape: MapShape) =>
+    shape.layer_id == null ? -1 : (layerRank?.get(shape.layer_id) ?? -1)
+
   return shapes
     .map(shape => {
       const points = parsePoints(shape.points)
       return { shape, points, area: shapeArea(points) }
     })
     .sort((a, b) =>
+      (rankOf(a.shape) - rankOf(b.shape)) ||
       (b.area - a.area) ||
       (a.shape.sort_order - b.shape.sort_order) ||
       (a.shape.id - b.shape.id))

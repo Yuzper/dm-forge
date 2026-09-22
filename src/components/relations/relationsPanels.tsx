@@ -6,8 +6,10 @@ import {
   Link2, ChevronUp,
 } from 'lucide-react'
 import {
-  type Rank, RANK_PALETTE, makeRankId, ARTICLE_TRACKS, ARTICLE_TYPE_LABELS, ALL_ARTICLE_TYPES,
+  type Rank, type NodeStyle, RANK_PALETTE, makeRankId,
+  ARTICLE_TRACKS, ARTICLE_TYPE_LABELS, ALL_ARTICLE_TYPES,
 } from './relationsShared'
+import { FramePicker } from './relationsFrames'
 import SwatchPicker, { ColorDotPicker } from '../SwatchPicker'
 
 // ── Track Filter Panel ────────────────────────────────────────────────────────
@@ -429,6 +431,92 @@ export function WebMenu({ onEdit, onDelete }: { onEdit?: () => void; onDelete: (
             <Trash2 size={13} /> {confirmDelete ? 'Confirm delete' : 'Delete'}
           </button>
         </div>
+      )}
+    </div>
+  )
+}
+
+
+// ── Node Style Panel ──────────────────────────────────────────────────────────
+// Per-web node presentation: compact rows (the original look) or portrait cards
+// with a frame. The colour-by-track tint still paints the card behind the frame,
+// so this panel only decides shape, size and frame art.
+
+export function NodeStylePanel({
+  style, onChange, onClose,
+}: {
+  style: NodeStyle
+  onChange: (next: NodeStyle) => void
+  onClose: () => void
+}) {
+  const card = style.layout === 'card'
+  const LayoutButton = ({ id, label, desc }: { id: NodeStyle['layout']; label: string; desc: string }) => {
+    const active = style.layout === id
+    return (
+      <button
+        onClick={() => onChange({ ...style, layout: id })}
+        style={{
+          flex: 1, textAlign: 'left', padding: '7px 9px', cursor: 'pointer',
+          background: active ? 'var(--bg-elevated)' : 'transparent',
+          border: `1px solid ${active ? '#AFA9EC' : 'var(--border)'}`,
+          borderRadius: 'var(--radius-sm)',
+        }}
+        className="hover-bg-elevated"
+      >
+        <div style={{ fontSize: 12, fontWeight: 500, color: active ? '#7F77DD' : 'var(--text-secondary)' }}>{label}</div>
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{desc}</div>
+      </button>
+    )
+  }
+
+  return (
+    <div style={{
+      position: 'absolute', top: 48, right: 12, zIndex: 100,
+      background: 'var(--bg-surface)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius)', boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+      width: 300, maxHeight: 520, overflow: 'auto',
+      fontFamily: 'var(--font-ui)',
+    }}>
+      <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>Node style</div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}><X size={13} /></button>
+      </div>
+
+      <div style={{ padding: '10px 14px' }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <LayoutButton id="compact" label="Compact" desc="Portrait beside the name" />
+          <LayoutButton id="card"    label="Card"    desc="Framed portrait, name below" />
+        </div>
+      </div>
+
+      {card && (
+        <>
+          <div style={{ padding: '0 14px 10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Portrait size</span>
+              <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>{style.size}px</span>
+            </div>
+            <input
+              type="range" min={56} max={180} step={4}
+              value={style.size}
+              onChange={e => onChange({ ...style, size: Number(e.target.value) })}
+              style={{ width: '100%', accentColor: '#7F77DD' }}
+            />
+          </div>
+
+          <div style={{ padding: '10px 14px 14px', borderTop: '1px solid var(--border-light)' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 7 }}>
+              Default frame
+            </div>
+            <FramePicker
+              value={style.frame ?? { id: 'none' }}
+              onChange={frame => onChange({ ...style, frame })}
+            />
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.4 }}>
+              Every node uses this frame unless you give it one of its own — select a node and set its frame in the side panel.
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

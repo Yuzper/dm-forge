@@ -2,6 +2,7 @@
 import { app, BrowserWindow } from 'electron'
 import path from 'path'
 import { registerContextMenu } from './contextMenu'
+import { guardWindowNavigation } from './externalLinks'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -49,6 +50,8 @@ export function createWindow() {
   })
 
   registerContextMenu(mainWindow)
+  // A link in a note must never take the app window with it.
+  guardWindowNavigation(mainWindow)
 
   return mainWindow
 }

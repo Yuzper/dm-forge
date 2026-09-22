@@ -106,6 +106,10 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
     Difficulty:       ['Trivial', 'Easy', 'Medium', 'Hard', 'Deadly'],
     Quest_Giver:      [],
     Player_Character: [],
+    // Article-backed (see ARTICLE_BACKED_TRACKS): picks a Location article, and
+    // groups the hub's quest panel by place. Empty on every existing quest,
+    // which simply lands them under "Not placed yet".
+    Location:         [],
   },
   item: {
     Status:   ['Found', 'Lost', 'Destroyed', 'Unknown'],
@@ -194,61 +198,15 @@ export const TRACK_VALUE_COLORS: Record<string, string> = {
   Tiny: '#8a8a8a', Small: '#5bbfb0', Large: '#e88c3a', Huge: '#e05555', Gargantuan: '#8b2533',
 }
 
-// Date tracks hold JSON (e.g. {"day":3,"year":1507}) and shouldn't become tags.
-// Age is excluded for a plainer reason: it's a bare number, and "#317" is noise
-// in the tag cloud — more so now that a lifespan derives one on its own.
-export const NON_TAG_TRACKS = new Set(['In_World_Date', 'Death_Date', 'Timeline_Milestones', 'Age'])
-
-// Tracks that hold several entries instead of one. Stored as a JSON array of
-// strings in the same `tracks[key]` slot; a legacy plain string reads as a
-// single-element list (see trackValues).
-export const MULTI_TRACKS = new Set(['Allies', 'Rivals', 'Sacred_Sites', 'Domains'])
-
-// The individual entries of a track value. Plain string → one entry; a JSON
-// array (multi-value tracks) → its string members; JSON objects (date pickers,
-// milestone lists) → none. Empty/blank → none.
-export function trackValues(raw: string | null | undefined): string[] {
-  const v = (raw ?? '').trim()
-  if (!v) return []
-  if (v.startsWith('[')) {
-    try {
-      const arr = JSON.parse(v)
-      if (Array.isArray(arr)) return arr.filter((x): x is string => typeof x === 'string' && x.trim() !== '').map(x => x.trim())
-    } catch { /* malformed → no entries */ }
-    return []
-  }
-  if (v.startsWith('{')) return []
-  return [v]
-}
-
-// Serialise a multi-value list back into a track slot: '' when empty, a JSON
-// array otherwise. (A single entry still stores as an array so the shape is
-// stable for multi-value tracks.)
-export function stringifyMulti(list: string[]): string {
-  const clean = list.map(s => s.trim()).filter(Boolean)
-  return clean.length ? JSON.stringify(clean) : ''
-}
-
-// A plain enum/text track value becomes a tag; JSON values (date pickers,
-// milestone lists) and any *_Date field are skipped so they never leak in.
-export function isTaggableTrack(key: string, value: string): boolean {
-  if (NON_TAG_TRACKS.has(key)) return false
-  if (key.endsWith('_Date')) return false
-  const v = value.trim()
-  if (!v) return false
-  if (v.startsWith('{') || v.startsWith('[')) return false
-  return true
-}
-
-export function getTrackTags(tracks: Record<string, string>): string[] {
-  const out: string[] = []
-  for (const [k, v] of Object.entries(tracks)) {
-    if (NON_TAG_TRACKS.has(k) || k.endsWith('_Date')) continue
-    // Expands multi-value tracks (Allies/Rivals) into one tag per entry.
-    for (const val of trackValues(v)) out.push(val.toLowerCase().replace(/\s+/g, '-'))
-  }
-  return out
-}
+// Track vocabulary, value parsing and tag derivation now live in shared/tracks.ts
+// so the publish pipeline derives player-facing tags with exactly these rules —
+// the old duplicate here had drifted (it excluded `Age`; the exporter didn't).
+// Re-exported so every existing `from './wikiConstants'` import keeps working.
+export {
+  NON_TAG_TRACKS, MULTI_TRACKS, DM_BY_DEFAULT_TRACKS,
+  trackValues, stringifyMulti, isTaggableTrack, getTrackTags,
+  formatTrackName, defaultTrackMode,
+} from '../../../shared/tracks'
 
 // Parse a stored tags array, dropping any JSON-fragment garbage that earlier
 // leaked in from date/milestone tracks (never present in legitimate tags).
@@ -258,11 +216,6 @@ export function parseTags(raw: string | null | undefined): string[] {
     if (!Array.isArray(arr)) return []
     return arr.filter((t): t is string => typeof t === 'string' && t.trim() !== '' && !/[{}[\]"]/.test(t))
   } catch { return [] }
-}
-
-export function formatTrackName(key: string): string {
-  if (key === 'Within') return 'Located within'
-  return key.replace(/_/g, ' ')
 }
 
 export const ALL_FILTERS = [

@@ -3,7 +3,8 @@ import { app, ipcMain } from 'electron'
 import { db } from '../db'
 import { extractInlineImagePaths, safeUnlink, safeUnlinkRelative, unlinkImageRef } from '../helpers'
 import { syncHierarchyForWeb, syncTerritoryWeb } from '../relationsSync'
-import { trackValues } from './publishCore'
+import { purgeGrantsFor } from './players'
+import { trackValues } from '../../../shared/tracks'
 
 export function registerArticleIPC() {
 
@@ -99,8 +100,13 @@ export function registerArticleIPC() {
   //  • nodes   = every article
   //  • edges   = [[wikiLink]] references + track values naming another article
   //  • ghosts  = [[links]] pointing at a title that has no article (broken links)
-  //  • mentions = an article title appearing as plain (unlinked) text in another
-  // Edges/mentions are undirected and deduped.
+  // Edges are undirected and deduped.
+  //
+  // This used to also return `mentions` — article titles appearing as plain
+  // text somewhere else — which the graph drew as teal "Suggestions". It was
+  // removed (Sept 2026): the whole-title regex over every article's prose was
+  // the most expensive part of this query, and the suggestions it produced
+  // were mostly noise.
   ipcMain.handle('articles:link-graph', (_e, campaignId: number) => {
     const rows = db.prepare(`
       SELECT id, title, article_type, tags, content, tracks, updated_at FROM articles WHERE campaign_id = ?
@@ -144,21 +150,6 @@ export function registerArticleIPC() {
       return links
     }
 
-    // Plain prose only — text NOT inside a wikiLink mark (already-linked text is
-    // not an "unlinked mention"). Used for mention scanning.
-    const plainText = (raw: string): string => {
-      const parts: string[] = []
-      const walk = (node: any) => {
-        if (!node || typeof node !== 'object') return
-        if (typeof node.text === 'string') {
-          if (!(node.marks ?? []).some((m: any) => m.type === 'wikiLink')) parts.push(node.text)
-        }
-        for (const child of node.content ?? []) walk(child)
-      }
-      try { walk(JSON.parse(raw)) } catch {}
-      return parts.join(' ')
-    }
-
     const edges: { from: number; to: number }[] = []
     const edgeSeen = new Set<string>()
     const ghostMap = new Map<string, { title: string; sources: Set<number> }>()
@@ -199,35 +190,6 @@ export function registerArticleIPC() {
       }
     }
 
-    // ── Unlinked mentions ────────────────────────────────────────────────────
-    // Build one combined whole-word regex of all article titles (≥3 chars, to
-    // avoid noise), longest first so overlapping names prefer the longer match.
-    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const scanTitles = rows.map(r => r.title).filter(t => t.length >= 3)
-      .sort((a, b) => b.length - a.length)
-    const mentions: { from: number; to: number }[] = []
-    const mentionSeen = new Set<string>()
-    if (scanTitles.length > 0) {
-      const re = new RegExp(`\\b(?:${scanTitles.map(esc).join('|')})\\b`, 'gi')
-      for (const r of rows) {
-        const text = plainText(r.content)
-        if (!text) continue
-        re.lastIndex = 0
-        const found = new Set<number>()
-        let m: RegExpExecArray | null
-        while ((m = re.exec(text)) !== null) {
-          const target = byTitle.get(m[0].toLowerCase())
-          if (target && target.id !== r.id) found.add(target.id)
-        }
-        for (const tid of found) {
-          const key = r.id < tid ? `${r.id}:${tid}` : `${tid}:${r.id}`
-          if (edgeSeen.has(key) || mentionSeen.has(key)) continue  // already a real link
-          mentionSeen.add(key)
-          mentions.push({ from: r.id, to: tid })
-        }
-      }
-    }
-
     return {
       nodes: rows.map(r => ({
         id: r.id, title: r.title, article_type: r.article_type,
@@ -236,7 +198,6 @@ export function registerArticleIPC() {
       })),
       edges,
       ghosts: [...ghostMap.values()].map(g => ({ title: g.title, sources: [...g.sources] })),
-      mentions,
     }
   })
 
@@ -426,10 +387,16 @@ export function registerArticleIPC() {
     const maps = db.prepare('SELECT DISTINCT image_path FROM maps WHERE article_id = ?')
       .all(id) as { image_path: string }[]
     const pois = db.prepare(`
-      SELECT p.content FROM pois p JOIN maps m ON m.id = p.map_id WHERE m.article_id = ?
-    `).all(id) as { content: string }[]
+      SELECT p.id, p.content FROM pois p JOIN maps m ON m.id = p.map_id WHERE m.article_id = ?
+    `).all(id) as { id: number; content: string }[]
 
     db.prepare('DELETE FROM articles WHERE id = ?').run(id)
+
+    // Player-visibility grants are polymorphic, so nothing cascades them. Clear
+    // this article's and those of the POIs that went with it, or the rows
+    // outlive the thing they described.
+    purgeGrantsFor('article', id)
+    for (const p of pois) purgeGrantsFor('poi', p.id)
 
     for (const { web_id } of affectedWebs) syncHierarchyForWeb(web_id)
 
