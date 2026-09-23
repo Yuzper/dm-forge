@@ -14,6 +14,9 @@ See [docs/player-pages-plan.md](docs/player-pages-plan.md) for the full design.
 
 ## One-time setup
 
+Publishing also writes a `.nojekyll` file, so GitHub Pages serves the folder as-is
+instead of running Jekyll over it.
+
 The publish step drops the **viewer** (the `index.html` + JavaScript players load) into
 the output folder. It comes from a build artifact, so build it once:
 
@@ -123,15 +126,38 @@ the right pages, fields, map pins, and "what's new" summary.
 
 ## Host on GitHub Pages
 
+**Two of these steps are yours and cannot be automated** — not a limitation of the app
+but of git. Git can only push to a repository that already exists, and GitHub Pages is a
+setting on the repo, not something a push can switch on. Everything else the app does.
+
 **One-time:**
 
-1. Create (or reuse) a repository you serve Pages from, and clone it locally.
-2. Publish into a **subfolder** of that clone — `Change folder…` → e.g. `coast/`.
-3. In the repo: **Settings → Pages → Source: Deploy from a branch**, your branch,
-   **`/ (root)`**.
-4. Send each player `https://<you>.github.io/<repo>/coast/` plus their username and password.
+1. **On GitHub: create the repository.** Empty is fine; so is one that already holds an
+   older export.
+2. **In the Players modal: choose the publish folder.** If the repository is dedicated to
+   this player site, point it at the folder you want the clone in and the site lives at
+   the repo root — players get `https://<you>.github.io/<repo>/`. If the repository also
+   serves something else (a landing page, another campaign), pick a **subfolder**; the
+   picker refuses any folder containing files the export does not manage, because it
+   overwrites `index.html` and clears `assets/` in whatever folder it owns.
+3. **Paste the repository URL and press Connect.** The app sorts out the git side by
+   itself, whichever state the folder is in:
+   - empty or missing → clones, so an existing site comes down intact
+   - already holds an export → adopts the repository *around* those files; nothing is
+     deleted, and your files show up as ordinary pending changes
+   - already a working copy → just re-points the remote
+4. **On GitHub: switch Pages on.** Settings → Pages → Source: Deploy from a branch →
+   your branch, **`/ (root)`**. Until this is done the URL returns 404 however good the
+   push was. The app reminds you of this while the repo has nothing pending.
+5. Send each player the URL plus their username and password.
 
-**Every time after that:** click **Publish**, then **Push live**. No terminal.
+**Every time after that:** **Publish**, then **Push live**. No terminal, ever.
+
+Authentication is whatever git already uses on your machine, so if you have pushed to
+this host from this computer before, it just works. The app never sees or stores a token.
+Adding one would let it create the repo and flip Pages for you — deliberately not done:
+a repo-scoped token is a far more valuable secret than anything else this app holds, and
+it would save two clicks once per campaign.
 
 ### 5. Push live
 

@@ -8,7 +8,7 @@
 // 11px text, 3px/10px padding, 11px icon, fully rounded.
 
 import type { CSSProperties, ReactNode } from 'react'
-import { Search, X, ArrowLeft } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { ALL_FILTERS } from './wikiConstants'
 import type { ArticleType } from '../../types'
 
@@ -44,35 +44,8 @@ export function ToolbarDivider() {
 }
 
 // ── Header bar ─────────────────────────────────────────────────────────────────
-
-export function WikiHeaderBar({ icon: Icon, title, meta, actions, onBack }: {
-  icon: any
-  title: string
-  meta?: ReactNode
-  actions?: ReactNode
-  onBack: () => void
-}) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button
-          onClick={onBack}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', borderRight: '1px solid var(--border)', paddingRight: 12, marginRight: 4, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', transition: 'color var(--transition)' }}
-          className="hover-text">
-          <ArrowLeft size={14} /> Back
-        </button>
-        <Icon size={22} color="var(--gold)" />
-        <h1 style={{ fontSize: 22, letterSpacing: '0.05em' }}>{title}</h1>
-        {meta && (
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            {meta}
-          </span>
-        )}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{actions}</div>
-    </div>
-  )
-}
+// The header itself moved to the shared src/components/SectionHeader.tsx, used
+// by every top-level section now, not just the wiki's two views.
 
 // The button that swaps between list and graph — same shape in both directions.
 export function ViewSwitchButton({ icon: Icon, label, title, onClick }: {
@@ -187,41 +160,3 @@ export function WikiTypeFilters({ excluded, value, onChange, grow, counts }: {
   )
 }
 
-// ── Type distribution bar ──────────────────────────────────────────────────────
-
-// The hub's "Articles by type" chart, reduced to one 4px strip under the
-// filters: same proportions, but every segment is the filter it stands for.
-// Types hidden by "Hide types" leave the bar as well, so it always describes
-// exactly the set the grid is drawn from.
-export function TypeDistributionBar({ counts, excluded, value, onChange }: {
-  counts: Record<string, number>
-  excluded: Set<string>
-  value: WikiTypeFilter
-  onChange: (v: WikiTypeFilter) => void
-}) {
-  const slices = ALL_FILTERS
-    .filter(f => f.value !== 'all' && !excluded.has(f.value) && (counts[f.value] ?? 0) > 0)
-    .map(f => ({ type: f.value, label: f.label, color: f.color, count: counts[f.value] }))
-  const total = slices.reduce((sum, s) => sum + s.count, 0)
-  if (total === 0) return null
-
-  return (
-    <div style={{ display: 'flex', gap: 1, height: 4, borderRadius: 99, overflow: 'hidden', marginTop: 10 }}>
-      {slices.map(s => {
-        const dimmed = value !== 'all' && value !== s.type
-        return (
-          <button
-            key={s.type}
-            onClick={() => onChange(value === s.type ? 'all' : (s.type as WikiTypeFilter))}
-            title={`${s.label} · ${s.count}`}
-            style={{
-              width: `${(s.count / total) * 100}%`, height: '100%', padding: 0,
-              border: 'none', cursor: 'pointer', background: s.color,
-              opacity: dimmed ? 0.28 : 1, transition: 'opacity 120ms ease',
-            }}
-          />
-        )
-      })}
-    </div>
-  )
-}

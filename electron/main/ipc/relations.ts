@@ -104,8 +104,9 @@ export function registerRelationIPC() {
     if (node?.tracks) {
       try { vitality = JSON.parse(node.tracks).Vitality || null } catch {}
     }
-    const { tracks: _t, ...rest } = node ?? {}
-    return { ...rest, vitality }
+    // tracks stay on the node, as in get-data: kin terms (Gender) and track
+    // filters read them, and a freshly added node would otherwise lack them.
+    return { ...node, vitality }
   })
 
   ipcMain.handle('relation-nodes:update', (_e, id: number, data: any) => {
@@ -131,8 +132,9 @@ export function registerRelationIPC() {
     if (node?.tracks) {
       try { vitality = JSON.parse(node.tracks).Vitality || null } catch {}
     }
-    const { tracks: _t, ...rest } = node ?? {}
-    return { ...rest, vitality }
+    // tracks stay on the node, as in get-data: kin terms (Gender) and track
+    // filters read them, and a freshly added node would otherwise lack them.
+    return { ...node, vitality }
   })
 
   ipcMain.handle('relation-nodes:delete', (_e, id: number) => {

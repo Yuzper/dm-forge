@@ -170,15 +170,45 @@ async function git(args: string[], cwd: string, timeout = 60_000) {
   }
 }
 
-// Refuse a repository ROOT as the output folder. The export owns everything
-// under its folder — it clears assets/ and writes index.html — so pointing it at
-// the root of a repo that also serves a landing page would quietly eat it.
-function repoRootGuard(dir: string): string | null {
-  if (fs.existsSync(path.join(dir, '.git'))) {
-    return 'That is the root of a git repository. Pick (or create) a subfolder inside it '
-      + 'instead — the export overwrites index.html and assets/ in whatever folder it owns.'
+// Names the export writes, manages or is happy to leave alone. Anything else in
+// a folder means somebody else is using it too.
+const EXPORT_OWNED = new Set([
+  'index.html', 'site.json', 'README.txt', 'assets', 'data', 'images',
+  // Not ours, but never touched: git's own files and GitHub Pages' config.
+  '.git', '.gitignore', '.nojekyll', 'CNAME',
+])
+
+// The export owns its folder outright — it overwrites index.html and clears
+// assets/ — so the question is never \"is this a repo root\" but \"is anything else
+// living here\". A repo dedicated to the player site SHOULD be published at its
+// root, so players get /<repo>/ rather than /<repo>/<subfolder>/; a repo that
+// also serves a landing page must not be, or the next publish eats it.
+function outputFolderGuard(dir: string): string | null {
+  if (!fs.existsSync(path.join(dir, '.git'))) return null // not a repo root; nothing of anyone else's to protect
+  let strangers: string[]
+  try {
+    strangers = fs.readdirSync(dir).filter(name => !EXPORT_OWNED.has(name))
+  } catch {
+    return null
   }
-  return null
+  if (strangers.length === 0) return null // dedicated repo — root is the right place
+  const shown = strangers.slice(0, 4).join(', ') + (strangers.length > 4 ? '…' : '')
+  return `That repository also contains ${shown}, which the player-site export does not manage — `
+    + 'and it overwrites index.html and clears assets/ in whatever folder it owns. '
+    + 'Pick (or create) a subfolder inside the repository instead.'
+}
+
+// Turn git's stderr into something that says what to actually do about it.
+function cloneHint(stderr: string): string {
+  if (/not found|repository .* does not exist|could not read from remote/i.test(stderr)) {
+    return 'Could not reach that repository. Check the URL, and that the repository exists — '
+      + 'the app cannot create it for you.'
+  }
+  if (/authentication|terminal prompts disabled|denied/i.test(stderr)) {
+    return 'Git could not authenticate without a prompt. Run one push or clone from your terminal '
+      + 'to store the credential, then try again.'
+  }
+  return stderr || 'git failed.'
 }
 
 // Absolute output folder for a campaign, or '' when none is configured yet.
@@ -279,10 +309,86 @@ export function registerPublishIPC() {
     })
     if (dlg.canceled || !dlg.filePaths.length) return { success: false, canceled: true }
     const picked = dlg.filePaths[0]
-    const guard = repoRootGuard(picked)
+    const guard = outputFolderGuard(picked)
     if (guard) return { success: false, error: guard }
     db.prepare('UPDATE campaigns SET player_site_path = ? WHERE id = ?').run(picked, campaignId)
     return { success: true, path: picked, git: await gitStatusFor(picked) }
+  })
+
+  // Point the published folder at a remote, whatever state it is currently in.
+  // Three cases, none of which delete anything the DM has:
+  //   empty / missing  -> clone, so an existing site comes down intact
+  //   files, no repo   -> init + fetch + soft reset, so a folder already holding
+  //                       an export becomes a working copy without losing it
+  //   already a repo   -> just point the remote at the given URL
+  //
+  // What this cannot do, by design: create the repository, or switch GitHub Pages
+  // on. Neither is a git operation — both need an API token, and a repo-scoped
+  // token is a much worse thing to keep lying around than anything else here.
+  ipcMain.handle('publish:connect-repo', async (_e, campaignId: number, rawUrl: string) => {
+    const url = (rawUrl ?? '').trim()
+    const campaign = db.prepare('SELECT player_site_path FROM campaigns WHERE id = ?').get(campaignId) as any
+    const outDir = outDirFor(campaign)
+    if (!outDir) return { success: false, error: 'Choose the publish folder first.' }
+    if (!url) {
+      db.prepare('UPDATE campaigns SET player_site_repo = NULL WHERE id = ?').run(campaignId)
+      return { success: true, cleared: true, git: await gitStatusFor(outDir) }
+    }
+    if (!/^(https?:\/\/|git@)/.test(url)) {
+      return { success: false, error: 'That does not look like a repository URL. Use the https:// address from the repo page.' }
+    }
+
+    try {
+      const exists = fs.existsSync(outDir)
+      const entries = exists ? fs.readdirSync(outDir) : []
+      const alreadyRepo = exists && fs.existsSync(path.join(outDir, '.git'))
+      let action: string
+
+      if (alreadyRepo) {
+        const remotes = (await git(['remote'], outDir)).stdout.split(NL).filter(Boolean)
+        const name = remotes.includes('origin') ? 'origin' : (remotes[0] || 'origin')
+        const res = remotes.length
+          ? await git(['remote', 'set-url', name, url], outDir)
+          : await git(['remote', 'add', name, url], outDir)
+        if (!res.ok) return { success: false, error: res.stderr || 'Could not set the remote.' }
+        action = 'Pointed the existing working copy at this repository.'
+      } else if (entries.length === 0) {
+        fs.mkdirSync(outDir, { recursive: true })
+        const res = await git(['clone', url, outDir], path.dirname(outDir), 120_000)
+        if (!res.ok) return { success: false, error: cloneHint(res.stderr) }
+        action = 'Cloned the repository into the publish folder.'
+      } else {
+        // Folder already holds an export. Make it a working copy around those
+        // files: fetch, then a MIXED reset so the remote history is adopted and
+        // every local file survives untouched on disk.
+        const init = await git(['init'], outDir)
+        if (!init.ok) return { success: false, error: init.stderr || 'git init failed.' }
+        const add = await git(['remote', 'add', 'origin', url], outDir)
+        if (!add.ok) await git(['remote', 'set-url', 'origin', url], outDir)
+        const fetch = await git(['fetch', 'origin'], outDir, 120_000)
+        if (!fetch.ok) return { success: false, error: cloneHint(fetch.stderr) }
+        // refs/remotes/origin/HEAD is set by clone, not by fetch, so asking the
+        // remote directly is the only reliable way to learn its default branch.
+        const sym = (await git(['ls-remote', '--symref', 'origin', 'HEAD'], outDir, 60_000)).stdout
+        const m = sym.match(/ref:\s+refs\/heads\/(\S+)\s+HEAD/)
+        const branch = m ? m[1] : 'master'
+        await git(['checkout', '-B', branch], outDir)
+        // --mixed: history and index come from the remote, the working tree is
+        // left exactly as it is. The existing export shows up as normal changes.
+        await git(['reset', '--mixed', `origin/${branch}`], outDir)
+        // Only now does the local branch ref exist. Setting the upstream before
+        // this point fails quietly against an unborn branch, and the first push
+        // then needs -u that the push handler would not know to pass.
+        await git(['branch', '--set-upstream-to', `origin/${branch}`, branch], outDir)
+        action = 'Adopted the repository around the files already in the folder — nothing was deleted.'
+      }
+
+      db.prepare('UPDATE campaigns SET player_site_repo = ? WHERE id = ?').run(url, campaignId)
+      return { success: true, action, git: await gitStatusFor(outDir) }
+    } catch (err: any) {
+      log.error(`Connect repo failed: ${err?.message ?? err}`)
+      return { success: false, error: err?.message ?? String(err) }
+    }
   })
 
   ipcMain.handle('publish:git-status', async (_e, campaignId: number) => {
@@ -435,15 +541,27 @@ export function registerPublishIPC() {
       // a complete, hostable site. Packaged: an extraResource; dev: dist-viewer
       // built by `npm run build:viewer`. The assets folder is cleared first —
       // vite emits content-hashed filenames, so stale chunks would pile up.
+      // `force` on the copy matters specifically for index.html: it sits outside
+      // assets/ so the rmSync above never touches it, and copyFilesWithSkip's
+      // usual same-size/newer-destination skip can leave a stale one in place
+      // (a git checkout can bump its mtime past a same-length rebuild) —
+      // pairing it with the wrong content-hashed chunk and blanking the site.
       const viewerDist = app.isPackaged
         ? path.join(process.resourcesPath, 'player-viewer')
         : path.join(app.getAppPath(), 'dist-viewer')
       if (fs.existsSync(path.join(viewerDist, 'index.html'))) {
         fs.rmSync(path.join(outDir, 'assets'), { recursive: true, force: true })
-        await copyDirContentsAsync(viewerDist, outDir)
+        await copyDirContentsAsync(viewerDist, outDir, undefined, true)
       } else {
         warnings.push('Viewer app not built — run "npm run build:viewer". Data was written, but the folder has no index.html yet.')
       }
+
+      // GitHub Pages runs Jekyll over a repo unless told not to, which can drop
+      // files it decides are templates. Nothing vite emits currently trips it,
+      // but the failure mode is a silently missing asset on the live site, so
+      // write the opt-out rather than rely on that staying true.
+      const noJekyll = path.join(outDir, '.nojekyll')
+      if (!fs.existsSync(noJekyll)) fs.writeFileSync(noJekyll, '')
 
       // Public descriptor — no player roster (files are keyed by username hash).
       fs.writeFileSync(path.join(outDir, 'site.json'), JSON.stringify({

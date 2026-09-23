@@ -641,7 +641,7 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
 }
 
 export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: { article: Article; onBack: () => void; backLabel?: string }) {
-  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, allArticles, loadAllArticles, setView, setRelationsOpenWebId, setRelationsFocusArticleId, setHintContext, players, loadPlayers } = useStore()
+  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, allArticles, loadAllArticles, navigateTo, setRelationsFocusArticleId, setHintContext, players, loadPlayers } = useStore()
   const articleMenu = useArticleContextMenu()
 
   // Article names per type for the track dropdowns, derived from the store's
@@ -800,6 +800,14 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
     ;(window as any).api.listRelationWebsForMember(article.id).then((ws: any[]) => setMemberWebs(ws || []))
   }, [article.id])
   useEffect(() => { reloadRelationWebs() }, [reloadRelationWebs])
+
+  // Open a web with this article's node selected. Navigate first: _goto's
+  // relations branch sets the open web from the location and clears the focus,
+  // so the focus is planted after (same order as the "Show in web" menu).
+  const openWeb = (webId: number) => {
+    navigateTo({ type: 'relations', webId })
+    setRelationsFocusArticleId(article.id)
+  }
 
   useEffect(() => {
     if (!currentCampaign) return
@@ -1355,20 +1363,12 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
               webs={relationWebs}
               loaded={relationWebsLoaded}
               onReload={reloadRelationWebs}
-              onOpenWeb={(webId) => {
-                setRelationsOpenWebId(webId)
-                setRelationsFocusArticleId(article.id)
-                setView('relations')
-              }}
+              onOpenWeb={openWeb}
             />
 
             <ArticleRelationsPanel
               articleId={article.id}
-              onOpenWeb={(webId) => {
-                setRelationsOpenWebId(webId)   // ← tell RelationsPage which web to open
-                setRelationsFocusArticleId(article.id)  // ← select + center this article's node
-                setView('relations')
-              }}
+              onOpenWeb={openWeb}
             />
 
             {(() => {

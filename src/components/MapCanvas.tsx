@@ -365,7 +365,6 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     if (article && !article.missing) {
       menu.push(...openItems(
         { type: 'article', articleId: article.article_id! }, menuCtx,
-        `Open “${truncate(article.title ?? 'linked article')}”`,
       ))
     }
     if (session && !session.missing) {
@@ -392,7 +391,6 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     if (article) {
       menu.push(...openItems(
         { type: 'article', articleId: article.article_id! }, menuCtx,
-        `Open “${truncate(article.title ?? 'linked article')}”`,
       ), { type: 'separator' })
     }
     menu.push({ label: 'Edit region…', click: () => setEditingShape(shape) })

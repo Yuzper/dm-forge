@@ -14,9 +14,10 @@ import { Network, X, LayoutGrid, Unlink, Plus, Minus, Clock, Target, SlidersHori
 import type { LinkGraph, ArticleType } from '../../types'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
 import {
-  WikiHeaderBar, ViewSwitchButton, WikiSearchBox, WikiTypeFilters, ToolbarDivider,
+  ViewSwitchButton, WikiSearchBox, WikiTypeFilters, ToolbarDivider,
   toolbarPillStyle, pillCountStyle, type WikiSearchFields,
 } from './WikiToolbar'
+import SectionHeader from '../SectionHeader'
 import { useExcludedTypes, TypeVisibilityMenu } from './TypeVisibilityMenu'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { useContextMenu, useMenuCtx } from '../../hooks/useContextMenu'
@@ -278,12 +279,12 @@ function ForcePanel({ force, setForce }: {
               <RotateCcw size={11} /> Reset
             </button>
           </div>
-          {row('Link length', 'linkDistance', 40, 300, 5)}
+          {row('Link length', 'linkDistance', 40, 600, 10)}
           {row('Link pull', 'linkStrength', 0, 1, 0.05, v => v.toFixed(2))}
-          {row('Repulsion', 'repulsion', 20, 800, 10)}
+          {row('Repulsion', 'repulsion', 20, 2000, 20)}
           {row('Gravity X', 'gravityX', 0, 0.4, 0.01, v => v.toFixed(2))}
           {row('Gravity Y', 'gravityY', 0, 0.4, 0.01, v => v.toFixed(2))}
-          {row('Spacing', 'collide', 0, 80, 2)}
+          {row('Spacing', 'collide', 0, 200, 5)}
           <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
             Re-settles the graph as you drag. Shapes resting positions only.
           </div>
@@ -620,38 +621,40 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ padding: '20px 32px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <WikiHeaderBar
-          icon={Network}
-          title="Wiki Graph"
-          onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
-          meta={<>
-            {articleNodes.length} article{articleNodes.length !== 1 ? 's' : ''} · {links.length} link{links.length !== 1 ? 's' : ''}
-            {unlinkedCount > 0 && (
-              <>
-                ·
-                <button
-                  onClick={() => setOrphanOnly(v => !v)}
-                  title={orphanOnly ? 'Show all articles' : 'Highlight only unconnected articles'}
-                  style={{
-                    background: orphanOnly ? 'var(--gold-glow)' : 'none', border: 'none', cursor: 'pointer',
-                    color: orphanOnly ? 'var(--gold)' : 'var(--text-muted)', fontSize: 12, padding: '1px 6px',
-                    borderRadius: 99, textDecoration: 'underline', textUnderlineOffset: 2,
-                  }}
-                  className={orphanOnly ? '' : 'hover-gold'}>
-                  {unlinkedCount} unlinked
-                </button>
-              </>
-            )}
-            {hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''}
-          </>}
-          actions={<>
-            <ViewSwitchButton icon={LayoutGrid} label="List view" onClick={onSwitchToList}
-              title="Back to the article cards" />
-            <button className="btn btn-primary" onClick={() => onCreateArticle('')}>
-              <Plus size={15} /> New Article
-            </button>
-          </>}
-        />
+        <div style={{ marginBottom: 14 }}>
+          <SectionHeader
+            icon={Network}
+            title="Wiki Graph"
+            onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
+            meta={<>
+              {articleNodes.length} article{articleNodes.length !== 1 ? 's' : ''} · {links.length} link{links.length !== 1 ? 's' : ''}
+              {unlinkedCount > 0 && (
+                <>
+                  ·
+                  <button
+                    onClick={() => setOrphanOnly(v => !v)}
+                    title={orphanOnly ? 'Show all articles' : 'Highlight only unconnected articles'}
+                    style={{
+                      background: orphanOnly ? 'var(--gold-glow)' : 'none', border: 'none', cursor: 'pointer',
+                      color: orphanOnly ? 'var(--gold)' : 'var(--text-muted)', fontSize: 12, padding: '1px 6px',
+                      borderRadius: 99, textDecoration: 'underline', textUnderlineOffset: 2,
+                    }}
+                    className={orphanOnly ? '' : 'hover-gold'}>
+                    {unlinkedCount} unlinked
+                  </button>
+                </>
+              )}
+              {hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''}
+            </>}
+            actions={<>
+              <ViewSwitchButton icon={LayoutGrid} label="List view" onClick={onSwitchToList}
+                title="Back to the article cards" />
+              <button className="btn btn-primary" onClick={() => onCreateArticle('')}>
+                <Plus size={15} /> New Article
+              </button>
+            </>}
+          />
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <WikiSearchBox

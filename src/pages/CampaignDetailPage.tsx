@@ -147,7 +147,6 @@ export default function CampaignDetailPage() {
     return (
       <MapHubView
         panels={hubPanels}
-        onTogglePanel={togglePanel}
         onHasMapsChange={setHasMap}
         onSwitchLayout={() => switchLayout('classic')}
         stats={{ articleCount, noteCount, lootCount, relationsCount, soundboardCount }}

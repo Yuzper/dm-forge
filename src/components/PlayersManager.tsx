@@ -2,11 +2,11 @@
 // DM-side manager for player-facing pages: define the players who get a curated
 // per-player view (username + shared password + linked player-character article).
 import { useEffect, useState } from 'react'
-import { Trash2, Plus, X, Upload, Loader2, Eye, FolderOpen, GitBranch, CloudUpload } from 'lucide-react'
+import { Trash2, Plus, X, Upload, Loader2, Eye, FolderOpen, GitBranch, CloudUpload, Link2 } from 'lucide-react'
 import { useStore } from '../store/store'
 import Modal from './Modal'
 import PlayerSitePreview from './PlayerSitePreview'
-import type { Player, ArticleSummary, PublishResult, GitSiteStatus, PushResult } from '../types'
+import type { Player, ArticleSummary, PublishResult, GitSiteStatus, PushResult, ConnectRepoResult } from '../types'
 
 function PlayerRow({ player, pcOptions, onUpdate, onDelete }: {
   player: Player
@@ -70,6 +70,9 @@ export default function PlayersManager() {
   // label without a round trip through the campaign record.
   const [destination, setDestination] = useState<string | null>(currentCampaign?.player_site_path ?? null)
   const [git, setGit] = useState<GitSiteStatus | null>(null)
+  const [repoUrl, setRepoUrl] = useState(currentCampaign?.player_site_repo ?? '')
+  const [connecting, setConnecting] = useState(false)
+  const [connectResult, setConnectResult] = useState<ConnectRepoResult | null>(null)
   const [pushing, setPushing] = useState(false)
   const [pushResult, setPushResult] = useState<PushResult | null>(null)
 
@@ -117,6 +120,18 @@ export default function PlayersManager() {
       if (r.git) setGit(r.git)
     } else if (r.error) {
       setResult({ success: false, error: r.error })
+    }
+  }
+
+  const connectRepo = async () => {
+    if (!currentCampaign) return
+    setConnecting(true); setConnectResult(null)
+    try {
+      const r = await window.api.connectPlayerSiteRepo(currentCampaign.id, repoUrl)
+      setConnectResult(r)
+      if (r.git) setGit(r.git)
+    } finally {
+      setConnecting(false)
     }
   }
 
@@ -192,6 +207,24 @@ export default function PlayersManager() {
             {destination ? 'Change folder…' : 'Choose folder…'}
           </button>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+          <Link2 size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          <input className="input" value={repoUrl} placeholder="https://github.com/you/your-player-site"
+            onChange={e => setRepoUrl(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') connectRepo() }}
+            style={{ height: 28, fontSize: 11, flex: 1, minWidth: 220 }} />
+          <button className="btn btn-sm btn-ghost" onClick={connectRepo} disabled={connecting || !destination}
+            title={destination ? 'Set up the publish folder as a working copy of this repository'
+                               : 'Choose the publish folder first'}>
+            {connecting ? <><Loader2 size={12} className="spin" /> Connecting…</> : 'Connect'}
+          </button>
+        </div>
+        {connectResult && (
+          <div style={{ fontSize: 11, marginBottom: 8, color: connectResult.success ? 'var(--gold)' : 'var(--danger, #c0432f)' }}>
+            {connectResult.success ? (connectResult.cleared ? 'Repository cleared.' : connectResult.action) : connectResult.error}
+          </div>
+        )}
+
         <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '0 0 10px' }}>
           Pick a subfolder inside the git repo you host from — the export owns that folder
           completely, so it must not be the repo root. Publishing into the same folder each
@@ -235,13 +268,23 @@ export default function PlayersManager() {
           {git?.inRepo
             ? <span>
                 {git.remoteUrl
-                  ? <>Pushes <strong style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{git.subPath || '.'}</strong>
+                  ? <>Pushes <strong style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{git.subPath || 'the whole repo'}</strong>
                       {' to '}<strong style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{git.remoteUrl}</strong>
                       {' ('}{git.branch}{')'}</>
                   : <>In a repo on <strong style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{git.branch}</strong>, but it has no remote — add one to push.</>}
               </span>
             : <span>{git?.reason ?? 'Checking…'} Publishing still works; there is just nothing to push.</span>}
         </div>
+
+        {git?.inRepo && !git.ahead && !git.pendingChanges && (
+          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.5 }}>
+            First time hosting this repo? Two steps the app can’t do for you, because neither is a
+            git operation: <strong style={{ fontWeight: 500 }}>create the repository</strong> on your
+            host, and switch <strong style={{ fontWeight: 500 }}>Pages</strong> on
+            (GitHub: Settings → Pages → Deploy from a branch → {git.branch} / root).
+            Until that switch is flipped the URL returns 404 no matter how good the push was.
+          </div>
+        )}
 
         {pushResult && (
           <div style={{ fontSize: 11, marginTop: 6, color: pushResult.success ? 'var(--gold)' : 'var(--danger, #c0432f)' }}>

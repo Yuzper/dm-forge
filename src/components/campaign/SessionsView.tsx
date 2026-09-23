@@ -4,7 +4,7 @@ import { useStore } from '../../store/store'
 import {
   Plus, Calendar, Map, MoreHorizontal, Trash2, Pencil,
   ChevronRight, ArrowUpDown, ChevronDown, ChevronUp, Layers,
-  Scroll, ArrowLeft, X, Search, GripVertical,
+  Scroll, X, Search, GripVertical,
   PanelRight, ArrowUpToLine, Hammer, BookOpen,
 } from 'lucide-react'
 import type { Session, Arc } from '../../types'
@@ -14,6 +14,7 @@ import { parseDay, todayISO } from '../../utils/dates'
 import { richTextToPlain } from '../../utils/richText'
 import Modal from '../Modal'
 import EmptyState from '../EmptyState'
+import SectionHeader from '../SectionHeader'
 import { InWorldDatePicker } from '../InWorldDatePicker'
 import SwatchPicker from '../SwatchPicker'
 import { STANDARD_PALETTE } from '../../constants/palettes'
@@ -735,17 +736,12 @@ export default function SessionsView({ onBack }: { onBack: () => void }) {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ padding: '20px 32px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button onClick={onBack} className="btn btn-ghost btn-sm" style={{ color: 'var(--text-muted)', gap: 6 }}>
-              <ArrowLeft size={14} /> Back
-            </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 20, letterSpacing: '0.04em', color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
-              <Scroll size={20} color="var(--gold)" /> Sessions
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ padding: '20px 32px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <SectionHeader
+          icon={Scroll}
+          title="Sessions"
+          onBack={onBack}
+          actions={<>
             <button
               className="btn"
               onClick={() => togglePrep(!prepOpen)}
@@ -761,8 +757,8 @@ export default function SessionsView({ onBack }: { onBack: () => void }) {
             <button className="btn btn-primary" onClick={() => { setPreselectedArcId(null); setShowCreate(true) }}>
               <Plus size={15} /> New Session
             </button>
-          </div>
-        </div>
+          </>}
+        />
       </div>
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>

@@ -44,7 +44,8 @@ const TAB_STRIP_H = 34
 export default function HubWorldMap({
   fullBleed = false, onHasMapsChange, panelSlot = null,
   contentsOpen, onContentsToggle, measureOpen, onMeasureToggle,
-  onPoisChange, trail = [], showTrail = false, focusPoi = null,
+  onPoisChange, trail = [], showTrail = false, focusPoi = null, hideContentsButton = false,
+  toolbarExtra = null,
 }: {
   fullBleed?: boolean
   onHasMapsChange?: (has: boolean) => void
@@ -65,6 +66,15 @@ export default function HubWorldMap({
   showTrail?: boolean
   /** Centre on this pin when the hub asks. The nonce re-fires the same pin. */
   focusPoi?: { id: number; nonce: number } | null
+  /** The map hub merges its own Contents button into a bigger toggle group it
+   *  builds itself (Contents + Quests + Clocks), so it asks the map to skip
+   *  drawing its own copy. Contents still opens/closes the normal way via
+   *  contentsOpen/onContentsToggle. */
+  hideContentsButton?: boolean
+  /** Extra buttons the host wants in the top toolbar row, next to the tools —
+   *  the map hub uses this to put its merged Contents/Quests/Clocks group
+   *  back in the centred strip instead of floating separately. */
+  toolbarExtra?: React.ReactNode
 }) {
   const { currentCampaign, sessions, allArticles, navigateToArticleByTitle, navigateToSessionById } = useStore()
   const showMenu = useContextMenu()
@@ -141,6 +151,11 @@ export default function HubWorldMap({
   const toggleContents = onContentsToggle
     ?? (() => setOwnContents(v => { localStorage.setItem('worldmap-contents', String(!v)); return !v }))
   const [editingPOI, setEditingPOI] = useState<POI | null>(null)
+  // Live values from the (now non-blurring, draggable) POI editor, so the pin
+  // on the map shows its true size/colour/opacity as the sliders move instead
+  // of only the editor's small static preview swatch.
+  const [poiPreview, setPoiPreview] = useState<{ color: string; size: number; opacity: number } | null>(null)
+  useEffect(() => { if (!editingPOI) setPoiPreview(null) }, [editingPOI])
   const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null)
 
@@ -329,7 +344,6 @@ export default function HubWorldMap({
     if (article) {
       menu.push(...openItems(
         { type: 'article', articleId: article.article_id! }, menuCtx,
-        `Open “${truncate(article.title ?? 'linked article')}”`,
       ), { type: 'separator' })
     }
     menu.push(
@@ -512,7 +526,6 @@ export default function HubWorldMap({
     if (article) {
       menu.push(...openItems(
         { type: 'article', articleId: article.article_id! }, menuCtx,
-        `Open “${truncate(article.title ?? 'linked article')}”`,
       ))
     }
     if (session && !session.missing) {
@@ -643,21 +656,6 @@ export default function HubWorldMap({
             </button>
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderLeft: '1px solid rgba(255,255,255,0.07)' }}>
-            {maps.length > 0 && (
-              <button
-                onClick={e => { e.stopPropagation(); toggleContents() }}
-                title={showContents ? 'Hide map contents' : 'Locations and drawing layers on this map'}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  background: showContents ? 'rgba(200,115,58,0.2)' : 'rgba(255,255,255,0.06)',
-                  border: `1px solid ${showContents ? 'rgba(200,115,58,0.4)' : 'rgba(255,255,255,0.12)'}`,
-                  color: showContents ? '#c8733a' : 'rgba(255,255,255,0.55)',
-                  borderRadius: 4, padding: '3px 8px', fontSize: 11, cursor: 'pointer', transition: 'all var(--transition)',
-                }}
-              >
-                <List size={12} /> Contents
-              </button>
-            )}
             {editable
               ? <button onClick={e => { e.stopPropagation(); leaveEditMode() }}
                   title="Finish editing — the map becomes read-only again"
@@ -751,24 +749,29 @@ export default function HubWorldMap({
               )}
               {/* The party's route, under the pins so a stop never hides a town. */}
               {showTrail && <PartyTrailOverlay scale={scale} trail={trail} />}
-              {pois.map(poi => (
-                <MapPOIMarker
-                  key={poi.id}
-                  poi={poi}
-                  // The world map sizes pins individually. The floor keeps the
-                  // type glyph legible; below it the marker falls back to a dot.
-                  size={Math.max(poi.hub_size ?? DEFAULT_HUB_POI_SIZE, MIN_HUB_POI_SIZE)}
-                  scale={scale}
-                  selected={selectedPOI?.id === poi.id}
-                  hovered={hoveredPoiId === poi.id}
-                  opacity={poi.hub_opacity ?? 1}
-                  draggable={canDragPOI}
-                  onSelect={(p, e) => handlePOIClick(p, e)}
-                  onMouseDown={(p, e) => handlePOIMouseDown(p, e)}
-                  onContextMenu={poiMenu}
-                  onHoverChange={setHoveredPoiId}
-                />
-              ))}
+              {pois.map(poi => {
+                // While this pin's editor is open, show what's actually on its
+                // sliders rather than the last-saved appearance.
+                const live = editingPOI?.id === poi.id ? poiPreview : null
+                return (
+                  <MapPOIMarker
+                    key={poi.id}
+                    poi={live ? { ...poi, color: live.color } : poi}
+                    // The world map sizes pins individually. The floor keeps the
+                    // type glyph legible; below it the marker falls back to a dot.
+                    size={live ? live.size : Math.max(poi.hub_size ?? DEFAULT_HUB_POI_SIZE, MIN_HUB_POI_SIZE)}
+                    scale={scale}
+                    selected={selectedPOI?.id === poi.id}
+                    hovered={hoveredPoiId === poi.id}
+                    opacity={live ? live.opacity : (poi.hub_opacity ?? 1)}
+                    draggable={canDragPOI}
+                    onSelect={(p, e) => handlePOIClick(p, e)}
+                    onMouseDown={(p, e) => handlePOIMouseDown(p, e)}
+                    onContextMenu={poiMenu}
+                    onHoverChange={setHoveredPoiId}
+                  />
+                )
+              })}
               </div>
               )}
             </div>
@@ -784,7 +787,7 @@ export default function HubWorldMap({
             and the contents panel (left) stay clear of it. Always present: the
             tool *is* the mode, so there is nothing to enter or leave. */}
         {maps.length > 0 && (mapVisible || fullBleed) && (
-          <div style={{ position: 'absolute', top: 42, left: '50%', transform: 'translateX(-50%)', zIndex: 17 }}>
+          <div style={{ position: 'absolute', top: 42, left: '50%', transform: 'translateX(-50%)', zIndex: 17, display: 'flex', alignItems: 'center', gap: 6 }}>
             <MapToolbar
               tool={tool}
               available={editable
@@ -794,13 +797,43 @@ export default function HubWorldMap({
               onPick={next => {
                 setTool(next)
                 setSelectedPOI(null)
-                if (next !== 'measure') onMeasureToggle?.(false)
+                // Picking Measure opens its panel (the hub's Travel drawer, or the
+                // floating panel elsewhere); picking anything else closes it.
+                onMeasureToggle?.(next === 'measure')
                 // Picking a draw tool without the contents panel would hide the
                 // only place to choose which layer receives the new shape.
                 if (isShapeTool(next) && !showContents) toggleContents()
                 if (next !== 'select') { setSelectedShape(null); setShapePopupPos(null) }
               }}
             />
+            {/* Contents sits beside the tools, same as an article's map — its
+                own mini toolbar, styled to match MapToolbar's chrome exactly
+                so it reads as another segment of the same strip. The map hub
+                hides this and builds its own merged Contents/Quests/Clocks
+                group elsewhere instead. */}
+            {!hideContentsButton && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 2,
+                background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)',
+                border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: 3,
+              }}>
+                <button
+                  onClick={e => { e.stopPropagation(); toggleContents() }}
+                  title={showContents ? 'Hide map contents' : 'Locations and drawing layers on this map'}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    background: showContents ? 'rgba(200,115,58,0.22)' : 'transparent',
+                    border: `1px solid ${showContents ? 'rgba(200,115,58,0.45)' : 'transparent'}`,
+                    color: showContents ? '#c8733a' : 'rgba(255,255,255,0.6)',
+                    borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer',
+                    transition: 'all var(--transition)', whiteSpace: 'nowrap',
+                  }}
+                >
+                  <List size={13} /> Contents
+                </button>
+              </div>
+            )}
+            {toolbarExtra}
           </div>
         )}
 
@@ -923,6 +956,7 @@ export default function HubWorldMap({
           onSave={handleSavePOI}
           onDelete={handleDeletePOI}
           onClose={() => setEditingPOI(null)}
+          onPreview={setPoiPreview}
         />
       )}
 

@@ -1,7 +1,7 @@
 // path: src/pages/RelationsPage.tsx
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useStore } from '../store/store'
-import { ArrowDownUp, Network, Plus, ArrowLeft } from 'lucide-react'
+import { ArrowDownUp, Network, Plus } from 'lucide-react'
 import {
   type RelationWeb, TEMPLATE_CONFIG,
 } from '../components/relations/relationsShared'
@@ -11,6 +11,7 @@ import { WebMenu } from '../components/relations/relationsPanels'
 import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
 import { useLocalPref } from '../hooks/useLocalPref'
 import { toolbarPillStyle } from '../components/wiki/WikiToolbar'
+import SectionHeader from '../components/SectionHeader'
 import { SECTION_ACCENTS } from '../constants/sections'
 import { buildLocationMenu, truncate } from '../utils/contextMenus'
 
@@ -54,22 +55,19 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ padding: '20px 32px 0', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', borderRight: '1px solid var(--border)', paddingRight: 12, marginRight: 4, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}
-              className="hover-text"
-            >
-              <ArrowLeft size={14} /> Back
-            </button>
-            <Network size={22} color={SECTION_ACCENTS['relations']} />
-            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, letterSpacing: '0.03em', color: 'var(--text-primary)', margin: 0 }}>Relations</h1>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{webs.length} web{webs.length !== 1 ? 's' : ''}</span>
-          </div>
-          <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-            <Plus size={15} /> New web
-          </button>
+        <div style={{ marginBottom: 16 }}>
+          <SectionHeader
+            icon={Network}
+            title="Webs"
+            accent={SECTION_ACCENTS['relations']}
+            onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
+            meta={`${webs.length} web${webs.length !== 1 ? 's' : ''}`}
+            actions={
+              <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+                <Plus size={15} /> New web
+              </button>
+            }
+          />
         </div>
         {/* Toolbar row — mirrors the wiki grid's, which is where this lives there. */}
         <div style={{ display: 'flex', alignItems: 'center', minHeight: 28, paddingBottom: 8 }}>
@@ -97,9 +95,8 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
                 style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '16px 18px', cursor: 'pointer', transition: 'border-color var(--transition)', position: 'relative', '--hover-accent': 'var(--border-gold)' } as React.CSSProperties}
                 onClick={() => onOpenWeb(web)}
                 // A web is a location like any other, so the card gets the
-                // standard entity menu: open / new tab / other pane / pin.
+                // standard entity menu: new tab / other pane / pin.
                 onContextMenu={e => showMenu(e, buildLocationMenu({ type: 'relations', webId: web.id }, menuCtx, {
-                  label: `Open “${truncate(web.name)}”`,
                   copy: { label: 'Copy name', text: web.name },
                   onDelete: () => void deleteWeb(web),
                   deleteLabel: `Delete “${truncate(web.name)}”`,
@@ -123,7 +120,7 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)', padding: '2px 8px', background: 'var(--bg-elevated)', borderRadius: 99 }}>{web.node_count} node{web.node_count !== 1 ? 's' : ''}</span>
-                  {(web.template && web.template !== 'custom') && (
+                  {TEMPLATE_CONFIG[web.template] && (
                     <span style={{ fontSize: 11, color: '#3C3489', padding: '2px 8px', background: '#EEEDFE', borderRadius: 99 }}>{TEMPLATE_CONFIG[web.template]?.label}</span>
                   )}
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(web.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span> 

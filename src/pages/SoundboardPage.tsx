@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { useStore } from '../store/store'
 import {
-  Music2, Plus, Trash2, ArrowLeft, Pencil, Check, X, FolderOpen,
+  Music2, Plus, Trash2, Pencil, Check, X, FolderOpen,
   Volume2, Repeat, Link2, Play, Square, Search, Library, ListPlus, GripVertical,
 } from 'lucide-react'
 import type { SoundBoard, Sound, SoundCategory, SoundLibraryEntry, Session } from '../types'
@@ -11,6 +11,7 @@ import { useConfirmDelete } from '../hooks/useConfirmDelete'
 import { reorder, useDragReorder, type DragReorderRowProps } from '../hooks/useDragReorder'
 import Modal from '../components/Modal'
 import DropdownPortal from '../components/DropdownPortal'
+import SectionHeader from '../components/SectionHeader'
 import {
   SOUND_CATEGORIES as CATEGORIES,
   soundCategoryColor as categoryColor,
@@ -1215,38 +1216,22 @@ export default function SoundboardPage() {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Top bar */}
-      <div style={{
-        padding: '0 20px', borderBottom: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', gap: 12,
-        minHeight: 48, flexShrink: 0, background: 'var(--bg-surface)',
-      }}>
-        <button
-          onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            padding: '0 12px 0 0', background: 'transparent', border: 'none',
-            borderRight: '1px solid var(--border)', height: '100%', minHeight: 48,
-            color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
-            transition: 'color var(--transition)',
-          }}
-          className="hover-text"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <Music2 size={13} color={accent()} />
-        <span style={{
-          fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500,
-          color: 'var(--text-primary)', letterSpacing: '0.03em', flex: 1,
-        }}>
-          Soundboard
-        </span>
-        <button
-          onClick={() => { setCreating(true); setNewBoardName('') }}
-          className="btn btn-primary btn-sm"
-          disabled={creating}
-        >
-          <Plus size={13} /> New Board
-        </button>
+      <div style={{ padding: '20px 32px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <SectionHeader
+          icon={Music2}
+          title="Soundboard"
+          accent={accent()}
+          onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
+          actions={
+            <button
+              onClick={() => { setCreating(true); setNewBoardName('') }}
+              className="btn btn-primary btn-sm"
+              disabled={creating}
+            >
+              <Plus size={13} /> New Board
+            </button>
+          }
+        />
       </div>
 
       {/* Main content */}

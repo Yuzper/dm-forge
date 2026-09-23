@@ -1,16 +1,9 @@
 // path: electron/main/relationsSync.ts
 import { db } from './db'
+import { genderOf, parentRole, childRole, siblingRole } from '../../shared/kinship'
 
 // ── Family tree relation derivation ───────────────────────────────────────────
 
-// Map a parent's union role (e.g. "husband of", "wife of") to the term the
-// child uses for them ("father", "mother", or a neutral "parent").
-function parentRoleFromUnionLabel(label: string | null | undefined): string {
-  const l = (label || '').toLowerCase()
-  if (l.includes('husband') || l.includes('father')) return 'father'
-  if (l.includes('wife') || l.includes('mother')) return 'mother'
-  return 'parent'
-}
 
 export function deriveRelationsForNode(
   nodeId: number,
@@ -38,7 +31,7 @@ export function deriveRelationsForNode(
     edges.filter(e => e.edge_type === 'union_to_child' && e.from_node_id === unionId)
       .forEach(e => {
         const c = nodes.find(n => n.id === e.to_node_id)
-        if (c) children.push({ nodeId: c.id, articleId: c.article_id, name: c.article_title || c.label, vitality: c.vitality ?? null })
+        if (c) children.push({ nodeId: c.id, articleId: c.article_id, name: c.article_title || c.label, role: childRole(genderOf(c.tracks)), vitality: c.vitality ?? null })
       })
   }
 
@@ -49,8 +42,8 @@ export function deriveRelationsForNode(
     unionMembers.forEach(e => {
       const p = nodes.find(n => n.id === e.from_node_id)
       // From the child's perspective: show "mother"/"father" rather than the
-      // parent's union role ("wife of"/"husband of").
-      if (p) parents.push({ nodeId: p.id, articleId: p.article_id, name: p.article_title || p.label, role: parentRoleFromUnionLabel(e.label_from), vitality: p.vitality ?? null })
+      // parent's union role ("wife of"/"husband of"). Gender wins over the label.
+      if (p) parents.push({ nodeId: p.id, articleId: p.article_id, name: p.article_title || p.label, role: parentRole(genderOf(p.tracks), e.label_from), vitality: p.vitality ?? null })
     })
     if (unionMembers.length < 2) {
       parents.push({ nodeId: null, articleId: null, name: 'Unknown parent', role: 'parent', vitality: null })
@@ -60,7 +53,7 @@ export function deriveRelationsForNode(
         if (!siblingIds.has(e.to_node_id)) {
           siblingIds.add(e.to_node_id)
           const s = nodes.find(n => n.id === e.to_node_id)
-          if (s) siblings.push({ nodeId: s.id, articleId: s.article_id, name: s.article_title || s.label, vitality: s.vitality ?? null })
+          if (s) siblings.push({ nodeId: s.id, articleId: s.article_id, name: s.article_title || s.label, role: siblingRole(genderOf(s.tracks)), vitality: s.vitality ?? null })
         }
       })
   }

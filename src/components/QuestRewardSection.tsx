@@ -181,7 +181,7 @@ function ItemTitleInput({ value, suggestions, onChange }: {
               style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', textAlign: 'left' }}
               className="hover-bg"
             >
-              <Package size={11} style={{ color: '#9b7de8', flexShrink: 0 }} /> {m}
+              <Package size={11} style={{ color: '#6366f1', flexShrink: 0 }} /> {m}
             </button>
           ))}
         </DropdownPortal>
@@ -215,7 +215,7 @@ function ItemRow({ item, readMode, suggestions, isLinked, onChange, onDelete, on
           item.title ? (
             isLinked ? (
               <button onClick={onOpen}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 1, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: '#9b7de8', textAlign: 'left' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 1, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: '#6366f1', textAlign: 'left' }}
               >
                 <LinkIcon size={10} style={{ flexShrink: 0 }} /> {item.title}
               </button>
@@ -229,7 +229,7 @@ function ItemRow({ item, readMode, suggestions, isLinked, onChange, onDelete, on
           <ItemTitleInput value={item.title} suggestions={suggestions} onChange={t => onChange({ ...item, title: t })} />
         )}
 
-        {!readMode && isLinked && <LinkIcon size={11} style={{ color: '#9b7de8', flexShrink: 0 }} />}
+        {!readMode && isLinked && <LinkIcon size={11} style={{ color: '#6366f1', flexShrink: 0 }} />}
 
         {!readMode && (
           <button onClick={onDelete}
@@ -328,7 +328,7 @@ export default function QuestRewardSection({ reward, readMode, itemSuggestions =
       </Group>
 
       {showItems && (
-        <Group icon={Package} label="Items" color="#9b7de8">
+        <Group icon={Package} label="Items" color="#6366f1">
           {reward.items.map((item, i) => (
             <ItemRow
               key={item.id}

@@ -214,6 +214,11 @@ export interface VisibleSets {
 // Deny-by-default with an explicit inherit fallback: a map feature with no grant
 // of its own follows the article it links to, which is what the pipeline did
 // implicitly before. The difference is that it's now overridable per feature.
+//
+// World-map pins flag one wiki link `primary` (the "Wiki" slot in the editor,
+// as opposed to its "Related wikis") — that's the only link this resolves to.
+// No primary link means no inherited article, full stop: the feature only
+// ships if it has its own explicit audience grant.
 function featureVisible(
   feature: any,
   ownGrants: Set<number>,
@@ -221,11 +226,10 @@ function featureVisible(
 ): { visible: boolean; articleId: number | null } {
   let articleId: number | null = null
   try {
-    for (const l of JSON.parse(feature.hub_links || '[]')) {
-      if (l?.type === 'wiki' && typeof l.article_id === 'number' && visibleArticles.has(l.article_id)) {
-        articleId = l.article_id
-        break
-      }
+    const links = JSON.parse(feature.hub_links || '[]')
+    const primary = links.find((l: any) => l?.type === 'wiki' && l.primary)
+    if (primary && typeof primary.article_id === 'number' && visibleArticles.has(primary.article_id)) {
+      articleId = primary.article_id
     }
   } catch { /* malformed hub_links → treat as no link */ }
   if (ownGrants.has(feature.id)) return { visible: true, articleId }

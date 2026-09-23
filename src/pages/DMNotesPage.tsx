@@ -3,12 +3,13 @@ import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { useMenuClose } from '../hooks/useMenuClose'
 import Modal from '../components/Modal'
 import SwatchPicker from '../components/SwatchPicker'
+import SectionHeader from '../components/SectionHeader'
 import { STANDARD_PALETTE } from '../constants/palettes'
 import { SECTION_ACCENTS } from '../constants/sections'
 import { useStore } from '../store/store'
 import {
   Sparkles, Plus, Trash2, MoreHorizontal, FileText, Check,
-  ArrowLeft, FolderPlus, ChevronDown, ChevronUp, Pencil, ArrowUpCircle, ArrowDownCircle, GripVertical, Lock, ArrowUp, ArrowDown,
+  FolderPlus, ChevronDown, ChevronUp, Pencil, ArrowUpCircle, ArrowDownCircle, GripVertical, Lock, ArrowUp, ArrowDown,
 } from 'lucide-react'
 import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
 import { buildLocationMenu, truncate } from '../utils/contextMenus'
@@ -293,7 +294,6 @@ function PageItem({ page, isActive, groups, isFirst, isLast, dnd, index, contain
       onClick={onClick}
       onAuxClick={e => { if (e.button === 1) { e.preventDefault(); menuCtx.goTab(loc, true) } }}
       onContextMenu={e => showMenu(e, buildLocationMenu(loc, menuCtx, {
-        label: `Open “${truncate(page.title)}”`,
         copy: { label: 'Copy title', text: page.title },
         extra: [
           !isFirst && { label: 'Move up', click: onMoveUp },
@@ -986,28 +986,13 @@ export default function DMNotesPage() {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* Top bar */}
-      <div style={{
-        padding: '0 20px', borderBottom: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', gap: 12,
-        minHeight: 48, flexShrink: 0, background: 'var(--bg-surface)',
-      }}>
-        <button
-          onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            padding: '0 12px 0 0', background: 'transparent', border: 'none',
-            borderRight: '1px solid var(--border)', height: '100%', minHeight: 48,
-            color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
-            transition: 'color var(--transition)',
-          }}
-          className="hover-text"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <Sparkles size={13} color={SECTION_ACCENTS['dm-notes']} />
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '0.03em', flex: 1 }}>
-          DM Notes
-        </span>
+      <div style={{ padding: '20px 32px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <SectionHeader
+          icon={Sparkles}
+          title="DM Notes"
+          accent={SECTION_ACCENTS['dm-notes']}
+          onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
+        />
       </div>
 
       {/* Main content */}

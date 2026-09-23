@@ -7,9 +7,10 @@ import {
 import type { ArticleSummary, ArticleType, WikiHealth } from '../types'
 import { ARTICLE_TYPES, parseTags } from '../components/wiki/wikiConstants'
 import {
-  WikiHeaderBar, ViewSwitchButton, WikiSearchBox, WikiTypeFilters, ToolbarDivider,
-  TypeDistributionBar, toolbarPillStyle, pillCountStyle,
+  ViewSwitchButton, WikiSearchBox, WikiTypeFilters, ToolbarDivider,
+  toolbarPillStyle, pillCountStyle,
 } from '../components/wiki/WikiToolbar'
+import SectionHeader from '../components/SectionHeader'
 import { ArticleEditor } from '../components/wiki/ArticleEditor'
 import WikiGraphView from '../components/wiki/WikiGraphView'
 import { useExcludedTypes, TypeVisibilityMenu } from '../components/wiki/TypeVisibilityMenu'
@@ -240,7 +241,6 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
   // Display preferences — how the type row reports itself, and how the grid is
   // ordered. Sort defaults to the backend's own order so nothing moves until asked.
   const [showTypeCounts, setShowTypeCounts] = useLocalPref('wiki-list-type-counts', true)
-  const [showTypeBar, setShowTypeBar] = useLocalPref('wiki-list-type-bar', true)
   const [showCardBar, setShowCardBar] = useLocalPref('wiki-list-card-bar', true)
   const [sort, setSort] = useLocalPref<'az' | 'recent'>('wiki-list-sort', 'az')
 
@@ -310,22 +310,24 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ padding: '20px 32px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <WikiHeaderBar
-          icon={BookOpen}
-          title="Campaign Wiki"
-          onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
-          meta={<>
-            {attention
-              ? `${shownEntries.length} need${shownEntries.length !== 1 ? '' : 's'} attention`
-              : `${visibleArticles.length} article${visibleArticles.length !== 1 ? 's' : ''}`}
-            {!attention && excluded.size > 0 && articles.length > visibleArticles.length ? ` · ${articles.length - visibleArticles.length} hidden` : ''}
-          </>}
-          actions={<>
-            <ViewSwitchButton icon={Network} label="Graph view" onClick={onSwitchToGraph}
-              title="See every article and its [[links]] as a network" />
-            <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> New Article</button>
-          </>}
-        />
+        <div style={{ marginBottom: 14 }}>
+          <SectionHeader
+            icon={BookOpen}
+            title="Campaign Wiki"
+            onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
+            meta={<>
+              {attention
+                ? `${shownEntries.length} need${shownEntries.length !== 1 ? '' : 's'} attention`
+                : `${visibleArticles.length} article${visibleArticles.length !== 1 ? 's' : ''}`}
+              {!attention && excluded.size > 0 && articles.length > visibleArticles.length ? ` · ${articles.length - visibleArticles.length} hidden` : ''}
+            </>}
+            actions={<>
+              <ViewSwitchButton icon={Network} label="Graph view" onClick={onSwitchToGraph}
+                title="See every article and its [[links]] as a network" />
+              <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> New Article</button>
+            </>}
+          />
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <WikiSearchBox
@@ -390,15 +392,10 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
             <TypeVisibilityMenu excluded={excluded} onToggle={toggleExcluded} onClear={clearExcluded}
               display={[
                 { key: 'counts', label: 'Count on each type', on: showTypeCounts, onToggle: () => setShowTypeCounts(!showTypeCounts) },
-                { key: 'bar', label: 'Distribution bar', on: showTypeBar, onToggle: () => setShowTypeBar(!showTypeBar) },
                 { key: 'cardbar', label: 'Colour bar on cards', on: showCardBar, onToggle: () => setShowCardBar(!showCardBar) },
               ]} />
           </div>
         </div>
-
-        {!attention && showTypeBar && (
-          <TypeDistributionBar counts={typeCounts} excluded={excluded} value={wikiFilter} onChange={setWikiFilter} />
-        )}
 
         {allTags.length > 0 && wikiShowTags && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
@@ -488,7 +485,7 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
 // ─── Wiki Page ─────────────────────────────────────────────────────────────────
 
 export default function WikiPage() {
-  const { currentArticle, currentCampaign, selectArticle, openArticle, wikiGraphFocusId, setWikiGraphFocusId } = useStore()
+  const { currentArticle, currentCampaign, selectArticle, openArticle, setView, wikiGraphFocusId, setWikiGraphFocusId } = useStore()
   const [mode, setMode] = useState<'list' | 'graph'>(() =>
     localStorage.getItem('wiki-view-mode') === 'graph' ? 'graph' : 'list'
   )
@@ -528,7 +525,10 @@ export default function WikiPage() {
         key={currentArticle.id}
         article={currentArticle}
         backLabel={mode === 'graph' ? 'Back to Graph' : 'Back to Wiki'}
-        onBack={() => selectArticle(null)}
+        // Navigate, don't just clear currentArticle: the tab's location must
+        // move to the list too, or it keeps its title and switching away and
+        // back restores the old article.
+        onBack={() => setView('wiki')}
       />
     )
   }

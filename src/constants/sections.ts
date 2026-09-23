@@ -24,7 +24,7 @@ export const SECTION_LABELS: Record<SectionView, string> = {
   'wiki':        'Wiki',
   'dm-notes':    'DM Notes',
   'loot-tables': 'Loot Tables',
-  'relations':   'Relations',
+  'relations':   'Webs',
   'timeline':    'Timeline',
   'soundboard':  'Soundboard',
 }

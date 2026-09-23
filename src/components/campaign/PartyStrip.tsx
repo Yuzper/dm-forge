@@ -1,6 +1,6 @@
 // path: src/components/campaign/PartyStrip.tsx
-// "Where are we, and when." Not a panel — a status strip pinned to the map
-// hub's bottom-left, always visible, no collapse. Everything in it is derived
+// "Where are we, and when." Not a panel — a status strip in the sidebar's
+// free space, always visible there, no collapse. Everything in it is derived
 // from data the campaign already has: the last world-map pin linked to a
 // session is where the party stands, and that session's in-world day is the
 // date. A campaign that links no pins to sessions gets no strip at all.
@@ -36,7 +36,7 @@ export default function PartyStrip({ campaign, trail, showTrail, onToggleTrail, 
   }
 
   return (
-    <div style={{ padding: '9px 12px 10px', width: 296 }}>
+    <div style={{ padding: '9px 12px 10px', width: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
         <Footprints size={13} color="var(--success)" />
         <span style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--success)', fontWeight: 600 }}>

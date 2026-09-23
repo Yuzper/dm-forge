@@ -8,7 +8,9 @@ import { sidebarSectionLabel } from './wikiConstants'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
 import { useArticleContextMenu } from '../../hooks/useContextMenu'
 
-// ── Article Relations Panel ────────────────────────────────────────────────────
+// ── Article Connections Panel ──────────────────────────────────────────────────
+// Shown as "Connections": this article's edges, grouped by the web they live in.
+// ("Webs" above it lists the webs this article owns.)
 
 interface ArticleRelationRow {
   edge_id: number
@@ -50,7 +52,7 @@ function webSectionHint(articleType: ArticleType): string {
     case 'quest':
       return 'Map this quest’s shape — its branching steps, dependencies, or the factions pulling its strings.'
     default:
-      return 'Add an optional hierarchy, family tree, or other relation web tied to this article.'
+      return 'Add an optional hierarchy, family tree, or other web tied to this article.'
   }
 }
 
@@ -174,7 +176,7 @@ export function AffiliationsSection({ articleId }: { articleId: number }) {
     <div style={{ borderBottom: '1px solid var(--border)', padding: '12px 16px' }}>
       <div style={sidebarSectionLabel}>Affiliations</div>
       <div style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic', marginBottom: 8 }}>
-        From relation webs
+        From webs
       </div>
       {religion && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: factions.length ? 8 : 0 }}>
@@ -294,13 +296,13 @@ export function ArticleRelationsPanel({
   return (
     <div style={{ borderBottom: '1px solid var(--border)' }}>
       <div style={{ padding: '12px 16px 4px' }}>
-        <div style={sidebarSectionLabel}>Relations</div>
+        <div style={sidebarSectionLabel}>Connections</div>
       </div>
-      {Object.entries(byWeb).map(([webIdStr, { webName, rows: webRows }]) => (
-        <div key={webIdStr}>
+      {Object.entries(byWeb).map(([webIdStr, { webName, rows: webRows }], i) => (
+        <div key={webIdStr} style={i > 0 ? { marginTop: 10 } : undefined}>
           <button
             onClick={() => onOpenWeb(Number(webIdStr))}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 5, padding: '4px 16px 3px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderTop: '1px solid var(--border-light)', transition: 'color var(--transition)', textAlign: 'left' }}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 5, padding: '4px 16px 3px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', transition: 'color var(--transition)', textAlign: 'left' }}
             className="hover-text-secondary"
           >
             <Network size={10} /> {webName}

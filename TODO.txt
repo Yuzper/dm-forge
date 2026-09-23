@@ -1,6 +1,12 @@
 Data:
  - Rest of spells 2014 (7-9)
 
+Backlog:
+ - Merge article Affiliations into Connections: web headings owned by a
+   Faction/Religion article become that article's chip (web name as subtitle
+   if different), affiliation groups sorted first, same-owner webs merged,
+   "Member" fallback row for nodes with no edges. Drops the Affiliations section.
+
 
 Remember for presentation:
  - Article Locaitons Maps live here, origin of truth.

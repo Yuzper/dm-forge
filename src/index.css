@@ -508,7 +508,7 @@ svg g[data-menu-target] > circle {
 .poi-location  { --poi-color: #c8a84b; }
 .poi-character { --poi-color: #5bbfb0; }
 .poi-event     { --poi-color: #e05555; }
-.poi-item      { --poi-color: #9b7de8; }
+.poi-item      { --poi-color: #6366f1; }
 .poi-trap      { --poi-color: #e88c3a; }
 .poi-quest     { --poi-color: #5b9fe8; }
 .poi-note      { --poi-color: #8a8a8a; }

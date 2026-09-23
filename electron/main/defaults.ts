@@ -34,20 +34,23 @@ function defaultCreaturesDir(): string | null {
   return candidates.find(p => fs.existsSync(p)) ?? null
 }
 
-/** Copy bundled creature images into userData/images/.
- *  Uses per-file mtime comparison so new or updated images are always picked up
- *  without needing a manual version bump. */
+/** Copy bundled creature images into userData/images/, once per file (tracked in
+ *  creature_images_seeded). A file deleted by the user stays deleted; a creature
+ *  portrait newly added to a later app version still gets copied in. */
 export function syncCreatureImages(imagesPath: string) {
   const src = defaultCreaturesDir()
   if (!src) return
+  const seeded = new Set(
+    (db.prepare('SELECT file FROM creature_images_seeded').all() as { file: string }[]).map(r => r.file)
+  )
+  const mark = db.prepare('INSERT OR IGNORE INTO creature_images_seeded (file) VALUES (?)')
   for (const file of fs.readdirSync(src)) {
-    if (file === 'version') continue
+    if (file === 'version' || seeded.has(file)) continue
     const srcFile = path.join(src, file)
     const destFile = path.join(imagesPath, `creature_${file}`)
     try {
-      const srcMtime = fs.statSync(srcFile).mtimeMs
-      const destMtime = fs.existsSync(destFile) ? fs.statSync(destFile).mtimeMs : 0
-      if (srcMtime > destMtime) fs.copyFileSync(srcFile, destFile)
+      fs.copyFileSync(srcFile, destFile)
+      mark.run(file)
     } catch {}
   }
 }

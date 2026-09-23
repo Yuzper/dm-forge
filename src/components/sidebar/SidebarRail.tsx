@@ -49,9 +49,7 @@ export default function SidebarRail({ inCampaign, onExpand }: {
             icon={<Layers size={16} />} title={`${currentCampaign.name} — campaign hub`}
             active={view === 'campaign' && campaignSubView === 'hub'}
             onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
-            onContextMenu={e => showMenu(e, buildLocationMenu({ type: 'campaign', subView: 'hub' }, menuCtx, {
-              label: 'Open campaign hub',
-            }))}
+            onContextMenu={e => showMenu(e, buildLocationMenu({ type: 'campaign', subView: 'hub' }, menuCtx))}
           />
           <div style={{ height: 1, width: 22, background: 'var(--border)', margin: '5px 0' }} />
           {nav.map(item => (
@@ -59,9 +57,7 @@ export default function SidebarRail({ inCampaign, onExpand }: {
               key={item.key}
               icon={<item.icon size={16} />} title={item.label} accent={item.accent}
               active={item.active} onClick={item.onClick}
-              onContextMenu={e => showMenu(e, buildLocationMenu(item.loc, menuCtx, {
-                label: `Open ${item.label}`,
-              }))}
+              onContextMenu={e => showMenu(e, buildLocationMenu(item.loc, menuCtx))}
             />
           ))}
         </>

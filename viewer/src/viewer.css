@@ -156,7 +156,11 @@ body {
 .map-img { position: absolute; top: 0; left: 0; max-width: none; user-select: none; -webkit-user-drag: none; }
 .map-overlay { position: absolute; inset: 0; pointer-events: none; }
 .map-poi { position: absolute; transform: translate(-50%, -50%); background: none; border: none; padding: 0; cursor: pointer; pointer-events: auto; display: flex; flex-direction: column; align-items: center; }
-.map-dot { border-radius: 50%; border: 1.5px solid rgba(0,0,0,0.65); box-shadow: 0 0 0 1px rgba(255,255,255,0.15); display: block; }
+.map-dot {
+  border-radius: 50%; border: 1.5px solid rgba(0,0,0,0.65); box-shadow: 0 0 0 1px rgba(255,255,255,0.15);
+  display: block; opacity: 0.5; transition: opacity 100ms ease;
+}
+.map-poi:hover .map-dot { opacity: 1; }
 .map-poi-label {
   margin-top: 3px; font-family: var(--font-ui); font-size: 11px; color: var(--text-primary);
   background: rgba(13,11,9,0.82); border: 1px solid var(--border); border-radius: var(--radius-sm);

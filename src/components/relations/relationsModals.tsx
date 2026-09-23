@@ -10,6 +10,7 @@ import {
   ALL_ARTICLE_TYPES, ARTICLE_TYPE_LABELS, findFreePosition,
 } from './relationsShared'
 import Modal from '../Modal'
+import { UNION_ROLES } from '../../../shared/kinship'
 
 // ── Modals ─────────────────────────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ export function NewWebModal({ onClose, onCreated, lockedArticle }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Template</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
               {TEMPLATES.map(t => (
                 <button key={t.id} onClick={() => setTemplate(t.id)}
                   style={{
@@ -513,16 +514,7 @@ export function EdgeLabelModal({ onClose, onConfirm, mode = 'standard', suggesti
               <input className="input" autoFocus placeholder="husband of, wife of, partner of…"
                 value={labelFrom} onChange={e => setLabelFrom(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleConfirm()} />
-              {suggestions.length > 0 && (
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
-                  {suggestions.map(s => (
-                    <button key={s} onClick={() => setLabelFrom(s)}
-                      style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--bg-elevated)', border: '1px solid var(--border)', cursor: 'pointer', color: 'var(--text-secondary)' }}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <LabelChips options={suggestions} value={labelFrom} onPick={setLabelFrom} />
             </div>
           </div>
           <div className="modal-actions">
@@ -541,16 +533,7 @@ export function EdgeLabelModal({ onClose, onConfirm, mode = 'standard', suggesti
             <input className="input" autoFocus placeholder="Brother, Ally, Father of…"
               value={labelFrom} onChange={e => setLabelFrom(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleConfirm()} />
-            {suggestions.length > 0 && (
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
-                {suggestions.map(s => (
-                  <button key={s} onClick={() => setLabelFrom(s)}
-                    style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--bg-elevated)', border: '1px solid var(--border)', cursor: 'pointer', color: 'var(--text-secondary)' }}>
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
+            <LabelChips options={suggestions} value={labelFrom} onPick={setLabelFrom} />
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Shows on both articles when symmetric</div>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
@@ -583,18 +566,61 @@ export function EdgeLabelModal({ onClose, onConfirm, mode = 'standard', suggesti
   )
 }
 
-export function EditEdgeModal({ edge, onClose, onSave }: {
+// Quick-pick chips under a label field; the active one is highlighted.
+function LabelChips({ options, value, onPick }: { options: string[]; value: string; onPick: (s: string) => void }) {
+  if (options.length === 0) return null
+  return (
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+      {options.map(s => {
+        const on = value.trim().toLowerCase() === s.toLowerCase()
+        return (
+          <button key={s} type="button" onClick={() => onPick(s)}
+            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, cursor: 'pointer',
+              background: on ? '#EEEDFE' : 'var(--bg-elevated)',
+              border: on ? '1px solid #AFA9EC' : '1px solid var(--border)',
+              color: on ? '#3C3489' : 'var(--text-secondary)' }}>
+            {s}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function EditEdgeModal({ edge, onClose, onSave, suggestions = [] }: {
   edge: DBRelationEdge; onClose: () => void
   onSave: (labelFrom: string, labelTo: string) => void
+  suggestions?: string[]
 }) {
   const [labelFrom, setLabelFrom] = useState(edge.label_from)
   const [labelTo, setLabelTo] = useState(edge.label_to)
+
+  // A person → union edge carries only the person's role; no reverse label.
+  if (edge.edge_type === 'person_to_union') {
+    return (
+      <Modal title="Role in union" onClose={onClose}>
+          <div className="input-group">
+            <label className="input-label">Their role <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+            <input className="input" autoFocus placeholder="husband of, wife of, partner of…"
+              value={labelFrom} onChange={e => setLabelFrom(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && onSave(labelFrom.trim(), '')} />
+            <LabelChips options={suggestions} value={labelFrom} onPick={setLabelFrom} />
+          </div>
+          <div className="modal-actions">
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={() => onSave(labelFrom.trim(), '')}>Save</button>
+          </div>
+      </Modal>
+    )
+  }
+
   return (
     <Modal title="Edit relationship" onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="input-group">
             <label className="input-label">Label (from → to)</label>
             <input className="input" autoFocus value={labelFrom} onChange={e => setLabelFrom(e.target.value)} />
+            <LabelChips options={suggestions} value={labelFrom} onPick={setLabelFrom} />
           </div>
           <div className="input-group">
             <label className="input-label">Reverse label (to → from)</label>
@@ -757,6 +783,8 @@ export function EditUnionModal({ unionId, dbNodes, dbEdges, onClose, onSaved, on
                 <label className="input-label">Their role <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
                 <input className="input" placeholder="husband of, wife of, partner of…" value={m.role}
                   onChange={e => setMembers(prev => prev.map((x, j) => j === i ? { ...x, role: e.target.value } : x))} />
+                <LabelChips options={UNION_ROLES} value={m.role}
+                  onPick={s => setMembers(prev => prev.map((x, j) => j === i ? { ...x, role: s } : x))} />
               </div>
             </div>
           ))}

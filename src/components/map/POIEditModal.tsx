@@ -2,7 +2,7 @@
 // Edit a world-map pin. Name, description, links and the footer come from the
 // shared feature editor; this file owns only what a pin has and a region
 // doesn't — colour, diameter and opacity.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { POI, Session } from '../../types'
 import { extractDescription, type HubLink } from '../../utils/hubLinks'
 import { getPoiIcon } from '../../constants/POITypes'
@@ -30,7 +30,7 @@ const sliderValue: React.CSSProperties = { fontSize: 11, color: 'var(--text-mute
 const sliderRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 }
 
 export default function POIEditModal({
-  poi, links, sessions, articles, onSave, onDelete, onClose,
+  poi, links, sessions, articles, onSave, onDelete, onClose, onPreview,
 }: {
   poi: POI
   links: HubLink[]
@@ -39,11 +39,19 @@ export default function POIEditModal({
   onSave: (result: POIEditResult) => void
   onDelete: () => void
   onClose: () => void
+  /** Fires whenever colour/size/opacity change, so the pin on the map behind
+   *  this (draggable, non-blurring) panel can show the size at true scale
+   *  instead of only the static preview swatch below. */
+  onPreview?: (appearance: { color: string; size: number; opacity: number }) => void
 }) {
   const [color, setColor] = useState(poi.color || '#c8a84b')
   const [size, setSize] = useState(Math.max(poi.hub_size ?? DEFAULT_HUB_POI_SIZE, MIN_HUB_POI_SIZE))
   const [opacity, setOpacity] = useState(Math.round((poi.hub_opacity ?? 1) * 100))
   const PreviewIcon = getPoiIcon(poi.poi_type)
+
+  useEffect(() => {
+    onPreview?.({ color, size, opacity: opacity / 100 })
+  }, [color, size, opacity])
 
   return (
     <MapFeatureEditModal
@@ -55,6 +63,8 @@ export default function POIEditModal({
       sessions={sessions}
       articles={articles}
       audience={<AudienceControl entityType="poi" entityId={poi.id} />}
+      floating
+      singleWiki
       onClose={onClose}
       onDelete={onDelete}
       onSave={({ name, description, links: edited }) => onSave({

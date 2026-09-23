@@ -84,12 +84,12 @@ export const HINTS: Record<string, Hint> = {
           <span style={{ lineHeight: 1.4 }}><span style={{ color: 'var(--gold)', opacity: 0.5 }}>· </span>Quests — objectives and rewards</span>
         </span>
       </>,
-      <>The column to the right shows the article's overview <strong>Details, Timeline, Webs, Relations, Linked From, Tags</strong> etc.</>,
+      <>The column to the right shows the article's overview <strong>Details, Timeline, Webs, Connections, Linked From, Tags</strong> etc.</>,
       <><Kbd>Details:</Kbd> (Vitality, Attitude…). Set their statuses for the given article, when setting a track value it will be added as a tag for that article.</>,
       <>Some Details fields — <strong>Location</strong>, <strong>Faction</strong>, <strong>Religion</strong>, <strong>Leader</strong>, <strong>Allies</strong> and friends — don't have a fixed list. They offer the articles you've already written, grouped under headings like <em>“Location articles”</em>, so the choices grow as the wiki does. Nothing to configure: create a Faction article and every Faction picker in the campaign offers it. <strong>Custom…</strong> is always there for anything you haven't written up yet.</>,
       <><Kbd>Timeline:</Kbd> (Birth, Events, Dates, Deaths, Destructions etc) You can add whatever events relevant for this article on the timeline from here and define what they are.</>,
       <><Kbd>Webs:</Kbd> Create a web related to this article. Example uses are a faction or religion article and you want to create a web for its hierachy.</>,
-      <><Kbd>Relations:</Kbd> These are webs an article are part of. Think family trees, organizational charts, ally webs etc. These are updated automatically when added in the <strong>Relations</strong> tab.</>,
+      <><Kbd>Connections:</Kbd> This article's links in every web it's part of (family trees, hierarchies, networks), grouped by web. They update automatically as you draw edges in <strong>Webs</strong>.</>,
       <><Kbd>Linked From:</Kbd> This shows articles that link to the current article.</>,
       <><Kbd>Tags:</Kbd> The tags are used to categorize and filter articles in search. Custom tags can also be added at the bottom of the tracks menu.</>,
     ],
@@ -120,10 +120,9 @@ export const HINTS: Record<string, Hint> = {
   'relations': {
     title: 'Mapping relationships',
     items: [
-      <>Relations webs can map to all types of relationships in the world, and some custom types have been provided to make those easier to manage.</>,
-      <>Included templates include family trees, organisation hierarchies which have some special features for those webs.</>,
-      <>Pick a <strong>template</strong> when creating a web — family trees add union nodes, hierarchies add editable rank tiers.</>,
-      <>Edges you draw here appear automatically on each linked article.</>,
+      <>Webs map any kind of relationship in the world: bloodlines, chains of command, alliances, trade, quest steps.</>,
+      <>Pick a <strong>template</strong> when creating a web. <strong>Family tree</strong> adds union nodes, <strong>Hierarchy</strong> adds editable rank tiers, <strong>Flow</strong> tidies left→right for quest steps or cause &amp; effect, and <strong>Network</strong> is a free canvas for everything else.</>,
+      <>Edges you draw here appear automatically under <strong>Connections</strong> on each linked article.</>,
       <>Drag from any of a node's four dots to connect two nodes.</>,
       <>Hold <Kbd>Shift</Kbd> (or <Kbd>Ctrl+Shift</Kbd>) and drag on empty canvas to rubber-band select several nodes at once — or switch the toolbar from <strong>Pan</strong> to <strong>Select</strong> to make plain dragging do it.</>,
       <><Kbd>Ctrl+click</Kbd> a node to add it to (or drop it from) the selection. Dragging any selected node moves the whole group, and <Kbd>Del</Kbd> removes them all.</>,

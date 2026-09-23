@@ -13,6 +13,13 @@ export interface HubLink {
   session_sub?: string
   name?: string
   /**
+   * World-map pins only: marks the one wiki link that *is* this place, as
+   * opposed to the rest of its "Related wikis". The publish pipeline follows
+   * this one when the pin has no audience grant of its own, instead of
+   * guessing from list order — see featureVisible in publishCore.ts.
+   */
+  primary?: boolean
+  /**
    * Set by resolveHubLinks when the target no longer exists. Never stored —
    * strip it before saving (stripResolved).
    */

@@ -7,7 +7,7 @@ import {
   Handle, Position, NodeProps, EdgeProps,
   getBezierPath, getSmoothStepPath, EdgeLabelRenderer, BaseEdge,
 } from 'reactflow'
-import { Waypoints, ChevronDown, ChevronUp, Minus, Plus as PlusIcon } from 'lucide-react'
+import { Waypoints, ChevronDown, ChevronUp, Minus, Plus as PlusIcon, Skull } from 'lucide-react'
 // Multi-value tracks (Allies, Rivals, …) store a JSON array in the track slot;
 // trackValues unpacks them so nodes never render raw JSON.
 import { trackValues } from '../wiki/wikiConstants'
@@ -15,9 +15,11 @@ import { type FrameSpec, parseFrame, resolveFrame, frameGeometry, FrameOverlay }
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+// 'custom' is the freeform network (the old faction/social/trade webs were the
+// same thing with different label suggestions); 'flow' absorbed quest_chain and
+// lore_causality. db.ts migrates the retired ids on startup.
 export type WebTemplate =
-  | 'family_tree' | 'org_hierarchy' | 'faction_web' | 'social_web'
-  | 'quest_chain' | 'lore_causality' | 'trade_network' | 'territory' | 'custom'
+  | 'family_tree' | 'org_hierarchy' | 'flow' | 'territory' | 'custom'
 
 export interface TemplateConfig {
   label: string
@@ -32,26 +34,18 @@ export interface TemplateConfig {
 export const WEB_TEMPLATES: { id: WebTemplate; label: string; desc: string }[] = [
   { id: 'family_tree',    label: 'Family tree',      desc: 'Dynasties, bloodlines' },
   { id: 'org_hierarchy',  label: 'Hierarchy',        desc: 'Ranks: crime, clergy, org' },
-  { id: 'faction_web',    label: 'Faction web',      desc: 'Alliances, rivalries' },
-  { id: 'social_web',     label: 'Social web',       desc: 'Personal relationships' },
-  { id: 'quest_chain',    label: 'Quest chain',      desc: 'Dependencies, unlocks' },
-  { id: 'lore_causality', label: 'Lore / causality', desc: 'Events, cause & effect' },
-  { id: 'trade_network',  label: 'Trade network',    desc: 'Goods, routes' },
-  { id: 'custom',         label: 'Custom',           desc: 'No constraints' },
+  { id: 'custom',         label: 'Network',          desc: 'Alliances, rivalries, trade, anything' },
+  { id: 'flow',           label: 'Flow',             desc: 'Quest steps, cause & effect' },
 ]
 
 export const TEMPLATE_CONFIG: Record<WebTemplate, TemplateConfig> = {
   family_tree:    { label: 'Family tree',      unionNodes: true,  dagreDir: 'TB', defaultEdgeLabels: ['husband of', 'wife of', 'partner of'] },
   org_hierarchy:  { label: 'Hierarchy',        unionNodes: false, dagreDir: null, defaultEdgeLabels: [], ranked: true },
-  faction_web:    { label: 'Faction web',      unionNodes: false, dagreDir: null, defaultEdgeLabels: ['allied with', 'rivals'] },
-  social_web:     { label: 'Social web',       unionNodes: false, dagreDir: null, defaultEdgeLabels: ['knows', 'trusts', 'hates'] },
-  quest_chain:    { label: 'Quest chain',      unionNodes: false, dagreDir: 'LR', defaultEdgeLabels: ['unlocks', 'requires'] },
-  lore_causality: { label: 'Lore / causality', unionNodes: false, dagreDir: 'LR', defaultEdgeLabels: ['caused', 'led to'] },
-  trade_network:  { label: 'Trade network',    unionNodes: false, dagreDir: null, defaultEdgeLabels: ['trades with', 'supplies'] },
+  flow:           { label: 'Flow',             unionNodes: false, dagreDir: 'LR', defaultEdgeLabels: ['unlocks', 'requires', 'caused', 'led to'] },
   // 'territory' is no longer offered as a manual template — it's reserved for the
   // auto-generated containment web. TB layout + containment labels suit the tree.
   territory:      { label: 'Territory',        unionNodes: false, dagreDir: 'TB', defaultEdgeLabels: ['contains', 'within'] },
-  custom:         { label: 'Custom',           unionNodes: false, dagreDir: null, defaultEdgeLabels: [] },
+  custom:         { label: 'Network',          unionNodes: false, dagreDir: null, defaultEdgeLabels: ['allied with', 'rivals', 'knows', 'trusts', 'hates', 'trades with', 'supplies'] },
 }
 
 export interface Rank {
@@ -252,7 +246,7 @@ export const ARTICLE_TRACKS: Partial<Record<string, Record<string, string[]>>> =
   character: {
     Vitality: ['Alive', 'Dead', 'Unknown', 'Missing', 'Immortal'],
     Attitude: ['Friendly', 'Neutral', 'Hostile'],
-    Age: [], Species: [],
+    Age: [], Gender: ['Male', 'Female', 'Non-binary', 'Unknown'], Species: [],
     Royal_Title: ['Duke','Duchess','Lord','Lady','King','Queen','Prince','Princess','Emperor','Empress','Disowned'],
     Title: ['Professor','Captain','General','Admiral','Archmage','High Priest'],
     Location: [], Faction: [], Religion: [], Culture: [],
@@ -262,7 +256,7 @@ export const ARTICLE_TRACKS: Partial<Record<string, Record<string, string[]>>> =
     Disposition: ['Friendly', 'Neutral', 'Hostile'],
     Royalty: ['Duke','Duchess','Lord','Lady','King','Queen','Prince','Princess','Emperor','Empress','Disowned'],
     Title: ['Professor','Captain','General','Admiral','Archmage','High Priest'],
-    Age: [], Species: [], Location: [], Faction: [], Religion: [], Culture: [],
+    Age: [], Gender: ['Male', 'Female', 'Non-binary', 'Unknown'], Species: [], Location: [], Faction: [], Religion: [], Culture: [],
   },
   creature: {
     Vitality: ['Living','Extinct','Endangered','Unknown'],
@@ -301,13 +295,18 @@ function isDead(v: string | null | undefined): boolean {
   return v === 'Dead'
 }
 
-// Map a parent's union role ("husband of"/"wife of") to the child's term for them.
-export function parentRoleFromUnionLabel(label: string | null | undefined): string {
-  const l = (label || '').toLowerCase()
-  if (l.includes('husband') || l.includes('father')) return 'father'
-  if (l.includes('wife') || l.includes('mother')) return 'mother'
-  return 'parent'
+// Dead people keep a fully legible node; the portrait goes black-and-white and
+// the name gets a skull (same mark as an article's Connections list).
+const DEAD_PORTRAIT_FILTER = 'grayscale(1) brightness(0.85)'
+
+function DeadMark() {
+  return (
+    <span title="Dead" style={{ display: 'inline-flex', verticalAlign: '-1px', marginRight: 4, color: 'var(--text-primary)' }}>
+      <Skull size={11} />
+    </span>
+  )
 }
+
 
 // Pick a grid-snapped spot for a new node that doesn't overlap existing ones.
 // Walks an outward spiral from a base point until it finds a clear cell.
@@ -512,7 +511,8 @@ function PortraitFrame({ data, size }: { data: NodeData; size: number }) {
         {data.portrait ? (
           <img
             src={`file://${data.portrait}`} alt="" draggable={false}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', userSelect: 'none', pointerEvents: 'none' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', userSelect: 'none', pointerEvents: 'none',
+              filter: isDead(data.vitality) ? DEAD_PORTRAIT_FILTER : undefined }}
           />
         ) : (
           <span style={{
@@ -638,17 +638,15 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
     position: 'relative',
     fontFamily: 'var(--font-ui)',
     cursor: 'grab',
-    opacity: ghost ? 0.5 : dead ? 0.45 : 1,
-    filter: dead ? 'grayscale(0.6)' : 'none',
-    transition: 'opacity 0.15s, filter 0.15s',
+    opacity: ghost ? 0.5 : 1,
+    transition: 'opacity 0.15s',
   }
 
   const nameStyle: React.CSSProperties = {
     fontSize: 12, fontWeight: 500,
-    color: dead ? 'var(--text-muted)' : data.linked ? 'var(--text-primary)' : 'var(--text-muted)',
+    color: data.linked ? 'var(--text-primary)' : 'var(--text-muted)',
     fontStyle: data.linked ? 'normal' : 'italic',
     lineHeight: 1.3, wordBreak: 'break-word',
-    textDecoration: dead ? 'line-through' : 'none',
   }
 
   const TrackLines = () => (
@@ -695,7 +693,7 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
           </div>
         )}
         <div style={{ ...nameStyle, marginTop: data.rankName ? 1 : 6, textAlign: 'center', width: '100%' }}>
-          {data.label}
+          {dead && <DeadMark />}{data.label}
         </div>
         <div style={{ width: '100%', textAlign: 'center' }}>
           <TrackLines />
@@ -732,6 +730,7 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
             width: 52, height: 52, borderRadius: '50%', objectFit: 'cover',
             border: `1.5px solid ${data.trackColor ?? 'var(--border-light)'}`, flexShrink: 0,
             userSelect: 'none', pointerEvents: 'none',
+            filter: dead ? DEAD_PORTRAIT_FILTER : undefined,
           }}
         />
       )}
@@ -741,11 +740,11 @@ function RelationNodeComponent({ data, selected }: NodeProps<NodeData>) {
             {data.rankName}
           </div>
         )}
-        <div style={nameStyle}>{data.label}</div>
+        <div style={nameStyle}>{dead && <DeadMark />}{data.label}</div>
         <TrackLines />
         {/* Vitality has no implicit line of its own — it shows only when the DM
             ticks Vitality in Track filters, like any other track. (It still
-            drives the dead styling above regardless.) */}
+            drives the skull + greyscale portrait regardless.) */}
         <CreateArticleLink />
         {ghost?.isAnchor && <GhostTag webName={ghost.webName} />}
         <BridgeBadges data={data} />

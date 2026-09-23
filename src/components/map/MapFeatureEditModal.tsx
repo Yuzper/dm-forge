@@ -105,7 +105,7 @@ function LinkGroup({ label, rows, icon, onReorder, onRemove }: {
 
 export default function MapFeatureEditModal({
   title, initialName, namePlaceholder, initialDescription, descriptionPlaceholder,
-  initialLinks, sessions, articles, appearance, audience, onSave, onDelete, onClose,
+  initialLinks, sessions, articles, appearance, audience, floating, singleWiki, onSave, onDelete, onClose,
 }: {
   title: string
   initialName: string
@@ -119,6 +119,16 @@ export default function MapFeatureEditModal({
   appearance?: ReactNode
   /** Player-visibility control for this feature. Rendered under the name. */
   audience?: ReactNode
+  /** See Modal's `floating` — a movable panel that leaves the map underneath visible and usable. */
+  floating?: boolean
+  /**
+   * Splits the wiki list in two: a single "Wiki" slot for the one article this
+   * feature *is* (what "follow the linked page" resolves to — see
+   * featureVisible in publishCore.ts) plus a "Related wikis" list for
+   * everything else it merely touches. Off by default: shapes keep one
+   * unordered wiki list.
+   */
+  singleWiki?: boolean
   onSave: (fields: FeatureEditFields) => void
   onDelete: () => void
   onClose: () => void
@@ -131,11 +141,19 @@ export default function MapFeatureEditModal({
   const [links, setLinks] = useState<HubLink[]>(
     () => resolveHubLinks(initialLinks, { sessions, articles }))
   const [wikiSearch, setWikiSearch] = useState('')
+  const [primaryWikiSearch, setPrimaryWikiSearch] = useState('')
   const [sessionSearch, setSessionSearch] = useState('')
   const { confirming: confirmingDelete, trigger: triggerDelete } = useConfirmDelete()
 
+  const primaryWiki = singleWiki ? links.find(l => l.type === 'wiki' && l.primary) : undefined
+
   const filteredArticles = articles.filter(a =>
     a.title.toLowerCase().includes(wikiSearch.toLowerCase()) &&
+    !links.some(l => l.type === 'wiki' && l.article_id === a.id)
+  ).slice(0, 6)
+
+  const filteredPrimaryArticles = articles.filter(a =>
+    a.title.toLowerCase().includes(primaryWikiSearch.toLowerCase()) &&
     !links.some(l => l.type === 'wiki' && l.article_id === a.id)
   ).slice(0, 6)
 
@@ -146,24 +164,37 @@ export default function MapFeatureEditModal({
 
   const removeLink = (i: number) => setLinks(prev => prev.filter((_, idx) => idx !== i))
 
+  const setPrimaryWiki = (article: { id: number; title: string }) => setLinks(prev => [
+    ...prev.filter(l => !(l.type === 'wiki' && l.primary)),
+    { type: 'wiki', article_id: article.id, title: article.title, primary: true },
+  ])
+  const removePrimaryWiki = () => setLinks(prev => prev.filter(l => !(l.type === 'wiki' && l.primary)))
+
   // The stored order is the order the popup reads each group out in, so it's
   // worth controlling: the article this place *is* belongs above the three it
   // merely touches.
   const rowsOfType = (type: HubLink['type']) =>
     links.map((link, index) => ({ link, index })).filter(r => r.link.type === type)
+  // "Related wikis" excludes whichever entry is flagged primary — that one gets
+  // its own single-slot section above instead.
+  const wikiRows = rowsOfType('wiki').filter(r => !singleWiki || !r.link.primary)
 
   // Links stay one flat JSON array — dragging only ever moves a row inside its
-  // own group, so put the reordered ones back into the slots that type already
-  // held and leave the other type's entries exactly where they were.
-  const reorderWithin = (type: HubLink['type']) => (from: number, to: number) =>
+  // own group, so put the reordered ones back into the slots that predicate
+  // matched and leave every other entry exactly where it was.
+  const reorderAmong = (matches: (l: HubLink) => boolean) => (from: number, to: number) =>
     setLinks(prev => {
-      const moved = reorder(prev.filter(l => l.type === type), from, to)
+      const moved = reorder(prev.filter(matches), from, to)
       let i = 0
-      return prev.map(l => l.type === type ? moved[i++] : l)
+      return prev.map(l => matches(l) ? moved[i++] : l)
     })
+  const reorderWithin = (type: HubLink['type']) => reorderAmong(l => l.type === type)
+  // The primary link (if any) never enters this group's own index space, so
+  // reordering "Related wikis" must walk the same non-primary subset it renders.
+  const reorderRelatedWiki = reorderAmong(l => l.type === 'wiki' && (!singleWiki || !l.primary))
 
   return (
-    <Modal title={title} onClose={onClose} style={{ maxWidth: 440, width: '100%' }}>
+    <Modal title={title} onClose={onClose} floating={floating} style={{ maxWidth: 440, width: '100%' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div className="input-group">
           <label className="input-label">Name</label>
@@ -177,7 +208,7 @@ export default function MapFeatureEditModal({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               {audience}
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                Default follows the linked page.
+                {singleWiki ? 'Default follows the Wiki link below.' : 'Default follows the linked page.'}
               </span>
             </div>
           </div>
@@ -192,11 +223,50 @@ export default function MapFeatureEditModal({
             placeholder={descriptionPlaceholder} />
         </div>
 
+        {singleWiki && (
+          <div className="input-group">
+            <label className="input-label">Wiki</label>
+            {primaryWiki ? (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px',
+                background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: 12,
+              }}>
+                <BookOpen size={11} style={{ color: WIKI_ACCENT, flexShrink: 0 }} />
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
+                  {primaryWiki.title}
+                </span>
+                <button onClick={removePrimaryWiki}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 1, flexShrink: 0, borderRadius: 3 }}>
+                  <X size={11} />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div style={{ position: 'relative' }}>
+                  <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input className="input" style={{ paddingLeft: 28 }} placeholder="Search articles…"
+                    value={primaryWikiSearch} onChange={e => setPrimaryWikiSearch(e.target.value)} />
+                </div>
+                {primaryWikiSearch && filteredPrimaryArticles.length > 0 && (
+                  <div style={resultList}>
+                    {filteredPrimaryArticles.map(a => (
+                      <button key={a.id} className="hover-bg-elevated" style={resultRow}
+                        onClick={() => { setPrimaryWiki(a); setPrimaryWikiSearch('') }}>
+                        <BookOpen size={11} style={{ color: WIKI_ACCENT }} /> {a.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         <LinkGroup
-          label="Wiki"
-          rows={rowsOfType('wiki')}
+          label={singleWiki ? 'Related wikis' : 'Wiki'}
+          rows={wikiRows}
           icon={missing => <BookOpen size={11} style={{ color: missing ? 'var(--text-muted)' : WIKI_ACCENT, flexShrink: 0 }} />}
-          onReorder={reorderWithin('wiki')}
+          onReorder={singleWiki ? reorderRelatedWiki : reorderWithin('wiki')}
           onRemove={removeLink}
         />
 
@@ -209,7 +279,7 @@ export default function MapFeatureEditModal({
         />
 
         <div className="input-group">
-          <label className="input-label">Link wiki article</label>
+          <label className="input-label">{singleWiki ? 'Link related wiki' : 'Link wiki article'}</label>
           <div style={{ position: 'relative' }}>
             <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
             <input className="input" style={{ paddingLeft: 28 }} placeholder="Search articles…"

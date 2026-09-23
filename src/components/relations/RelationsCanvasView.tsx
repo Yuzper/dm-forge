@@ -18,7 +18,7 @@ import {
 import {
   type Rank, type ColorByConfig, TEMPLATE_CONFIG, type RelationWeb, type DBRelationNode, type DBRelationEdge,
   type NodeStyle, type NodeRenderCtx, type BridgeRef, type OpenBridge, type NodeData,
-  parentRoleFromUnionLabel, findFreePosition, RANK_PALETTE,
+  findFreePosition, RANK_PALETTE,
   parseNodeStyle, serializeNodeStyle, nodeFootprint, DEFAULT_NODE_STYLE,
   isGhostId, ghostNodeToRF, ghostEdgeToRF, bridgeTetherEdge,
   dbNodeToRF, dbEdgeToRF, NODE_TYPES, EDGE_TYPES,
@@ -26,6 +26,7 @@ import {
 import { parseFrame, serializeFrame, FramePicker } from './relationsFrames'
 import { TrackFilterPanel, RankPanel, ColorByPanel, LinkedArticlePill, NodeStylePanel } from './relationsPanels'
 import { trackValues } from '../wiki/wikiConstants'
+import { genderOf, parentRole, childRole, siblingRole, unionRoleFor, UNION_ROLES } from '../../../shared/kinship'
 import { SECTION_ACCENTS } from '../../constants/sections'
 import {
   AddNodeModal, EdgeLabelModal, EditEdgeModal,
@@ -55,6 +56,18 @@ function ghostBranchOffset(
 }
 
 // ── Canvas View ────────────────────────────────────────────────────────────────
+
+// Shared look for the toolbar's plain toggle/action buttons (Ranks, Tidy up,
+// Add union, Style, Color, Tracks) so they read as one family rather than
+// each carrying its own copy of the same five properties.
+function toolBtnStyle(active: boolean): React.CSSProperties {
+  return {
+    display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12,
+    cursor: 'pointer', background: active ? 'var(--bg-elevated)' : 'transparent',
+    border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-secondary)', transition: 'background var(--transition)',
+  }
+}
 
 export default function RelationsCanvasView({ web, onBack, focusArticleId, onOpenWeb }: {
   web: RelationWeb
@@ -635,6 +648,22 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId, onOpe
     }
     const mode: 'standard' | 'person_to_union' =
       (src?.node_type === 'person' && tgt?.node_type === 'union') ? 'person_to_union' : 'standard'
+    // person → union with a known Gender: the role is "husband of"/"wife of",
+    // so skip the prompt. Click the edge afterwards to change it.
+    const derivedRole = mode === 'person_to_union' ? unionRoleFor(genderOf(src?.tracks)) : null
+    if (derivedRole) {
+      ;(async () => {
+        const edge = await (window as any).api.createRelationEdge({
+          web_id: web.id, from_node_id: s, to_node_id: t,
+          label_from: derivedRole, label_to: '', edge_type: 'person_to_union',
+          from_handle: connection.sourceHandle || '', to_handle: connection.targetHandle || '',
+        })
+        setDbEdges(prev => [...prev, edge])
+        setEdges(prev => addEdge({ ...dbEdgeToRF(edge) }, prev))
+        syncDerivedRelations()
+      })()
+      return
+    }
     setPendingConnectionMode(mode)
     setPendingConnection(connection)
   }, [dbNodes, dbEdges, web.id, syncDerivedRelations, cfg.ranked, ranks])
@@ -760,7 +789,7 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId, onOpe
           style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', padding: '4px 8px', borderRadius: 'var(--radius-sm)' }}
           className="hover-text"
         >
-          <ArrowLeft size={14} /> Relations
+          <ArrowLeft size={14} /> Webs
         </button>
         <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
         {editingName ? (
@@ -780,119 +809,95 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId, onOpe
             {webName} <Pencil size={11} color="var(--text-muted)" />
           </button>
         )}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
           <span style={{ fontSize: 11, color: selectedCount > 1 ? '#7F77DD' : 'var(--text-muted)' }}>
             {selectedCount > 1
               ? `${selectedCount} selected · drag to move${isTerritory ? '' : ', Del to remove'}`
               : isTerritory ? '' : 'Del to remove selected'}
           </span>
 
-          {/* Pan ↔ Select. Shift+drag marquees in either mode; this makes the
-              marquee the primary drag when you're rearranging a big web. */}
-          <button
-            onClick={() => setSelectMode(v => !v)}
-            title={selectMode
-              ? 'Select mode — drag to select, middle or right button to pan'
-              : 'Pan mode — drag to pan, Shift+drag to select'}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12,
-              cursor: 'pointer', background: selectMode ? 'var(--bg-elevated)' : 'transparent',
-              border: `1px solid ${selectMode ? '#AFA9EC' : 'var(--border)'}`,
-              borderRadius: 'var(--radius-sm)',
-              color: selectMode ? '#7F77DD' : 'var(--text-secondary)',
-              transition: 'background var(--transition)',
-            }}
-            className="hover-bg-elevated"
-          >
-            {selectMode ? <MousePointer2 size={13} /> : <Hand size={13} />}
-            {selectMode ? 'Select' : 'Pan'}
-          </button>
-          {cfg.ranked && (
+          {/* Mode + arrange — how you move around and tidy the web. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* Pan ↔ Select. Shift+drag marquees in either mode; this makes the
+                marquee the primary drag when you're rearranging a big web. */}
             <button
-              onClick={() => setShowRankPanel(v => !v)}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: showRankPanel ? 'var(--bg-elevated)' : 'transparent', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', transition: 'background var(--transition)' }}
+              onClick={() => setSelectMode(v => !v)}
+              title={selectMode
+                ? 'Select mode — drag to select, middle or right button to pan'
+                : 'Pan mode — drag to pan, Shift+drag to select'}
+              style={{
+                ...toolBtnStyle(selectMode),
+                border: `1px solid ${selectMode ? '#AFA9EC' : 'var(--border)'}`,
+                color: selectMode ? '#7F77DD' : 'var(--text-secondary)',
+              }}
               className="hover-bg-elevated"
             >
-              <Layers size={13} /> Ranks
+              {selectMode ? <MousePointer2 size={13} /> : <Hand size={13} />}
+              {selectMode ? 'Select' : 'Pan'}
             </button>
-          )}
-          {(cfg.dagreDir || cfg.ranked) && (
-            <button onClick={handleTidyUp}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', transition: 'background var(--transition)' }}
+            {cfg.ranked && (
+              <button
+                onClick={() => setShowRankPanel(v => !v)}
+                style={toolBtnStyle(showRankPanel)}
+                className="hover-bg-elevated"
+              >
+                <Layers size={13} /> Ranks
+              </button>
+            )}
+            {(cfg.dagreDir || cfg.ranked) && (
+              <button onClick={handleTidyUp} style={toolBtnStyle(false)} className="hover-bg-elevated">
+                <LayoutGrid size={13} /> Tidy up
+              </button>
+            )}
+          </div>
+
+          <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
+
+          {/* View options — how nodes are drawn, colored and filtered. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* Node style (compact rows ↔ framed portrait cards) */}
+            <button
+              onClick={() => { setShowStylePanel(v => !v); setShowColorPanel(false); setShowFilterPanel(false) }}
+              style={toolBtnStyle(showStylePanel)}
               className="hover-bg-elevated"
             >
-              <LayoutGrid size={13} /> Tidy up
+              <FrameIcon size={13} />
+              Style
             </button>
-          )}
-          {cfg.unionNodes && (
-            <button onClick={addUnionNode}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', background: 'transparent', border: '1px solid #AFA9EC', borderRadius: 'var(--radius-sm)', color: '#7F77DD', transition: 'background var(--transition)', '--hover-accent': '#EEEDFE' } as React.CSSProperties}
-              className="hover-accent-bg"
+            {/* Color-by-track button */}
+            <button
+              onClick={() => { setShowColorPanel(v => !v); setShowFilterPanel(false); setShowStylePanel(false) }}
+              style={toolBtnStyle(showColorPanel)}
+              className="hover-bg-elevated"
             >
-              <GitMerge size={13} /> Add union
+              <Palette size={13} />
+              Color
             </button>
-          )}
-          {/* Node style (compact rows ↔ framed portrait cards) */}
-          <button
-            onClick={() => { setShowStylePanel(v => !v); setShowColorPanel(false); setShowFilterPanel(false) }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '5px 10px', fontSize: 12, cursor: 'pointer',
-              background: showStylePanel ? 'var(--bg-elevated)' : 'transparent',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-              transition: 'background var(--transition)',
-            }}
-            className="hover-bg-elevated"
-          >
-            <FrameIcon size={13} />
-            Style
-            {nodeStyle.layout === 'card' && (
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7F77DD', flexShrink: 0 }} />
-            )}
-          </button>
-          {/* Color-by-track button */}
-          <button
-            onClick={() => { setShowColorPanel(v => !v); setShowFilterPanel(false); setShowStylePanel(false) }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '5px 10px', fontSize: 12, cursor: 'pointer',
-              background: showColorPanel ? 'var(--bg-elevated)' : 'transparent',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-              transition: 'background var(--transition)',
-            }}
-            className="hover-bg-elevated"
-          >
-            <Palette size={13} />
-            Color
-            {colorBy.track && (
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7F77DD', flexShrink: 0 }} />
-            )}
-          </button>
-          {/* Filter button */}
-          <button
-            onClick={() => { setShowFilterPanel(v => !v); setShowColorPanel(false); setShowStylePanel(false) }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '5px 10px', fontSize: 12, cursor: 'pointer',
-              background: showFilterPanel ? 'var(--bg-elevated)' : 'transparent',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-              transition: 'background var(--transition)',
-            }}
-            className="hover-bg-elevated"
-          >
-            <Filter size={13} />
-            Tracks
-            {Object.values(trackFilters).some(v => v.length > 0) && (
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7F77DD', flexShrink: 0 }} />
-            )}
-          </button>
-          {!isTerritory && (
-            <button className="btn btn-primary" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => setShowAddNode(true)}>
-              <Plus size={13} /> Add node
+            {/* Filter button */}
+            <button
+              onClick={() => { setShowFilterPanel(v => !v); setShowColorPanel(false); setShowStylePanel(false) }}
+              style={toolBtnStyle(showFilterPanel)}
+              className="hover-bg-elevated"
+            >
+              <Filter size={13} />
+              Tracks
             </button>
+          </div>
+
+          {(cfg.unionNodes || !isTerritory) && (
+            <>
+              <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
+              {cfg.unionNodes && (
+                <button onClick={addUnionNode} style={toolBtnStyle(false)} className="hover-bg-elevated">
+                  <GitMerge size={13} /> Add union
+                </button>
+              )}
+              {!isTerritory && (
+                <button className="btn btn-primary" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => setShowAddNode(true)}>
+                  <Plus size={13} /> Add node
+                </button>
+              )}
+            </>
           )}
         </div>
 
@@ -1155,17 +1160,18 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId, onOpe
                     })
                     dbEdges.filter(e => e.edge_type === 'union_to_child' && e.from_node_id === ue.to_node_id).forEach(e => {
                       const c = dbNodes.find(n => n.id === e.to_node_id)
-                      if (c) children.push({ name: c.article_title || c.label, vitality: c.vitality })
+                      if (c) children.push({ name: c.article_title || c.label, role: childRole(genderOf(c.tracks)), vitality: c.vitality })
                     })
                   })
                   dbEdges.filter(e => e.edge_type === 'union_to_child' && e.to_node_id === nid).forEach(pe => {
                     dbEdges.filter(e => e.edge_type === 'person_to_union' && e.to_node_id === pe.from_node_id).forEach(e => {
                       const p = dbNodes.find(n => n.id === e.from_node_id)
-                      // From the child's perspective: "mother"/"father", not the union role.
-                      if (p) parents.push({ name: p.article_title || p.label, role: parentRoleFromUnionLabel(e.label_from), vitality: p.vitality })
+                      // From the child's perspective: "mother"/"father" (Gender first,
+                      // then the union role), not "wife of"/"husband of".
+                      if (p) parents.push({ name: p.article_title || p.label, role: parentRole(genderOf(p.tracks), e.label_from), vitality: p.vitality })
                     })
                     dbEdges.filter(e => e.edge_type === 'union_to_child' && e.from_node_id === pe.from_node_id && e.to_node_id !== nid).forEach(e => {
-                      if (!sibIds.has(e.to_node_id)) { sibIds.add(e.to_node_id); const s = dbNodes.find(n => n.id === e.to_node_id); if (s) siblings.push({ name: s.article_title || s.label, vitality: s.vitality }) }
+                      if (!sibIds.has(e.to_node_id)) { sibIds.add(e.to_node_id); const s = dbNodes.find(n => n.id === e.to_node_id); if (s) siblings.push({ name: s.article_title || s.label, role: siblingRole(genderOf(s.tracks)), vitality: s.vitality }) }
                     })
                   })
 
@@ -1304,13 +1310,15 @@ export default function RelationsCanvasView({ web, onBack, focusArticleId, onOpe
       {pendingConnection && (
         <EdgeLabelModal
           mode={pendingConnectionMode}
-          suggestions={cfg.defaultEdgeLabels}
+          suggestions={pendingConnectionMode === 'person_to_union' ? UNION_ROLES : cfg.defaultEdgeLabels}
           onClose={() => setPendingConnection(null)}
           onConfirm={handleEdgeLabelConfirm}
         />
       )}
       {editingEdge && (
         <EditEdgeModal edge={editingEdge} onClose={() => setEditingEdge(null)}
+          suggestions={editingEdge.edge_type === 'person_to_union' ? UNION_ROLES
+            : web.template === 'family_tree' ? [] : cfg.defaultEdgeLabels}
           onSave={async (lf, lt) => {
             await (window as any).api.updateRelationEdge(editingEdge.id, { label_from: lf, label_to: lt })
             setDbEdges(prev => prev.map(e => e.id === editingEdge.id ? { ...e, label_from: lf, label_to: lt } : e))

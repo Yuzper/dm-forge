@@ -152,7 +152,7 @@ export default function MapView({ bundle, onOpen }: {
               return (
                 <button key={p.id} className="map-poi" style={{ left: sx, top: sy }}
                   onClick={() => p.articleId != null && onOpen(p.articleId)} title={p.label}>
-                  <span className="map-dot" style={{ width: r, height: r, background: p.color, opacity: p.opacity }} />
+                  <span className="map-dot" style={{ width: r, height: r, background: p.color }} />
                   <span className="map-poi-label">{p.label}</span>
                 </button>
               )

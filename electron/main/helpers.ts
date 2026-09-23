@@ -41,6 +41,14 @@ export interface CopyResult { copied: number; skipped: number; failed: string[] 
 export async function copyFilesWithSkip(
   jobs: { src: string; dst: string }[],
   concurrency = 8,
+  // Bypasses the same-size/newer-destination skip below. The heuristic is safe
+  // for content-addressed files like backup images (same bytes in means same
+  // bytes out), but wrong for a build output where a destination's mtime can
+  // be bumped by something unrelated to its content — a git checkout, a clone,
+  // a restore — leaving a stale file that *looks* current. Callers publishing
+  // a build (index.html + its content-hashed assets, which must land together
+  // or the pairing breaks) should force a real copy every time.
+  force = false,
 ): Promise<CopyResult> {
   const result: CopyResult = { copied: 0, skipped: 0, failed: [] }
   const madeDirs = new Set<string>()
@@ -51,13 +59,15 @@ export async function copyFilesWithSkip(
       const { src, dst } = jobs[next++]
       try {
         const srcStat = await fs.promises.stat(src)
-        try {
-          const dstStat = await fs.promises.stat(dst)
-          if (dstStat.size === srcStat.size && dstStat.mtimeMs >= srcStat.mtimeMs) {
-            result.skipped++
-            continue
-          }
-        } catch { /* destination missing — copy */ }
+        if (!force) {
+          try {
+            const dstStat = await fs.promises.stat(dst)
+            if (dstStat.size === srcStat.size && dstStat.mtimeMs >= srcStat.mtimeMs) {
+              result.skipped++
+              continue
+            }
+          } catch { /* destination missing — copy */ }
+        }
         const dir = path.dirname(dst)
         if (!madeDirs.has(dir)) {
           await fs.promises.mkdir(dir, { recursive: true })
@@ -87,6 +97,7 @@ export async function copyDirContentsAsync(
   srcDir: string,
   dstDir: string,
   skipFile?: (name: string) => boolean,
+  force = false,
 ): Promise<CopyResult> {
   const jobs: { src: string; dst: string }[] = []
   const gather = (from: string, to: string) => {
@@ -97,7 +108,7 @@ export async function copyDirContentsAsync(
     }
   }
   gather(srcDir, dstDir)
-  return copyFilesWithSkip(jobs)
+  return copyFilesWithSkip(jobs, 8, force)
 }
 
 // ── Inline Image Cleanup ───────────────────────────────────────────────────────

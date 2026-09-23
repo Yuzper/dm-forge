@@ -255,6 +255,8 @@ contextBridge.exposeInMainWorld('api', {
                          ipcRenderer.invoke('publish:git-status', campaignId),
   pushPlayerSite:      (campaignId: number) =>
                          ipcRenderer.invoke('publish:git-push', campaignId),
+  connectPlayerSiteRepo: (campaignId: number, url: string) =>
+                         ipcRenderer.invoke('publish:connect-repo', campaignId, url),
 
   // Native context menus. The template is data only; the renderer keeps the
   // behaviour and dispatches on the id that comes back (null = dismissed).

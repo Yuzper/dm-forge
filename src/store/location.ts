@@ -96,7 +96,7 @@ export function locationLabel(loc: Location, ctx: LocationCtx): string | null {
     case 'campaign':    return ctx.campaignName ?? 'Campaign'
     case 'wiki':        return 'Wiki'
     case 'relations':
-      return (loc.webId != null && ctx.locationNames?.relations[loc.webId]) || 'Relations'
+      return (loc.webId != null && ctx.locationNames?.relations[loc.webId]) || 'Webs'
     case 'dm-notes':
       return (loc.pageId != null && ctx.locationNames?.['dm-notes'][loc.pageId]) || 'DM Notes'
     case 'loot-tables': return 'Loot Tables'

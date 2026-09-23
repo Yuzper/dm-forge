@@ -15,7 +15,7 @@ import { useStore } from '../../store/store'
 import type { Location } from '../../store/location'
 import { locationLabel, sameLocation } from '../../store/location'
 import { useContextMenu, useMenuCtx } from '../../hooks/useContextMenu'
-import { buildLocationMenu, truncate } from '../../utils/contextMenus'
+import { buildLocationMenu } from '../../utils/contextMenus'
 import { GroupLabel, NavRow } from './sidebarShared'
 
 function pinIcon(loc: Location) {
@@ -133,9 +133,7 @@ export default function SidebarPinned({ grow, open, onToggleOpen }: {
                 title={label}
                 active={!!activeLocation && sameLocation(activeLocation, loc)}
                 onClick={() => go(loc)}
-                onContextMenu={e => showMenu(e, buildLocationMenu(loc, menuCtx, {
-                  label: `Open “${truncate(label)}”`,
-                }))}
+                onContextMenu={e => showMenu(e, buildLocationMenu(loc, menuCtx))}
                 trailing={
                   <span
                     role="button"

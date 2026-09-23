@@ -1,7 +1,7 @@
 // path: src/pages/TimelinePage.tsx
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useStore } from '../store/store'
-import { Clock, Plus, ArrowLeft, Filter, Settings, X, ListTree, AlertTriangle } from 'lucide-react'
+import { Clock, Plus, Filter, Settings, X, ListTree, AlertTriangle, GripVertical } from 'lucide-react'
 import { parseInWorldDate, InWorldDatePicker, serializeInWorldDate } from '../components/InWorldDatePicker'
 import type { ArticleType, Session, Article } from '../types'
 import { buildArticleTimeline, type Lifespan } from '../constants/timelineDates'
@@ -25,7 +25,9 @@ import { auditChronology, type AuditArticle, type ChronologyIssue } from '../uti
 import { SECTION_ACCENTS } from '../constants/sections'
 import { TimelineFilterPanel as FilterPanel, DEFAULT_TIMELINE_FILTERS as DEFAULT_FILTERS, type TimelineFilters } from '../components/TimelineFilterPanel'
 import Modal from '../components/Modal'
+import SectionHeader from '../components/SectionHeader'
 import { ColorDotPicker } from '../components/SwatchPicker'
+import { useDragReorder, reorder } from '../hooks/useDragReorder'
 import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
 import { buildArticleMenu, buildSessionMenu } from '../utils/contextMenus'
 
@@ -91,6 +93,18 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
     setSpans(s => s.filter((_, idx) => idx !== i))
     setStartSpan(v => Math.max(0, Math.min(i < v ? v - 1 : v, spans.length - 2)))
   }
+  // Keep the start date pointing at the same division it did before the drag,
+  // not the same index — the classic "shift the tracked index across a move".
+  const moveSpan = (from: number, to: number) => {
+    setSpans(s => reorder(s, from, to))
+    setStartSpan(v => {
+      if (v === from) return to
+      if (from < v && v <= to) return v - 1
+      if (to <= v && v < from) return v + 1
+      return v
+    })
+  }
+  const spanDnd = useDragReorder(moveSpan)
 
   const buildCalendar = (): CampaignCalendar => {
     const cleanSpans = spans.length > 0
@@ -107,6 +121,7 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
   const addEra = () => setList(l => [...l, { id: `era_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: 'New Era', startYear, endYear: startYear + 10, color: '#c8a84b' }])
   const updateEra = (id: string, patch: Partial<Era>) => setList(l => l.map(e => e.id === id ? { ...e, ...patch } : e))
   const removeEra = (id: string) => setList(l => l.filter(e => e.id !== id))
+  const eraDnd = useDragReorder((from, to) => setList(l => reorder(l, from, to)))
 
   return (
     <Modal title="Timeline settings" onClose={onClose} style={{ maxWidth: 540, maxHeight: '86vh', overflowY: 'auto' }}>
@@ -119,9 +134,26 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
             <input className="input" value={unitName} onChange={e => setUnitName(e.target.value)}
               placeholder="Month, Season, Tenday…" style={{ width: 150 }} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, maxHeight: 220, overflowY: 'auto' }}>
-            {spans.map((sp, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, maxHeight: 220, overflowY: 'auto' }}
+            {...spanDnd.tailProps(spans.length)}>
+            {spans.map((sp, i) => {
+              // The handle alone starts the drag — a draggable row would steal
+              // the cursor's text-selection drag out of the inputs beside it.
+              const { draggable, onDragStart, onDragOver, onDrop, onDragEnd } = spanDnd.rowProps(i)
+              return (
+              <div key={i} onDragOver={onDragOver} onDrop={onDrop}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  opacity: spanDnd.dragIndex === i ? 0.4 : 1,
+                  boxShadow: spanDnd.isDropBefore(i) ? 'inset 0 2px 0 -1px var(--gold)'
+                    : (i === spans.length - 1 && spanDnd.isDropAtEnd(spans.length)) ? 'inset 0 -2px 0 -1px var(--gold)'
+                    : undefined,
+                  transition: 'opacity 120ms ease',
+                }}>
+                <span draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd} title="Drag to reorder"
+                  style={{ display: 'flex', color: 'var(--text-muted)', cursor: 'grab', flexShrink: 0, marginRight: -2 }}>
+                  <GripVertical size={13} />
+                </span>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
                 <input className="input" value={sp.name} onChange={e => updateSpan(i, { name: e.target.value })}
                   placeholder={`${unit} ${i + 1}`} style={{ flex: 1, minWidth: 0 }} />
@@ -132,7 +164,8 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
                 <button onClick={() => removeSpan(i)} disabled={spans.length <= 1} title={spans.length <= 1 ? 'At least one division is needed' : 'Remove'}
                   style={{ background: 'none', border: 'none', color: spans.length <= 1 ? 'var(--border)' : 'var(--text-muted)', cursor: spans.length <= 1 ? 'default' : 'pointer', padding: 2, flexShrink: 0, display: 'flex' }}><X size={14} /></button>
               </div>
-            ))}
+              )
+            })}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
             <button className="btn btn-sm" onClick={addSpan}><Plus size={12} /> Add {unit.toLowerCase()}</button>
@@ -168,9 +201,24 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
             <button className="btn btn-sm" onClick={addEra}><Plus size={12} /> Add era</button>
           </div>
           {list.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0 8px' }}>No eras yet. Add named periods (e.g. "The Long Winter") to show as background bands.</div>}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
-            {list.map(era => (
-              <div key={era.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}
+            {...eraDnd.tailProps(list.length)}>
+            {list.map((era, i) => {
+              const { draggable, onDragStart, onDragOver, onDrop, onDragEnd } = eraDnd.rowProps(i)
+              return (
+              <div key={era.id} onDragOver={onDragOver} onDrop={onDrop}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  opacity: eraDnd.dragIndex === i ? 0.4 : 1,
+                  boxShadow: eraDnd.isDropBefore(i) ? 'inset 0 2px 0 -1px var(--gold)'
+                    : (i === list.length - 1 && eraDnd.isDropAtEnd(list.length)) ? 'inset 0 -2px 0 -1px var(--gold)'
+                    : undefined,
+                  transition: 'opacity 120ms ease',
+                }}>
+                <span draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd} title="Drag to reorder"
+                  style={{ display: 'flex', color: 'var(--text-muted)', cursor: 'grab', flexShrink: 0, marginRight: -2 }}>
+                  <GripVertical size={13} />
+                </span>
                 <ColorDotPicker value={era.color} onChange={c => updateEra(era.id, { color: c })} size={24} title="Band colour" />
                 <input className="input" value={era.name} onChange={e => updateEra(era.id, { name: e.target.value })} placeholder="Era name" style={{ flex: 1, minWidth: 0 }} />
                 <input className="input" type="number" value={era.startYear} onChange={e => updateEra(era.id, { startYear: parseInt(e.target.value) || 0 })} title="Start year" style={{ width: 74, flexShrink: 0 }} />
@@ -178,7 +226,8 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
                 <input className="input" type="number" value={era.endYear} onChange={e => updateEra(era.id, { endYear: parseInt(e.target.value) || 0 })} title="End year" style={{ width: 74, flexShrink: 0 }} />
                 <button onClick={() => removeEra(era.id)} title="Remove era" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2, flexShrink: 0, display: 'flex' }}><X size={14} /></button>
               </div>
-            ))}
+              )
+            })}
           </div>
           {list.some(e => e.endYear <= e.startYear) && <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 6 }}>Eras with end ≤ start year will be skipped.</div>}
         </div>
@@ -597,26 +646,20 @@ export default function TimelinePage() {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* Header */}
-      <div style={{ padding: '16px 32px 0', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', borderRight: '1px solid var(--border)', paddingRight: 12, marginRight: 4, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}
-              className="hover-text">
-              <ArrowLeft size={14} /> Back
-            </button>
-            <Clock size={20} color={ACCENT} />
-            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, letterSpacing: '0.03em', color: 'var(--text-primary)', margin: 0 }}>Timeline</h1>
+      <div style={{ padding: '20px 32px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <SectionHeader
+          icon={Clock}
+          title="Timeline"
+          accent={ACCENT}
+          onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
+          meta={<>
             <button onClick={() => setShowSettings(true)} title="Timeline settings (calendar, start date, era bands)"
               style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 11, color: 'var(--gold)', cursor: 'pointer' }}>
               <Settings size={10} /> Calendar · {cal.start.year}
             </button>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {datedSessions.length} sessions · {items.filter(i => i.kind === 'event').length} events · {items.filter(i => i.kind === 'death').length} deaths
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {datedSessions.length} sessions · {items.filter(i => i.kind === 'event').length} events · {items.filter(i => i.kind === 'death').length} deaths
+          </>}
+          actions={<>
             {/* Axis / outline mode */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 2, borderRight: '1px solid var(--border)', paddingRight: 10, marginRight: 2 }}>
               {([['axis', 'Timeline', Clock], ['outline', 'Outline', ListTree]] as const).map(([m, label, Icon]) => (
@@ -657,8 +700,8 @@ export default function TimelinePage() {
               className="hover-gold-border">
               <Plus size={13} /> Add event
             </button>
-          </div>
-        </div>
+          </>}
+        />
       </div>
 
 
@@ -712,16 +755,10 @@ export default function TimelinePage() {
         />
       )}
 
-      {(mode === 'axis' || embeddedArticle) && (
+      {embeddedArticle && (
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', background: 'var(--bg-elevated)' }}>
-          {embeddedArticle ? (
-            <ArticleEditor key={embeddedArticle.id} article={embeddedArticle}
-              backLabel="Close" onBack={() => { setEmbeddedArticle(null); loadItems() }} />
-          ) : (
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 32px', color: 'var(--text-muted)', fontSize: 13 }}>
-              Click an event or death to read it here · sessions open their full page
-            </div>
-          )}
+          <ArticleEditor key={embeddedArticle.id} article={embeddedArticle}
+            backLabel="Close" onBack={() => { setEmbeddedArticle(null); loadItems() }} />
         </div>
       )}
 

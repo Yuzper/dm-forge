@@ -63,18 +63,21 @@ export interface MenuCtx {
   websForArticle: (articleId: number) => Promise<{ id: number; name: string }[]>
 }
 
-// ── The trio every entity menu starts with ────────────────────────────────────
+// ── The pair every entity menu starts with ─────────────────────────────────────
+// No plain "Open" — clicking the row is already that, in most places this menu
+// appears, so a same-pane duplicate was just noise. The map pin/shape menus
+// that don't have a click-to-open row still reach the entity fine through the
+// two items below.
 
-export function openItems(loc: Location, ctx: MenuCtx, label = 'Open'): MenuItem[] {
+export function openItems(loc: Location, ctx: MenuCtx): MenuItem[] {
   return [
-    { label, click: () => ctx.go(loc) },
     // Background, like a browser's "Open link in new tab" — you asked for it to
     // be *available*, not to be taken there.
     { label: 'Open in new tab', click: () => ctx.goTab(loc, true) },
     { label: ctx.split ? 'Open in other pane' : 'Open in split view', click: () => ctx.goPane(loc) },
-    // Pinning rides along with the open trio for the same reason that trio
-    // exists: it is a property of the *entity*, so the sidebar's list can be
-    // built from wherever you happen to meet the thing.
+    // Pinning rides along with these for the same reason: it is a property of
+    // the *entity*, so the sidebar's list can be built from wherever you
+    // happen to meet the thing.
     SEP,
     ctx.pinned(loc)
       ? { label: 'Unpin from sidebar', click: () => ctx.togglePin(loc) }
@@ -97,7 +100,7 @@ export interface ArticleMenuOpts {
   extra?: MaybeItem[]
   /** Suppress "Show in wiki graph" when you're already looking at the graph. */
   inGraph?: boolean
-  /** The web being viewed, so "Show in relations" doesn't offer where you are. */
+  /** The web being viewed, so "Show in web" doesn't offer where you are. */
   inWebId?: number
 }
 
@@ -121,7 +124,7 @@ export async function buildArticleMenu(
     webs.length === 1
       ? { label: `Show in “${webs[0].name}”`, click: () => ctx.showInWeb(webs[0].id, a.id) }
       : webs.length > 1 && {
-          label: 'Show in relations',
+          label: 'Show in web',
           submenu: webs.map(w => ({ label: w.name, click: () => ctx.showInWeb(w.id, a.id) })),
         },
     a.article_type === 'creature' && {
@@ -154,7 +157,6 @@ export function buildSessionMenu(s: Session, ctx: MenuCtx, opts: SessionMenuOpts
 
 /** Relation webs, DM notes pages, loot tables, campaign cards, timeline events. */
 export interface LocationMenuOpts {
-  label?: string
   copy?: { label: string; text: string }
   onDelete?: () => void
   deleteLabel?: string
@@ -163,7 +165,7 @@ export interface LocationMenuOpts {
 
 export function buildLocationMenu(loc: Location, ctx: MenuCtx, opts: LocationMenuOpts = {}): MenuItem[] {
   return items(
-    ...openItems(loc, ctx, opts.label),
+    ...openItems(loc, ctx),
     ...(opts.copy ? [SEP, { label: opts.copy.label, click: () => ctx.copy(opts.copy!.text) }] : []),
     ...(opts.extra?.length ? [SEP, ...opts.extra] : []),
     ...(opts.onDelete ? [SEP, { label: opts.deleteLabel ?? 'Delete', click: opts.onDelete }] : []),

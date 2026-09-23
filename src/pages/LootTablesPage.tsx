@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../store/store'
 import {
-  ShoppingBag, Plus, Trash2, ArrowLeft, RotateCcw,
+  ShoppingBag, Plus, Trash2, RotateCcw,
   ChevronDown, ChevronUp, Check,
 } from 'lucide-react'
 import type { MasterLootTable, LootTableCategory, LootItem } from '../types'
@@ -10,6 +10,7 @@ import { useConfirmDelete } from '../hooks/useConfirmDelete'
 import LootTableEditor from '../components/LootTableEditor'
 import SectionDivider from '../components/SectionDivider'
 import Modal from '../components/Modal'
+import SectionHeader from '../components/SectionHeader'
 import { SECTION_ACCENTS } from '../constants/sections'
 import { useContextMenu } from '../hooks/useContextMenu'
 import { truncate } from '../utils/contextMenus'
@@ -440,50 +441,37 @@ export default function LootTablesPage() {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Top bar */}
-      <div style={{
-        padding: '0 20px', borderBottom: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', gap: 12,
-        minHeight: 48, flexShrink: 0, background: 'var(--bg-surface)',
-      }}>
-        <button
-          onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            padding: '0 12px 0 0', background: 'transparent', border: 'none',
-            borderRight: '1px solid var(--border)', height: '100%', minHeight: 48,
-            color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer',
-            transition: 'color var(--transition)',
-          }}
-          className="hover-text"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <ShoppingBag size={13} color={ACCENT} />
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '0.03em', flex: 1 }}>
-          Loot Tables
-        </span>
-        <button
-          onClick={handleResetDefaults}
-          disabled={resetting}
-          title="Reset all default tables to original values"
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            padding: '4px 10px', background: 'transparent',
-            border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-muted)', fontSize: 11, cursor: resetting ? 'wait' : 'pointer',
-            transition: 'all var(--transition)',
-            '--hover-accent': ACCENT,
-          } as React.CSSProperties}
-          className="hover-accent-border"
-        >
-          <RotateCcw size={11} /> {resetting ? 'Resetting…' : 'Reset defaults'}
-        </button>
-        <button
-          onClick={() => handleCreate('custom')}
-          className="btn btn-primary btn-sm"
-        >
-          <Plus size={13} /> New Table
-        </button>
+      <div style={{ padding: '20px 32px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <SectionHeader
+          icon={ShoppingBag}
+          title="Loot Tables"
+          accent={ACCENT}
+          onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
+          actions={<>
+            <button
+              onClick={handleResetDefaults}
+              disabled={resetting}
+              title="Reset all default tables to original values"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '4px 10px', background: 'transparent',
+                border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-muted)', fontSize: 11, cursor: resetting ? 'wait' : 'pointer',
+                transition: 'all var(--transition)',
+                '--hover-accent': ACCENT,
+              } as React.CSSProperties}
+              className="hover-accent-border"
+            >
+              <RotateCcw size={11} /> {resetting ? 'Resetting…' : 'Reset defaults'}
+            </button>
+            <button
+              onClick={() => handleCreate('custom')}
+              className="btn btn-primary btn-sm"
+            >
+              <Plus size={13} /> New Table
+            </button>
+          </>}
+        />
       </div>
 
       {/* Main content */}

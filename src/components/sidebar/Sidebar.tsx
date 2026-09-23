@@ -1,8 +1,9 @@
 // path: src/components/sidebar/Sidebar.tsx
 // The app's left rail. Four bands, top to bottom: identity, search, navigation
 // and the pinned list — over a slim footer bar of popovers. In a session the
-// map's POI list takes the space between nav and Pinned; elsewhere Pinned has
-// that space to itself.
+// map's POI list takes the space between nav and Pinned; elsewhere Pinned
+// grows to fill it, with the party card (where the party last stood, if
+// anywhere) pinned below it at the bottom of that space.
 //
 // The previous version stacked three separately-bordered blocks over a column of
 // six full-width setting buttons, which spent the bottom third on preferences.
@@ -17,6 +18,7 @@ import { StoreMapProvider } from '../../context/MapContext'
 import POIList from '../POIList'
 import { NavRow, useSidebarNav } from './sidebarShared'
 import SidebarPinned from './SidebarPinned'
+import SidebarPartyCard from './SidebarPartyCard'
 import SidebarRail from './SidebarRail'
 import SidebarFooter from './SidebarFooter'
 
@@ -137,9 +139,7 @@ export default function Sidebar() {
             title={`${currentCampaign.name} — campaign hub`}
             active={view === 'campaign' && campaignSubView === 'hub'}
             onClick={() => { setView('campaign'); setCampaignSubView('hub') }}
-            onContextMenu={e => showMenu(e, buildLocationMenu({ type: 'campaign', subView: 'hub' }, menuCtx, {
-              label: 'Open campaign hub',
-            }))}
+            onContextMenu={e => showMenu(e, buildLocationMenu({ type: 'campaign', subView: 'hub' }, menuCtx))}
           />
 
           <div style={{ marginTop: 4 }}>
@@ -151,9 +151,7 @@ export default function Sidebar() {
                 accent={item.accent}
                 active={item.active}
                 onClick={item.onClick}
-                onContextMenu={e => showMenu(e, buildLocationMenu(item.loc, menuCtx, {
-                  label: `Open ${item.label}`,
-                }))}
+                onContextMenu={e => showMenu(e, buildLocationMenu(item.loc, menuCtx))}
               />
             ))}
           </div>
@@ -171,9 +169,17 @@ export default function Sidebar() {
       )}
 
       {/* Pinned belongs to a campaign, so it goes away on the campaigns list
-          along with the nav it complements. */}
+          along with the nav it complements. The party card is pinned below
+          it, at the very bottom of the free space — Pinned still grows to
+          fill whatever's left above it. Neither shows while a session is
+          open and POIList already owns the space. */}
       {showNav
-        ? <SidebarPinned grow={view !== 'session'} open={pinnedOpen} onToggleOpen={togglePinnedOpen} />
+        ? (
+          <>
+            <SidebarPinned grow={view !== 'session'} open={pinnedOpen} onToggleOpen={togglePinnedOpen} />
+            {view !== 'session' && <SidebarPartyCard campaign={currentCampaign} />}
+          </>
+        )
         : view !== 'session' && <div style={{ flex: 1 }} />}
 
       {/* The collapse control lives in the footer so it doesn't move when the

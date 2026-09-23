@@ -87,6 +87,13 @@ export interface SharedSlice {
   deletePlayer: (id: number) => Promise<void>
   setEntityAudience: (entityType: VisibilityEntityType, entityId: number, grantees: Grantee[]) => Promise<void>
 
+  // World map party trail — whether the route line draws on the world map.
+  // Shared rather than pane state because the toggle now lives in the sidebar
+  // (always mounted) while the map that draws it lives in the campaign hub;
+  // local state on either side could drift out of sync with the other.
+  partyTrailVisible: boolean
+  setPartyTrailVisible: (v: boolean) => void
+
   // Soundboard — the widget persists across the campaign, not per pane.
   soundboardOpen: boolean
   setSoundboardOpen: (v: boolean) => void
@@ -152,8 +159,8 @@ export interface SharedSlice {
   reorderPins: (next: Location[]) => void
 
   // Display names for locations whose label lives outside the campaign caches —
-  // a relation web, a DM notes page. Without these, two relation tabs both read
-  // "Relations" and are indistinguishable.
+  // a web, a DM notes page. Without these, two web tabs both read "Webs" and
+  // are indistinguishable.
   //
   // Filled authoritatively on campaign select, then kept current by the pages
   // themselves: they already hold these lists, so they publish on change rather
@@ -489,6 +496,11 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
     const grants = await window.api.getVisibilityGrants(currentCampaign.id)
     set({ grants })
   },
+
+  // ── World map party trail ───────────────────────────────────────────────────
+
+  partyTrailVisible: false,
+  setPartyTrailVisible: (partyTrailVisible) => set({ partyTrailVisible }),
 
   // ── Soundboard ──────────────────────────────────────────────────────────────
 

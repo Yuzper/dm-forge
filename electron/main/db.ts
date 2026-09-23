@@ -15,7 +15,6 @@ export function initDatabase() {
   const dbPath = path.join(userDataPath, 'dmforge.db')
   const imagesPath = path.join(userDataPath, 'images')
   if (!fs.existsSync(imagesPath)) fs.mkdirSync(imagesPath, { recursive: true })
-  syncCreatureImages(imagesPath)
   const soundsPath = path.join(userDataPath, 'sounds')
   if (!fs.existsSync(soundsPath)) fs.mkdirSync(soundsPath, { recursive: true })
 
@@ -312,6 +311,14 @@ export function initDatabase() {
       seeded_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Bundled creature portraits already copied into userData/images. Makes the
+    -- copy idempotent and lets a deleted default portrait stay deleted, while a
+    -- newly shipped one still appears on the next launch.
+    CREATE TABLE IF NOT EXISTS creature_images_seeded (
+      file      TEXT PRIMARY KEY,
+      seeded_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS clocks (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
@@ -483,6 +490,13 @@ export function initDatabase() {
   if (!campaignCols.some(c => c.name === 'player_site_path')) {
     db.exec(`ALTER TABLE campaigns ADD COLUMN player_site_path TEXT`)
   }
+  // Remote the player site pushes to. Stored so the DM sets it once in the app
+  // rather than running git by hand; the app owns clone/init/remote/commit/push
+  // from here on. Creating the repo and switching Pages on stay manual — neither
+  // is a git operation, and doing them would mean holding an API token.
+  if (!campaignCols.some(c => c.name === 'player_site_repo')) {
+    db.exec(`ALTER TABLE campaigns ADD COLUMN player_site_repo TEXT`)
+  }
   // Calendar definition (JSON: unitName, spans[], campaign start date). NULL
   // falls back to a single 365-day span anchored to timeline_base_year.
   if (!campaignCols.some(c => c.name === 'timeline_calendar')) {
@@ -590,6 +604,10 @@ export function initDatabase() {
   if (!webCols.some(c => c.name === 'template')) {
     db.exec(`ALTER TABLE relation_webs ADD COLUMN template TEXT NOT NULL DEFAULT 'custom'`)
   }
+  // Retired templates that only differed by suggested edge labels fold into the
+  // freeform network ('custom') and the left→right 'flow'. Idempotent.
+  db.exec(`UPDATE relation_webs SET template = 'custom' WHERE template IN ('faction_web', 'social_web', 'trade_network')`)
+  db.exec(`UPDATE relation_webs SET template = 'flow'   WHERE template IN ('quest_chain', 'lore_causality')`)
   if (!webCols.some(c => c.name === 'ranks')) {
     db.exec(`ALTER TABLE relation_webs ADD COLUMN ranks TEXT NOT NULL DEFAULT '[]'`)
   }
@@ -738,6 +756,9 @@ export function initDatabase() {
 
   // Bundled starter sounds land in the central library (idempotent, per ref).
   seedSoundLibrary()
+
+  // Bundled creature portraits land in userData/images (idempotent, per file).
+  syncCreatureImages(imagesPath)
 
   return { userDataPath, imagesPath }
 }

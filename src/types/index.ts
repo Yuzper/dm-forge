@@ -15,6 +15,8 @@ export interface Campaign {
   timeline_calendar?: string | null
   // Folder the player site publishes into, remembered between publishes.
   player_site_path?: string | null
+  // Git remote that folder pushes to, set once in the Players modal.
+  player_site_repo?: string | null
 }
 
 export interface Session {
@@ -810,7 +812,7 @@ export interface ElectronAPI {
   getArticleRelations:    (articleId: number, campaignId: number) => Promise<any[]>
   /** Webs whose own article_id points at this article (its hierarchy webs). */
   listRelationWebsForArticle: (articleId: number) => Promise<any[]>
-  /** Webs this article appears in as a node — what "show in relations" offers. */
+  /** Webs this article appears in as a node — what "Show in web" offers. */
   listRelationWebsForMember:  (articleId: number) => Promise<{ id: number; name: string; template: string }[]>
   getRelationBridges:     (webId: number) => Promise<{
     node_id: number; web_id: number; web_name: string; web_template: string; target_node_id: number
@@ -866,6 +868,7 @@ export interface ElectronAPI {
   choosePlayerSiteFolder: (campaignId: number) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string; git?: GitSiteStatus }>
   playerSiteGitStatus:   (campaignId: number) => Promise<GitSiteStatus>
   pushPlayerSite:        (campaignId: number) => Promise<PushResult>
+  connectPlayerSiteRepo: (campaignId: number, url: string) => Promise<ConnectRepoResult>
 
   // Native context menus — see src/hooks/useContextMenu.ts for the caller side.
   popupMenu:             (template: MenuTemplateItem[]) => Promise<string | null>
@@ -907,6 +910,16 @@ export interface GitSiteStatus {
   pendingChanges?: number    // uncommitted files under the published folder
   ahead?: number             // commits not yet pushed
   hasUpstream?: boolean
+}
+
+// Result of pointing the publish folder at a remote. `action` describes what
+// was actually done (cloned / adopted / re-pointed) so the UI can say it.
+export interface ConnectRepoResult {
+  success: boolean
+  action?: string
+  cleared?: boolean
+  error?: string
+  git?: GitSiteStatus
 }
 
 export interface PushResult {
