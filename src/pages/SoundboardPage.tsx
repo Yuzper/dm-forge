@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { useStore } from '../store/store'
 import {
   Music2, Plus, Trash2, Pencil, Check, X, FolderOpen,
-  Volume2, Repeat, Link2, Play, Square, Search, Library, ListPlus, GripVertical,
+  Volume2, Repeat, Link2, Play, Square, Search, Library, ListPlus, GripVertical, Radio,
 } from 'lucide-react'
 import type { SoundBoard, Sound, SoundCategory, SoundLibraryEntry, Session } from '../types'
 import { useConfirmDelete } from '../hooks/useConfirmDelete'
@@ -1174,6 +1174,7 @@ export default function SoundboardPage() {
   const {
     currentCampaign, setView, setCampaignSubView, setHintContext,
     soundBoards: boards, loadSoundBoards, createSoundBoard,
+    soundboardOpen, setSoundboardOpen, setSoundboardMinimized,
   } = useStore()
   useEffect(() => { setHintContext('soundboard'); return () => setHintContext(null) }, [setHintContext])
 
@@ -1223,13 +1224,25 @@ export default function SoundboardPage() {
           accent={accent()}
           onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
           actions={
-            <button
-              onClick={() => { setCreating(true); setNewBoardName('') }}
-              className="btn btn-primary btn-sm"
-              disabled={creating}
-            >
-              <Plus size={13} /> New Board
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {/* The player otherwise only appears when a session opens. It
+                  arrives collapsed, the same as it does there. */}
+              <button
+                onClick={() => { setSoundboardMinimized(true); setSoundboardOpen(true) }}
+                className="btn btn-sm"
+                disabled={soundboardOpen}
+                title={soundboardOpen ? 'The player is already on screen' : 'Bring up the soundboard player'}
+              >
+                <Radio size={13} /> Show Player
+              </button>
+              <button
+                onClick={() => { setCreating(true); setNewBoardName('') }}
+                className="btn btn-primary btn-sm"
+                disabled={creating}
+              >
+                <Plus size={13} /> New Board
+              </button>
+            </div>
           }
         />
       </div>

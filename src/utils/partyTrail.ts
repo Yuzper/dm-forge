@@ -11,7 +11,7 @@
 // the route really did go back there.
 //
 // Nothing here writes anything. A campaign that never links pins to sessions
-// simply has an empty trail, and the hub's party strip stays hidden.
+// simply has an empty trail, and the sidebar's party card stays hidden.
 
 import type { POI, Session } from '../types'
 import { parseHubLinks } from './hubLinks'

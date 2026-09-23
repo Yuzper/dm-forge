@@ -24,16 +24,14 @@ export default function SoundboardWidget() {
     view, currentCampaign, currentSession, soundboardMinimized,
     setSoundboardMinimized, setSoundboardOpen,
     soundBoards: boards, loadSoundBoards, soundsVersion, bumpSoundsVersion,
-    soundBoardRequest,
   } = useStore()
   const showMenu = useContextMenu()
 
-  // Session-aware open state: expand while viewing a session, auto-minimise (but
-  // keep playing) when you navigate elsewhere in the campaign. Keyed on `view`
-  // changes only, so a manual minimise/expand within a view is preserved, and
-  // returning to a session re-expands it.
+  // Collapse to the pill (but keep playing) on every change of view, sessions
+  // included — you expand it when you want it. Keyed on `view` changes only, so
+  // a manual minimise/expand within a view is preserved.
   useEffect(() => {
-    setSoundboardMinimized(view !== 'session')
+    setSoundboardMinimized(true)
   }, [view, setSoundboardMinimized])
 
   const [activeBoardId, setActiveBoardId] = useState<number>(LIBRARY_BOARD_ID)
@@ -114,21 +112,6 @@ export default function SoundboardWidget() {
       setActiveBoardId(linked)
     }
   }, [currentSession?.id, currentSession?.soundboard_id, boards])
-
-  // Another surface asked for a board (the hub's ambience panel). Same shape as
-  // the session link above, but keyed on the nonce so repeat picks still apply.
-  const appliedRequestRef = useRef<number | null>(null)
-  useEffect(() => {
-    if (!soundBoardRequest) return
-    if (appliedRequestRef.current === soundBoardRequest.nonce) return
-    if (soundBoardRequest.boardId !== LIBRARY_BOARD_ID && !boards.some(b => b.id === soundBoardRequest.boardId)) return
-    appliedRequestRef.current = soundBoardRequest.nonce
-    setActiveBoardId(soundBoardRequest.boardId)
-    // This effect is declared after the auto-minimise one above, so it runs
-    // second on mount and an explicit request wins over "minimise outside a
-    // session" — asking for a board and getting a collapsed pill is useless.
-    setSoundboardMinimized(false)
-  }, [soundBoardRequest, boards, setSoundboardMinimized])
 
   // A board deleted elsewhere leaves the widget on the library rather than empty
   useEffect(() => {

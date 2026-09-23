@@ -111,9 +111,9 @@ export const HINTS: Record<string, Hint> = {
     title: 'Getting around the timeline',
     items: [
       <>Hit <strong>Add event</strong> (top right) to create an event and place it on a day.</>,
-      <>Click a year or era bin to zoom into it; click a stacked badge to pick from clustered items.</>,
-      <>Give an article an in-world date and it shows up here automatically.</>,
-      <>Use the zoom tabs, <strong>Filter</strong>, and <strong>Settings</strong> (era bands &amp; lifespans) to shape the view.</>,
+      <>Give an article an in-world date and it shows up here automatically: one lane per article, people on the left, places and events on the right.</>,
+      <>Zoom with the <strong>− / +</strong> control or <strong>Ctrl + scroll</strong>; long empty stretches fold away so both ends stay readable.</>,
+      <>Hover a shield for dates and a summary; <strong>Filter</strong> and <strong>Calendar</strong> (eras colour the spine) shape the view.</>,
     ],
   },
 

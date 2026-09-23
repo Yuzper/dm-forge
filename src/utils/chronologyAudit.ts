@@ -118,30 +118,6 @@ export function auditChronology(
       if (f.role === 'end') { end = d; endLabel = f.label.toLowerCase() }
     }
 
-    // Events carry their date on In_World_Date rather than a typed field.
-    if (a.article_type === 'event') {
-      const raw = tracks.In_World_Date
-      if (filled(raw)) {
-        anyWritten = true
-        const d = parse(raw)
-        if (!d) {
-          issues.push({
-            key: `unreadable-${a.id}-In_World_Date`,
-            kind: 'unreadable', severity: 'warn',
-            title: a.title, detail: "couldn't read this date",
-            raw, articleId: a.id, articleType: a.article_type,
-          })
-        }
-      } else {
-        issues.push({
-          key: `undated-${a.id}`,
-          kind: 'undated', severity: 'info',
-          title: a.title, detail: 'no date set',
-          articleId: a.id, articleType: a.article_type,
-        })
-      }
-    }
-
     const legacyRaw = tracks.Timeline_Date
     if (filled(legacyRaw)) {
       anyWritten = true
@@ -184,7 +160,7 @@ export function auditChronology(
     }
 
     // Only nag about types that actually have somewhere to put a date.
-    if (!anyWritten && fields.length > 0 && a.article_type !== 'event') {
+    if (!anyWritten && fields.length > 0) {
       issues.push({
         key: `undated-${a.id}`,
         kind: 'undated', severity: 'info',

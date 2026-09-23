@@ -1,21 +1,11 @@
 // path: src/utils/timelineGeometry.ts
-// Pure coordinate math: the campaign calendar (shared by every timeline view) and
-// the axis geometry, which now only the InWorldDatePicker's mini timeline uses.
+// The campaign calendar — days <-> calendar dates, shared by every timeline view
+// and the date picker — plus the item types those views pass around. Screen
+// geometry for the vertical timeline lives in utils/chronicleLayout.
 
 export const DEFAULT_BASE_YEAR = 1507
 
-export type ZoomLevel = 'full' | 'decade' | 'year' | 'day'
-
-export const ZOOM_LABEL: Record<ZoomLevel, string> = {
-  full: 'Full', decade: '10yr', year: '1yr', day: 'Day',
-}
-export const ZOOM_BIN: Record<ZoomLevel, number> = {
-  full: 50, decade: 10, year: 1, day: 1,
-}
-export const ZOOM_ORDER: ZoomLevel[] = ['full', 'decade', 'year', 'day']
-export const YEAR_LENGTH = 365
-
-export const isYearMode = (z: ZoomLevel) => z !== 'day'
+const YEAR_LENGTH = 365
 
 // ── Campaign calendar ──────────────────────────────────────────────────────────
 // A year is divided into "spans" — the user decides what one represents
@@ -101,87 +91,18 @@ export function formatCalendarDay(day: number, cal: CampaignCalendar): string {
   return `${d.dayOfSpan} ${spanLabel(cal, d.span)} ${d.year}`
 }
 
-// Span boundaries within [minDay, maxDay] — for day-mode calendar markers.
-export function spanStartsBetween(minDay: number, maxDay: number, cal: CampaignCalendar): { day: number; span: number; year: number }[] {
-  const out: { day: number; span: number; year: number }[] = []
-  const first = dayToCalendarDate(minDay, cal)
-  let day = minDay - (first.dayOfSpan - 1)
-  let span = first.span, year = first.year
-  let guard = 0
-  while (day <= maxDay && guard++ < 2000) {
-    if (day >= minDay) out.push({ day, span, year })
-    day += cal.spans[span].days
-    span++
-    if (span >= cal.spans.length) { span = 0; year++ }
+/**
+ * The campaign's present: the end of its latest dated session, else campaign
+ * day 1. What "now" means for bars that run to the present and for ages.
+ */
+export function campaignPresentDay(sessions: { in_world_day?: number | null; in_world_day_end?: number | null }[]): number {
+  let latest: number | null = null
+  for (const s of sessions) {
+    if (!s.in_world_day) continue
+    const d = s.in_world_day_end ?? s.in_world_day
+    if (latest == null || d > latest) latest = d
   }
-  return out
-}
-
-export const dayToWorldYear = (day: number, cal: CampaignCalendar) =>
-  cal.start.year + (day - 1 + startDayOfYear(cal) - 1) / yearLength(cal)
-export const worldYearToDay = (wy: number, cal: CampaignCalendar) =>
-  Math.round((wy - cal.start.year) * yearLength(cal)) + 1 - (startDayOfYear(cal) - 1)
-
-// ── Bin chips ──────────────────────────────────────────────────────────────────
-
-export interface BinItem {
-  title: string
-  kind: 'session' | 'event' | 'death'
-}
-
-export interface BinChip {
-  startYear: number
-  endYear: number
-  syCount: number
-  evCount: number
-  items: BinItem[]
-  zone: 'pre' | 'campaign'
-}
-
-export function computeBins(
-  zoom: ZoomLevel,
-  cal: CampaignCalendar,
-  sessions: { in_world_day?: number | null; name?: string; session_number?: number; session_sub?: string | null }[],
-  events: { day: number; title?: string; kind?: string }[],
-): BinChip[] {
-  if (zoom === 'day') return []
-  const binSize = ZOOM_BIN[zoom]
-
-  const allItems = [
-    ...sessions
-      .filter(s => s.in_world_day != null)
-      .map(s => ({
-        wy: dayToWorldYear(s.in_world_day!, cal),
-        title: s.name ? `S${s.session_number}${s.session_sub ?? ''} ${s.name}` : `Session ${s.session_number}`,
-        kind: 'session' as const,
-      })),
-    ...events.map(e => ({
-      wy: dayToWorldYear(e.day, cal),
-      title: e.title ?? 'Untitled',
-      kind: (e.kind ?? 'event') as 'event' | 'death',
-    })),
-  ]
-
-  if (!allItems.length) return []
-
-  const minBin = Math.floor(Math.min(...allItems.map(i => i.wy)) / binSize) * binSize
-  const maxBin = Math.ceil(Math.max(...allItems.map(i => i.wy)) / binSize) * binSize
-
-  const chips: BinChip[] = []
-  for (let by = minBin; by < maxBin; by += binSize) {
-    const end = by + binSize
-    const binItems = allItems.filter(i => i.wy >= by && i.wy < end)
-    if (!binItems.length) continue
-    chips.push({
-      startYear: by,
-      endYear: end,
-      syCount: binItems.filter(i => i.kind === 'session').length,
-      evCount: binItems.filter(i => i.kind !== 'session').length,
-      items: binItems.map(i => ({ title: i.title, kind: i.kind })),
-      zone: by + binSize <= cal.start.year ? 'pre' : 'campaign',
-    })
-  }
-  return chips
+  return latest ?? 1
 }
 
 // ── Shared item types ────────────────────────────────────────────────────────
@@ -205,7 +126,7 @@ export interface ClusterItem {
   in_world_day_end?: number | null
 }
 
-// Named historical period rendered as a background band on the timeline.
+// Named historical period; colours the timeline's spine and gets a title plate.
 export interface Era {
   id: string
   name: string
@@ -213,53 +134,3 @@ export interface Era {
   endYear: number
   color: string
 }
-
-// ── Axis geometry ──────────────────────────────────────────────────────────────
-
-export interface AxisGeo {
-  dx: (day: number) => number
-  xToDay: (x: number) => number
-  worldYearToX: (wy: number) => number
-  canvasWidth: (padR: number, maxDay: number) => number
-  campaignOffX: number   // px of log-compressed pre-campaign zone at left
-  pxPerYear: number
-}
-
-// px per world year in campaign zone, per zoom level
-const PICK_PPY: Record<ZoomLevel, number> = { full: 14, decade: 22, year: 90, day: 0 }
-
-function buildAxisGeo(
-  zoom: ZoomLevel,
-  padL: number, minDay: number, pxPerDay: number, cal: CampaignCalendar,
-  campaignOffX: number, logK: number, pxPerYearMap: Record<ZoomLevel, number>,
-): AxisGeo {
-  const pxPerYear = pxPerYearMap[zoom]
-  const baseYear = cal.start.year
-
-  const worldYearToX = (wy: number): number => wy >= baseYear
-    ? padL + campaignOffX + (wy - baseYear) * pxPerYear
-    : padL + campaignOffX - logK * Math.log(1 + (baseYear - wy) / 2)
-
-  const dx = isYearMode(zoom)
-    ? (day: number) => worldYearToX(dayToWorldYear(day, cal))
-    : (day: number) => padL + (day - minDay) * pxPerDay
-
-  const xToDay = isYearMode(zoom)
-    ? (x: number): number => {
-        const wy = x >= padL + campaignOffX
-          ? baseYear + (x - padL - campaignOffX) / pxPerYear
-          : baseYear - 2 * (Math.exp((padL + campaignOffX - x) / logK) - 1)
-        return worldYearToDay(Math.round(wy), cal)
-      }
-    : (x: number) => Math.round((x - padL) / pxPerDay) + minDay
-
-  const canvasWidth = (padR: number, maxDay: number): number => isYearMode(zoom)
-    ? padL + campaignOffX + (Math.ceil(dayToWorldYear(maxDay, cal)) + 1 - baseYear) * pxPerYear + padR
-    : padL + (maxDay - minDay) * pxPerDay + padR
-
-  return { dx, xToDay, worldYearToX, canvasWidth, campaignOffX, pxPerYear }
-}
-
-export const makePickerAxisGeo = (
-  zoom: ZoomLevel, padL: number, minDay: number, pxPerDay: number, cal: CampaignCalendar,
-): AxisGeo => buildAxisGeo(zoom, padL, minDay, pxPerDay, cal, 170, 55, PICK_PPY)

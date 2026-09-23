@@ -439,6 +439,11 @@ export function initDatabase() {
   if (!poiCols.some(c => c.name === 'layer_id')) {
     db.exec(`ALTER TABLE pois ADD COLUMN layer_id INTEGER REFERENCES map_layers(id) ON DELETE CASCADE`)
   }
+  // Hand-set order for the map's Contents list. Every existing pin starts at 0,
+  // which the list tie-breaks alphabetically — so nothing moves until you drag.
+  if (!poiCols.some(c => c.name === 'sort_order')) {
+    db.exec(`ALTER TABLE pois ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
+  }
 
   const creatureCols = db.pragma('table_info(combat_creatures)') as { name: string }[]
   if (!creatureCols.some(c => c.name === 'loot_result')) {

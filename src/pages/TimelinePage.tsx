@@ -1,26 +1,20 @@
 // path: src/pages/TimelinePage.tsx
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useStore } from '../store/store'
-import { Clock, Plus, Filter, Settings, X, ListTree, AlertTriangle, GripVertical } from 'lucide-react'
-import { parseInWorldDate, InWorldDatePicker, serializeInWorldDate } from '../components/InWorldDatePicker'
+import { Clock, Plus, Filter, Settings, X, AlertTriangle, GripVertical } from 'lucide-react'
+import { parseInWorldDate, InWorldDatePicker } from '../components/InWorldDatePicker'
 import type { ArticleType, Session, Article } from '../types'
-import { buildArticleTimeline, type Lifespan } from '../constants/timelineDates'
 import { ArticleEditor } from '../components/wiki/ArticleEditor'
 import {
-  dayToCalendarDate,
   type CampaignCalendar, getCampaignCalendar,
   formatCalendarDay,
-  type TimelineEventItem, type ClusterItem, type SessionRenderItem, type Era,
+  type ClusterItem, type SessionRenderItem, type Era,
 } from '../utils/timelineGeometry'
-import {
-  TimelineBreadcrumb, TimelineDecadeView, TimelineYearView, TimelineSpanView,
-  type DrilldownLevel, type SpanOrientation,
-} from '../components/TimelineDrilldown'
-import { buildDecadeBands, buildSpanBuckets } from '../utils/timelineDrilldown'
 
-import { TimelineOutline } from '../components/TimelineOutline'
+import { TimelineChronicle } from '../components/TimelineChronicle'
 import { ChronologyPanel } from '../components/ChronologyPanel'
-import { auditChronology, type AuditArticle, type ChronologyIssue } from '../utils/chronologyAudit'
+import { auditChronology, type ChronologyIssue } from '../utils/chronologyAudit'
+import { useTimelineData, parseEras } from '../hooks/useTimelineData'
 
 import { SECTION_ACCENTS } from '../constants/sections'
 import { TimelineFilterPanel as FilterPanel, DEFAULT_TIMELINE_FILTERS as DEFAULT_FILTERS, type TimelineFilters } from '../components/TimelineFilterPanel'
@@ -43,37 +37,13 @@ function saveFilters(id: number, f: TimelineFilters) {
   localStorage.setItem(`timeline-filters-${id}`, JSON.stringify(f))
 }
 
-function parseEras(raw: any): Era[] {
-  try { const a = JSON.parse(raw ?? '[]'); return Array.isArray(a) ? a : [] } catch { return [] }
-}
-
-// Where the drill-down was left, per campaign. This is now only the *seed for a
-// new timeline tab* — an existing tab's position lives on its own Location, so
-// two timeline tabs can sit on different years. Before that, both tabs read this
-// one key at mount and silently converged on whichever moved last.
-interface NavState { level: DrilldownLevel; orient: SpanOrientation }
-
-function loadNav(id: number): NavState {
-  try {
-    const s = localStorage.getItem(`timeline-nav-${id}`)
-    if (s) {
-      const n = JSON.parse(s)
-      if (n?.level?.view) return { level: n.level, orient: n.orient === 'horizontal' ? 'horizontal' : 'vertical' }
-    }
-  } catch {}
-  return { level: { view: 'decades' }, orient: 'vertical' }
-}
-function saveNav(id: number, n: NavState) {
-  localStorage.setItem(`timeline-nav-${id}`, JSON.stringify(n))
-}
-
 // Filter panel shared with the hub embed — see components/TimelineFilterPanel.
 
 // ── Timeline Settings Modal (calendar + era bands) ───────────────────────────────
 
-function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose }: {
-  calendar: CampaignCalendar; eras: Era[]; showLifespans: boolean
-  onSave: (cal: CampaignCalendar, eras: Era[], showLifespans: boolean) => void; onClose: () => void
+function TimelineSettingsModal({ calendar, eras, onSave, onClose }: {
+  calendar: CampaignCalendar; eras: Era[]
+  onSave: (cal: CampaignCalendar, eras: Era[]) => void; onClose: () => void
 }) {
   const [unitName, setUnitName] = useState(calendar.unitName)
   const [spans, setSpans] = useState(calendar.spans.map(s => ({ ...s })))
@@ -81,7 +51,6 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
   const [startSpan, setStartSpan] = useState(calendar.start.span)
   const [startDay, setStartDay] = useState(calendar.start.day)
   const [list, setList] = useState<Era[]>(eras)
-  const [lifespansOn, setLifespansOn] = useState(showLifespans)
 
   const totalDays = spans.reduce((s, sp) => s + (sp.days || 0), 0)
   const unit = unitName.trim() || 'Month'
@@ -200,7 +169,7 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
             <label className="input-label" style={{ margin: 0 }}>Era bands</label>
             <button className="btn btn-sm" onClick={addEra}><Plus size={12} /> Add era</button>
           </div>
-          {list.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0 8px' }}>No eras yet. Add named periods (e.g. "The Long Winter") to show as background bands.</div>}
+          {list.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0 8px' }}>No eras yet. Add named periods (e.g. "The Long Winter") to colour the timeline's spine.</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}
             {...eraDnd.tailProps(list.length)}>
             {list.map((era, i) => {
@@ -232,15 +201,9 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
           {list.some(e => e.endYear <= e.startYear) && <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 6 }}>Eras with end ≤ start year will be skipped.</div>}
         </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 18, cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)' }}>
-          <input type="checkbox" checked={lifespansOn} onChange={e => setLifespansOn(e.target.checked)} style={{ cursor: 'pointer' }} />
-          Show lifespan bands
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>— faint bands between start/end dates (Founded→Destroyed, Born→Died…)</span>
-        </label>
-
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onSave(buildCalendar(), list.filter(e => e.endYear > e.startYear), lifespansOn)}>Save</button>
+          <button className="btn btn-primary" onClick={() => onSave(buildCalendar(), list.filter(e => e.endYear > e.startYear))}>Save</button>
         </div>
     </Modal>
   )
@@ -248,10 +211,10 @@ function TimelineSettingsModal({ calendar, eras, showLifespans, onSave, onClose 
 
 // ── Create Event Modal ─────────────────────────────────────────────────────────
 
-function CreateEventModal({ onClose, onCreated, baseYear, initialDateRaw }: { onClose: () => void; onCreated: () => void; baseYear: number; initialDateRaw?: string }) {
+function CreateEventModal({ onClose, onCreated, baseYear }: { onClose: () => void; onCreated: () => void; baseYear: number }) {
   const { createArticle } = useStore()
   const [title, setTitle] = useState('')
-  const [dateRaw, setDateRaw] = useState(initialDateRaw ?? '')
+  const [dateRaw, setDateRaw] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -385,46 +348,19 @@ export default function TimelinePage() {
   const filterRef = useRef<HTMLDivElement>(null)
   const issuesRef = useRef<HTMLDivElement>(null)
 
-  const [items, setItems] = useState<TimelineEventItem[]>([])
-  const [lifespans, setLifespans] = useState<Lifespan[]>([])
-  const [undatedEvents, setUndatedEvents] = useState<{ id: number; title: string }[]>([])
+  const { items, lifespans, bounds, standing, undatedEvents, rawArticles, articleInfo, reload: loadItems } = useTimelineData(currentCampaign?.id)
   const [filters, setFilters] = useState<TimelineFilters>(() => currentCampaign ? loadFilters(currentCampaign.id) : DEFAULT_FILTERS)
   const [showFilter, setShowFilter] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [cal, setCal] = useState<CampaignCalendar>(() => getCampaignCalendar(currentCampaign))
   const [eras, setEras] = useState<Era[]>(() => parseEras((currentCampaign as any)?.timeline_eras))
-  const [showLifespans, setShowLifespans] = useState<boolean>(!!(currentCampaign as any)?.timeline_show_lifespans)
   const [embeddedArticle, setEmbeddedArticle] = useState<Article | null>(null)
-  const [createDateRaw, setCreateDateRaw] = useState('')
-  const [mode, setMode] = useState<'axis' | 'outline'>('axis')
-  const [rawArticles, setRawArticles] = useState<AuditArticle[]>([])
+  const [chronicleFocus, setChronicleFocus] = useState<{ day: number; nonce: number } | null>(null)
   const [showIssues, setShowIssues] = useState(false)
-  // This tab's own drill position, falling back to the campaign's last-known one
-  // when the tab has none yet (a freshly opened timeline tab).
-  const patchLocation = useStore(s => s.patchLocation)
-  const [level, setLevel] = useState<DrilldownLevel>(() => {
-    const loc = useStore.getState().activeLocation()
-    if (loc?.type === 'timeline' && loc.level) return loc.level
-    return currentCampaign ? loadNav(currentCampaign.id).level : { view: 'decades' }
-  })
-  const [orient, setOrient] = useState<SpanOrientation>(() => {
-    const loc = useStore.getState().activeLocation()
-    if (loc?.type === 'timeline' && loc.orient) return loc.orient
-    return currentCampaign ? loadNav(currentCampaign.id).orient : 'vertical'
-  })
-
-  useEffect(() => {
-    // Onto the tab (so each tab keeps its own place) and onto the campaign key
-    // (so the *next* new timeline tab opens where you last were).
-    patchLocation('timeline', { level, orient })
-    if (currentCampaign) saveNav(currentCampaign.id, { level, orient })
-  }, [currentCampaign?.id, level, orient, patchLocation])
-
   useEffect(() => {
     setCal(getCampaignCalendar(currentCampaign))
     setEras(parseEras((currentCampaign as any)?.timeline_eras))
-    setShowLifespans(!!(currentCampaign as any)?.timeline_show_lifespans)
   }, [currentCampaign?.id])
 
   useEffect(() => {
@@ -442,51 +378,15 @@ export default function TimelinePage() {
   useEffect(() => {
     if (!currentCampaign) return
     setFilters(loadFilters(currentCampaign.id))
-    // Deliberately does NOT reset level/orient from the campaign key any more.
-    // That ran on mount as well as on a campaign change, so it overwrote this
-    // tab's own position with whatever another timeline tab last saved.
-    // Switching campaigns rebuilds the tab set and remounts this page anyway.
   }, [currentCampaign?.id])
 
   const handleFiltersChange = (f: TimelineFilters) => {
     setFilters(f); if (currentCampaign) saveFilters(currentCampaign.id, f)
   }
 
-  const loadItems = useCallback(async () => {
-    if (!currentCampaign) return
-    const list = await window.api.getArticlesList({ campaignId: currentCampaign.id })
-    const result: TimelineEventItem[] = []
-    const undated: { id: number; title: string }[] = []
-    const spans: Lifespan[] = []
-    list.forEach((a: any) => {
-      try {
-        const t = JSON.parse(a.tracks ?? '{}')
-        if (a.article_type === 'event') {
-          const d = parseInWorldDate(t.In_World_Date)
-          if (d) result.push({ id: a.id, title: a.title, day: d.day, year: d.year, kind: 'event', article_type: a.article_type, color: '#e05555' })
-          else undated.push({ id: a.id, title: a.title })
-        }
-        if (a.article_type === 'character' || a.article_type === 'playerCharacter') {
-          const d = parseInWorldDate(t.Death_Date)
-          if (d) result.push({ id: a.id, title: a.title, day: d.day, year: d.year, kind: 'death', article_type: a.article_type, color: '#9b7de8', articleId: a.id })
-        }
-        // Semantic dates (founded/destroyed/born…), freeform milestones, and any
-        // legacy Timeline_Date → point markers + an optional lifespan.
-        const { markers, lifespan } = buildArticleTimeline(a, t, parseInWorldDate)
-        result.push(...markers)
-        if (lifespan) spans.push(lifespan)
-      } catch {}
-    })
-    setItems(result); setUndatedEvents(undated); setLifespans(spans)
-    // Kept raw so the chronology audit can look at dates the parser rejected —
-    // those never make it into `items`.
-    setRawArticles(list.map((a: any) => ({ id: a.id, title: a.title, article_type: a.article_type, tracks: a.tracks ?? null })))
-  }, [currentCampaign?.id])
-
-  useEffect(() => { loadItems() }, [loadItems])
-
-  const arcMap = Object.fromEntries(arcs.map(a => [a.id, a]))
-  const datedSessions = sessions.filter(s => s.in_world_day)
+  // Memoised: the timeline re-lays itself out whenever these change identity.
+  const arcMap = useMemo(() => Object.fromEntries(arcs.map(a => [a.id, a])), [arcs])
+  const datedSessions = useMemo(() => sessions.filter(s => s.in_world_day), [sessions])
   const undatedSessions = sessions.filter(s => !s.in_world_day).map(s => ({ ...s, _arcColor: arcMap[s.arc_id ?? 0]?.color ?? '#8a8a8a' }))
 
   const issues = useMemo(() => auditChronology(
@@ -500,68 +400,10 @@ export default function TimelinePage() {
   ), [rawArticles, sessions, cal])
   const errorCount = issues.filter(i => i.severity === 'error').length
 
-  const sessionItems: SessionRenderItem[] = datedSessions.map(s => ({
+  const sessionItems = useMemo<SessionRenderItem[]>(() => datedSessions.map(s => ({
     id: s.id, name: s.name, session_number: s.session_number, session_sub: s.session_sub,
     arc_id: s.arc_id, in_world_day: s.in_world_day!, in_world_day_end: s.in_world_day_end,
-  }))
-
-  // One flat, filter-aware list feeds every level of the drill-down — the views
-  // only ever bucket it, never re-derive it.
-  const clusterItems: ClusterItem[] = useMemo(() => [
-    ...(filters.sessions ? sessionItems.map(s => ({
-      id: s.id, title: s.name, kind: 'session' as const,
-      day: s.in_world_day, color: arcMap[s.arc_id ?? 0]?.color ?? '#8a8a8a',
-      session_number: s.session_number, session_sub: s.session_sub,
-      arc_id: s.arc_id, in_world_day_end: s.in_world_day_end,
-    })) : []),
-    ...(filters.events ? items.filter(i => i.kind === 'event').map(i => ({
-      id: i.id, title: i.title, kind: 'event' as const,
-      day: i.day, color: i.color, article_type: i.article_type,
-    })) : []),
-    ...(filters.deaths ? items.filter(i => i.kind === 'death').map(i => ({
-      id: i.id, title: i.title, kind: 'death' as const,
-      day: i.day, color: i.color, article_type: i.article_type,
-    })) : []),
-    ...(filters.quests ? items.filter(i => i.kind === 'quest').map(i => ({
-      id: i.id, title: i.title, kind: 'quest' as const,
-      day: i.day, color: i.color, article_type: i.article_type,
-    })) : []),
-    ...(filters.articles ? items.filter(i => i.kind === 'article').map(i => ({
-      id: i.id, title: i.title, kind: 'article' as const,
-      day: i.day, color: i.color, article_type: i.article_type,
-    })) : []),
-  ], [filters, items, sessions, arcs])
-
-  const decadeBands = useMemo(() => buildDecadeBands(clusterItems, cal), [clusterItems, cal])
-  const spanBuckets = useMemo(
-    () => level.view === 'year' ? buildSpanBuckets(clusterItems, level.year, cal) : [],
-    [clusterItems, cal, level],
-  )
-
-  // Lifespans are article-derived, not filtered by kind, so they carry their own
-  // toggle from settings rather than a filter row.
-  const lifespanBands = useMemo(
-    () => lifespans.map(l => ({ id: l.id, title: l.title, color: l.color, startDay: l.startDay, endDay: l.endDay })),
-    [lifespans],
-  )
-
-  const stepYear = useCallback((delta: number) => setLevel(l =>
-    l.view === 'year' ? { view: 'year', year: l.year + delta } : l), [])
-
-  const stepSpan = useCallback((delta: number) => setLevel(l => {
-    if (l.view !== 'span') return l
-    let span = l.span + delta, year = l.year
-    if (span < 0) { span = cal.spans.length - 1; year -= 1 }
-    if (span >= cal.spans.length) { span = 0; year += 1 }
-    return { view: 'span', year, span }
-  }), [cal.spans.length])
-
-  // A calendar edit can leave a stored division index past the end of the new
-  // division list, which would read cal.spans[undefined].
-  useEffect(() => {
-    setLevel(l => l.view === 'span' && l.span >= cal.spans.length
-      ? { view: 'year', year: l.year } : l)
-  }, [cal.spans.length])
+  })), [datedSessions])
 
   const handleSessionDateSet = useCallback(async (sessionId: number, startRaw: string, endRaw: string) => {
     const sd = (() => { try { return JSON.parse(startRaw)?.day ?? null } catch { return null } })()
@@ -577,7 +419,7 @@ export default function TimelinePage() {
     loadItems()
   }, [loadItems])
 
-  const handleSaveSettings = useCallback(async (newCal: CampaignCalendar, newEras: Era[], lifespansOn: boolean) => {
+  const handleSaveSettings = useCallback(async (newCal: CampaignCalendar, newEras: Era[]) => {
     if (!currentCampaign) return
     // timeline_base_year mirrors the calendar start year so older code paths
     // (and the fallback calendar) stay consistent.
@@ -585,9 +427,8 @@ export default function TimelinePage() {
       timeline_base_year: newCal.start.year,
       timeline_calendar: JSON.stringify(newCal),
       timeline_eras: JSON.stringify(newEras),
-      timeline_show_lifespans: lifespansOn ? 1 : 0,
     } as any)
-    setCal(newCal); setEras(newEras); setShowLifespans(lifespansOn); setShowSettings(false)
+    setCal(newCal); setEras(newEras); setShowSettings(false)
   }, [currentCampaign, updateCampaign])
 
   const handleOpenSession = useCallback((id: number) => {
@@ -619,26 +460,15 @@ export default function TimelinePage() {
   }, [sessions, drafts, showMenu, menuCtx, navigateToItem])
 
   // Jump from an audit row to the thing it's complaining about: sessions open
-  // their page, articles embed below, and the drill-down navigates to the
-  // division holding the offending day.
+  // their page, articles embed below, and the timeline scrolls to the day.
   const handleSelectIssue = useCallback(async (issue: ChronologyIssue) => {
     setShowIssues(false)
     if (issue.sessionId != null) { handleOpenSession(issue.sessionId); return }
     if (issue.articleId == null) return
-    if (issue.day != null && mode === 'axis') {
-      const d = dayToCalendarDate(issue.day, cal)
-      setLevel({ view: 'span', year: d.year, span: d.span })
-    }
+    if (issue.day != null) setChronicleFocus({ day: issue.day, nonce: Date.now() })
     const article = await window.api.getArticle(issue.articleId)
     if (article) setEmbeddedArticle(article)
-  }, [handleOpenSession, mode, cal])
-
-  // "Add here" from a division opens the create modal already dated to it.
-  const handleAddAt = useCallback((day: number) => {
-    const d = dayToCalendarDate(day, cal)
-    setCreateDateRaw(serializeInWorldDate({ day, year: d.year, label: formatCalendarDay(day, cal) }))
-    setShowCreate(true)
-  }, [cal])
+  }, [handleOpenSession])
 
   const activeFilterCount = Object.values(filters).filter(v => !v).length
 
@@ -660,20 +490,6 @@ export default function TimelinePage() {
             {datedSessions.length} sessions · {items.filter(i => i.kind === 'event').length} events · {items.filter(i => i.kind === 'death').length} deaths
           </>}
           actions={<>
-            {/* Axis / outline mode */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 2, borderRight: '1px solid var(--border)', paddingRight: 10, marginRight: 2 }}>
-              {([['axis', 'Timeline', Clock], ['outline', 'Outline', ListTree]] as const).map(([m, label, Icon]) => (
-                <button key={m} onClick={() => setMode(m)} title={m === 'outline' ? 'Read the same data as a document — includes entries with no date' : 'Axis view'}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 4,
-                    padding: '3px 9px', fontSize: 11, borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-                    border: `1px solid ${mode === m ? 'var(--border-gold)' : 'var(--border)'}`,
-                    background: mode === m ? 'var(--bg-hover)' : 'transparent',
-                    color: mode === m ? 'var(--gold)' : 'var(--text-muted)', fontFamily: 'var(--font-ui)',
-                  }}><Icon size={11} /> {label}</button>
-              ))}
-            </div>
-
             {/* Chronology audit */}
             <div ref={issuesRef} style={{ position: 'relative' }}>
               <button onClick={() => setShowIssues(v => !v)} title="Chronology problems — contradictions, unreadable dates, undated articles"
@@ -695,7 +511,7 @@ export default function TimelinePage() {
               {showFilter && <FilterPanel filters={filters} onChange={handleFiltersChange} onClose={() => setShowFilter(false)} />}
             </div>
 
-            <button onClick={() => { setCreateDateRaw(''); setShowCreate(true) }}
+            <button onClick={() => setShowCreate(true)}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', transition: 'all 120ms' }}
               className="hover-gold-border">
               <Plus size={13} /> Add event
@@ -705,55 +521,24 @@ export default function TimelinePage() {
       </div>
 
 
-      {mode === 'axis' && (<>
-      <TimelineBreadcrumb level={level} cal={cal} onNavigate={setLevel} />
-
-      {level.view === 'decades' && (
-        <TimelineDecadeView
-          bands={decadeBands} eras={eras} showEras={filters.eras}
-          campaignYear={cal.start.year}
-          onPickYear={year => setLevel({ view: 'year', year })}
-        />
-      )}
-
-      {level.view === 'year' && (
-        <TimelineYearView
-          year={level.year} buckets={spanBuckets} cal={cal}
-          eras={eras} showEras={filters.eras}
-          lifespans={lifespanBands} showLifespans={showLifespans}
-          onPickSpan={span => setLevel({ view: 'span', year: level.year, span })}
-          onStepYear={stepYear}
-        />
-      )}
-
-      {level.view === 'span' && (
-        <TimelineSpanView
-          year={level.year} span={level.span} items={clusterItems} cal={cal}
-          lifespans={lifespanBands} showLifespans={showLifespans}
-          orient={orient} onOrientChange={setOrient}
-          onStepSpan={stepSpan} onOpenItem={navigateToItem} onItemMenu={itemMenu} onAddAt={handleAddAt}
-        />
-      )}
-
-      <UnplacedBanner undatedSessions={undatedSessions} undatedEvents={undatedEvents} baseYear={cal.start.year} onSessionDateSet={handleSessionDateSet} onEventDateSet={handleEventDateSet} />
-      </>)}
-
-      {mode === 'outline' && (
-        <TimelineOutline
-          eras={eras} cal={cal} sessions={sessionItems} arcMap={arcMap} items={items}
-          issues={issues} undatedSessions={undatedSessions}
+      {currentCampaign && (<>
+        <TimelineChronicle
+          campaignId={currentCampaign.id}
+          eras={eras} cal={cal} sessions={sessionItems} arcMap={arcMap}
+          items={items} lifespans={lifespans} bounds={bounds} standing={standing} articles={articleInfo}
+          filters={filters} issues={issues} focus={chronicleFocus}
           onOpenSession={handleOpenSession}
           onOpenArticle={async id => {
             const article = await window.api.getArticle(id)
             if (article) setEmbeddedArticle(article)
           }}
-          onSelectIssue={handleSelectIssue}
-          onRowMenu={(entry, e) => itemMenu({
-            id: (entry.sessionId ?? entry.articleId)!,
-            title: entry.title, kind: entry.kind, day: entry.day, color: entry.color,
+          onTrackMenu={(t, e) => itemMenu({
+            id: t.articleId, title: t.title, kind: 'article', day: t.startDay, color: t.color, article_type: t.articleType,
           }, e)}
+          onSessionMenu={(id, e) => itemMenu({ id, title: '', kind: 'session', day: 0, color: '' }, e)}
         />
-      )}
+        <UnplacedBanner undatedSessions={undatedSessions} undatedEvents={undatedEvents} baseYear={cal.start.year} onSessionDateSet={handleSessionDateSet} onEventDateSet={handleEventDateSet} />
+      </>)}
 
       {embeddedArticle && (
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', background: 'var(--bg-elevated)' }}>
@@ -762,8 +547,8 @@ export default function TimelinePage() {
         </div>
       )}
 
-      {showCreate && <CreateEventModal onClose={() => setShowCreate(false)} onCreated={loadItems} baseYear={cal.start.year} initialDateRaw={createDateRaw} />}
-      {showSettings && <TimelineSettingsModal calendar={cal} eras={eras} showLifespans={showLifespans} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />}
+      {showCreate && <CreateEventModal onClose={() => setShowCreate(false)} onCreated={loadItems} baseYear={cal.start.year} />}
+      {showSettings && <TimelineSettingsModal calendar={cal} eras={eras} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />}
     </div>
   )
 }

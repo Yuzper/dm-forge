@@ -1,359 +1,52 @@
 // path: src/components/InWorldDatePicker.tsx
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useStore } from '../store/store'
 import { Calendar, X, Trash2 } from 'lucide-react'
+import type { Campaign } from '../types'
 import {
-  ZoomLevel, ZOOM_LABEL, ZOOM_ORDER,
-  isYearMode, dayToWorldYear, computeBins,
-  makePickerAxisGeo, DEFAULT_BASE_YEAR,
-  type CampaignCalendar, getCampaignCalendar, defaultCalendar,
-  yearLength, startDayOfYear, dayToCalendarDate, calendarDateToDay,
+  DEFAULT_BASE_YEAR,
+  type CampaignCalendar, type SessionRenderItem, getCampaignCalendar, defaultCalendar,
+  dayToCalendarDate, calendarDateToDay,
   formatCalendarDay, isPlainCalendar, spanLabel,
 } from '../utils/timelineGeometry'
+import { TimelineChronicle } from './TimelineChronicle'
+import { useTimelineData, parseEras } from '../hooks/useTimelineData'
 
-export interface InWorldDate {
-  day: number   // 1-based day offset from campaign start
-  year: number  // e.g. 1507
-  label: string // human-readable e.g. "Day 22, Year 1507"
-}
+// Re-exported so the many existing `from '../components/InWorldDatePicker'`
+// imports keep working; the definitions live in utils/inWorldDate.
+import { parseInWorldDate, type InWorldDate } from '../utils/inWorldDate'
+export { parseInWorldDate, type InWorldDate }
 
-export function parseInWorldDate(raw: string): InWorldDate | null {
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw)
-    if (typeof parsed.day === 'number') return parsed
-  } catch {}
-  return null
-}
+// ── Timeline preview ────────────────────────────────────────────────────────
+// The real vertical timeline in its compact picker variant: the same spine,
+// eras, lanes and shields as the Timeline page, so a date is picked against the
+// canon it lands in. Clicking anywhere picks a day, clicking a shield picks its
+// date, and the gold line through the picked day shows everyone's age there.
 
-export function formatInWorldDate(d: InWorldDate): string {
-  return `Day ${d.day}, Year ${d.year}`
-}
-
-export function serializeInWorldDate(d: InWorldDate): string {
-  return JSON.stringify({ ...d, label: formatInWorldDate(d) })
-}
-
-// ── Mini timeline SVG renderer ──────────────────────────────────────────────
-
-interface MiniTimelineProps {
-  campaignId: number
-  selectedDay: number
+function TimelinePreview({ campaign, cal, selectedDay, onPickDay }: {
+  campaign: Campaign
   cal: CampaignCalendar
+  selectedDay: number
   onPickDay: (day: number) => void
-}
-
-function MiniTimeline({ campaignId, selectedDay, cal, onPickDay }: MiniTimelineProps) {
+}) {
   const { sessions, arcs } = useStore()
-  const svgRef = useRef<SVGSVGElement>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const dragging = useRef(false)
-  const [zoom, setZoom] = useState<ZoomLevel>('day')
-  const [hoverBin, setHoverBin] = useState<{ label: string; sx: number; syCount: number; evCount: number; nextZoom: ZoomLevel; centerYear: number } | null>(null)
-  const [events, setEvents] = useState<{ day: number; kind: 'event' | 'death' }[]>([])
-
-  useEffect(() => {
-    if (!campaignId) return
-    Promise.all([
-      window.api.getArticlesList({ campaignId, type: 'event' }),
-      window.api.getArticlesList({ campaignId, type: 'character' }),
-      window.api.getArticlesList({ campaignId, type: 'playerCharacter' }),
-    ]).then(([evList, charList, pcList]: any[][]) => {
-      const evItems = evList.flatMap((a: any) => {
-        try {
-          const t = JSON.parse(a.tracks ?? '{}')
-          const d = parseInWorldDate(t.In_World_Date)
-          return d ? [{ day: d.day, kind: 'event' as const }] : []
-        } catch { return [] }
-      })
-      const deathItems = [...charList, ...pcList].flatMap((a: any) => {
-        try {
-          const t = JSON.parse(a.tracks ?? '{}')
-          const d = parseInWorldDate(t.Death_Date)
-          return d ? [{ day: d.day, kind: 'death' as const }] : []
-        } catch { return [] }
-      })
-      setEvents([...evItems, ...deathItems])
-    })
-  }, [campaignId])
-
-  // ── Layout constants ─────────────────────────────────────────────────────────
-  const PAD_L = 20
-  const PAD_R = 24
-  const H = 60
-  const AXIS_Y = 40
-  const ARC_H = 8
-  const ARC_Y = AXIS_Y - ARC_H - 4
-
-  // ── Geometry (shared utility) ────────────────────────────────────────────────
-  const L = yearLength(cal)
-  const startOff = startDayOfYear(cal) - 1   // days of the start year before campaign day 1
-  const baseYear = cal.start.year
-  const PX_PER_DAY = zoom === 'day' ? 6 : 2
-  const allDays = [...sessions.map(s => (s as any).in_world_day).filter(Boolean), selectedDay || 1, 1]
-  let MIN_DAY = Math.min(...allDays, 1) - 5
-  let MAX_DAY = Math.max(...allDays, L + 10) + 10
-  // Guard against a runaway range: a date far from the campaign — e.g. while
-  // typing a distant year in the Year field — would otherwise span hundreds of
-  // thousands of days, generating that many ticks/bands and freezing the app.
-  // Cap the rendered window (centred on the selection) so the SVG stays bounded.
-  const MAX_SPAN = L * 40 + 400   // ~40 years of context is plenty for a picker
-  if (MAX_DAY - MIN_DAY > MAX_SPAN) {
-    const center = selectedDay || 1
-    MIN_DAY = Math.round(center - MAX_SPAN / 2)
-    MAX_DAY = Math.round(center + MAX_SPAN / 2)
-  }
-  const geo = makePickerAxisGeo(zoom, PAD_L, MIN_DAY, PX_PER_DAY, cal)
-  const { dx, xToDay, worldYearToX } = geo
-  const W_DAY = PAD_L + (MAX_DAY - MIN_DAY) * PX_PER_DAY + PAD_R
-  const W_YEAR = 680
-  const W = isYearMode(zoom) ? W_YEAR : W_DAY
-
-  // ── Scroll to marker on zoom change ─────────────────────────────────────────
-  useEffect(() => {
-    if (!scrollRef.current) return
-    const targetX = selectedDay ? dx(selectedDay) : (isYearMode(zoom) ? PAD_L + geo.campaignOffX : PAD_L + (1 - MIN_DAY) * PX_PER_DAY)
-    scrollRef.current.scrollLeft = targetX - (scrollRef.current.clientWidth / 2)
-  }, [zoom, selectedDay])
-
-  // ── Shared data ──────────────────────────────────────────────────────────────
-  const arcMap = Object.fromEntries(arcs.map(a => [a.id, a]))
-  const arcSpans = arcs.map(arc => {
-    const days = sessions.filter(s => s.arc_id === arc.id).map(s => (s as any).in_world_day ?? 0).filter(d => d > 0)
-    if (!days.length) return null
-    return { arc, start: Math.min(...days), end: Math.max(...days) }
-  }).filter(Boolean) as { arc: typeof arcs[0]; start: number; end: number }[]
-
-  const sessionDots = sessions
-    .filter(s => (s as any).in_world_day)
-    .map(s => ({ day: (s as any).in_world_day as number, color: arcMap[s.arc_id ?? 0]?.color ?? '#555' }))
-
-  // ── Bin chips (pre-campaign context only) ───────────────────────────────────
-  const bins = computeBins(zoom, cal, sessions as any[], events).filter(b => b.zone === 'pre')
-
-  // ── Mouse → day ──────────────────────────────────────────────────────────────
-  const mouseToDay = (e: MouseEvent | React.MouseEvent): number | null => {
-    if (!svgRef.current) return null
-    // svg.getBoundingClientRect() already accounts for the scroll position, so
-    // the click-to-content x is simply clientX minus the svg's left edge.
-    const x = e.clientX - svgRef.current.getBoundingClientRect().left
-    return Math.max(MIN_DAY, Math.min(MAX_DAY, xToDay(x)))
-  }
-
-  const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (dragging.current) return
-    const d = mouseToDay(e); if (d !== null) onPickDay(d)
-  }
-
-  const handleHandleMouseDown = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    e.preventDefault()
-    dragging.current = true
-    document.body.style.userSelect = 'none'   // stop dragging from selecting page text
-    const onMove = (ev: MouseEvent) => { ev.preventDefault(); const d = mouseToDay(ev); if (d !== null) onPickDay(d) }
-    const onUp = () => {
-      dragging.current = false
-      document.body.style.userSelect = ''
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-  }
-
-  const hasMarker = selectedDay !== 0
-  const sx = hasMarker ? dx(selectedDay) : null
-  const markerLabel = isYearMode(zoom) ? `${Math.round(dayToWorldYear(selectedDay, cal))}` : `D${selectedDay}`
-
-  // ── Year-mode campaign year ticks (guard: pxPerYear=0 means no campaign zone) ─
-  const campaignYears = isYearMode(zoom) && geo.pxPerYear > 0 ? (() => {
-    const years: number[] = []
-    for (let wy = baseYear; worldYearToX(wy) < W_YEAR - PAD_R; wy++) years.push(wy)
-    return years
-  })() : []
+  const data = useTimelineData(campaign.id)
+  const eras = useMemo(() => parseEras(campaign.timeline_eras), [campaign.timeline_eras])
+  const arcMap = useMemo(() => Object.fromEntries(arcs.map(a => [a.id, a])), [arcs])
+  const sessionItems = useMemo<SessionRenderItem[]>(() => sessions
+    .filter(s => s.in_world_day)
+    .map(s => ({
+      id: s.id, name: s.name, session_number: s.session_number, session_sub: s.session_sub,
+      arc_id: s.arc_id, in_world_day: s.in_world_day!, in_world_day_end: s.in_world_day_end,
+    })), [sessions])
 
   return (
-    <div>
-      {/* Zoom controls */}
-      <div style={{ display: 'flex', gap: 3, marginBottom: 6 }}>
-        {ZOOM_ORDER.map(z => (
-          <button key={z} onClick={() => setZoom(z)} style={{
-            padding: '2px 7px', fontSize: 10, borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-            border: `1px solid ${zoom === z ? 'var(--border-gold)' : 'var(--border)'}`,
-            background: zoom === z ? 'var(--bg-hover)' : 'transparent',
-            color: zoom === z ? 'var(--gold)' : 'var(--text-muted)', fontFamily: 'var(--font-ui)',
-          }}>
-            {ZOOM_LABEL[z]}
-          </button>
-        ))}
-      </div>
-
-      <div ref={scrollRef} style={{ overflowX: 'auto', overflowY: 'visible', position: 'relative' }}>
-        <svg
-          ref={svgRef}
-          width={W}
-          height={H}
-          style={{ display: 'block', cursor: 'crosshair', overflow: 'visible', userSelect: 'none' }}
-          onClick={handleSvgClick}
-        >
-          {/* Pre-campaign bin chips — all zoom levels */}
-          {bins.length > 0 && <>
-            {bins.map(bin => {
-              const x1 = Math.max(worldYearToX(bin.startYear), PAD_L)
-              const x2 = worldYearToX(bin.endYear)
-              const w = Math.max(x2 - x1, 8)
-              const hasItems = bin.syCount > 0 || bin.evCount > 0
-              const nextZoom = ZOOM_ORDER[ZOOM_ORDER.indexOf(zoom) + 1] ?? zoom
-              return (
-                <g key={bin.startYear} style={{ cursor: nextZoom !== zoom ? 'pointer' : 'default' }}
-                  onClick={e => { e.stopPropagation(); if (nextZoom !== zoom) { setZoom(nextZoom); setHoverBin(null) } }}
-                  onMouseEnter={() => setHoverBin({ label: `${bin.startYear}–${bin.endYear}`, sx: (x1 + x2) / 2, syCount: bin.syCount, evCount: bin.evCount, nextZoom, centerYear: (bin.startYear + bin.endYear) / 2 })}
-                  onMouseLeave={() => setHoverBin(null)}>
-                  <rect x={x1} y={AXIS_Y - 18} width={w} height={18} rx="2"
-                    fill={hasItems ? '#2a2820' : '#1a1810'} stroke={hasItems ? '#3a3828' : '#222018'} strokeWidth="1" />
-                  {w > 18 && hasItems && <text x={x1 + w / 2} y={AXIS_Y - 7} textAnchor="middle" fill="#c8a84b88" fontSize="6" fontFamily="sans-serif">{[bin.syCount > 0 && `${bin.syCount}s`, bin.evCount > 0 && `${bin.evCount}ev`].filter(Boolean).join(' · ')}</text>}
-                  {w > 30 && <text x={x1 + w / 2} y={AXIS_Y - 20} textAnchor="middle" fill="#3a3628" fontSize="6" fontFamily="sans-serif">{bin.startYear}</text>}
-                </g>
-              )
-            })}
-            {/* Log-linear break */}
-            <line x1={PAD_L + geo.campaignOffX} y1={0} x2={PAD_L + geo.campaignOffX} y2={AXIS_Y + 5} stroke="#c8a84b33" strokeWidth="1.5" strokeDasharray="3 2" />
-          </>}
-
-          {isYearMode(zoom) && <>
-
-            {/* Campaign year bands */}
-            {campaignYears.map((wy, i) => {
-              const x1 = worldYearToX(wy), x2 = worldYearToX(wy + 1)
-              return (
-                <g key={wy}>
-                  <rect x={x1} y={0} width={x2 - x1} height={AXIS_Y} fill={i % 2 === 0 ? '#c8a84b08' : '#ffffff04'} />
-                  <line x1={x1} y1={0} x2={x1} y2={AXIS_Y} stroke="#c8a84b18" strokeWidth="1" />
-                  {x2 - x1 > 18 && <text x={x1 + 3} y={10} fill="#c8a84b55" fontSize="6" fontFamily="sans-serif" fontWeight="600">{wy}</text>}
-                </g>
-              )
-            })}
-
-            {/* Axis */}
-            <line x1={PAD_L} y1={AXIS_Y} x2={W - PAD_R + 8} y2={AXIS_Y} stroke="#3a3828" strokeWidth="1.5" />
-            <polygon points={`${W - PAD_R + 8},${AXIS_Y} ${W - PAD_R + 2},${AXIS_Y - 3} ${W - PAD_R + 2},${AXIS_Y + 3}`} fill="#3a3828" />
-
-            {/* Campaign year ticks */}
-            {campaignYears.map(wy => {
-              const x = worldYearToX(wy)
-              return x >= PAD_L + geo.campaignOffX && x <= W - PAD_R ? (
-                <g key={wy}>
-                  <line x1={x} y1={AXIS_Y} x2={x} y2={AXIS_Y + 4} stroke="#2a2820" strokeWidth="1" />
-                  <text x={x} y={AXIS_Y + 12} textAnchor="middle" fill="#3a3628" fontSize="6" fontFamily="sans-serif">{wy}</text>
-                </g>
-              ) : null
-            })}
-
-            {/* Arc tubes */}
-            {arcSpans.map(({ arc, start, end }) => {
-              const x1 = dx(start), x2 = dx(end), w = Math.max(x2 - x1, 6)
-              return (
-                <g key={arc.id}>
-                  <rect x={x1} y={ARC_Y} width={w} height={ARC_H} rx="4" fill={arc.color + '28'} stroke={arc.color + '55'} strokeWidth="1" />
-                  {w > 20 && <text x={x1 + w / 2} y={ARC_Y + ARC_H / 2 + 3} textAnchor="middle" fill={arc.color} fontSize="5.5" fontFamily="sans-serif" fontWeight="600">{arc.name}</text>}
-                </g>
-              )
-            })}
-
-            {/* Session / event / death dots */}
-            {sessionDots.map((s, i) => <circle key={i} cx={dx(s.day)} cy={AXIS_Y} r="3" fill={s.color} opacity={0.7} />)}
-            {events.map((e, i) => <circle key={i} cx={dx(e.day)} cy={AXIS_Y} r="2.5" fill={e.kind === 'death' ? '#9b7de8' : '#e05555'} opacity={0.7} />)}
-
-          </>}
-
-          {!isYearMode(zoom) && <>
-            {/* Day-mode year bands */}
-            {(() => {
-              const bands: React.ReactNode[] = []
-              const firstYi = Math.floor((MIN_DAY - 1 + startOff) / L)
-              for (let yi = firstYi; ; yi++) {
-                const bandStart = 1 - startOff + yi * L
-                const x1 = Math.max(dx(Math.max(bandStart, MIN_DAY)), PAD_L)
-                const x2 = Math.min(dx(Math.min(bandStart + L - 1, MAX_DAY)), W_DAY - PAD_R)
-                if (x1 > W_DAY - PAD_R) break
-                const wy = baseYear + yi
-                bands.push(
-                  <g key={yi}>
-                    <rect x={x1} y={0} width={Math.max(x2 - x1, 0)} height={AXIS_Y} fill={yi % 2 === 0 ? '#c8a84b08' : '#ffffff04'} />
-                    {dx(bandStart) >= PAD_L && yi !== firstYi && <line x1={dx(bandStart)} y1={0} x2={dx(bandStart)} y2={AXIS_Y} stroke="#c8a84b18" strokeWidth="1" />}
-                    {x2 - x1 > 20 && <text x={x1 + 4} y={10} fill="#c8a84b55" fontSize="7" fontFamily="sans-serif" fontWeight="600">{wy}</text>}
-                  </g>
-                )
-              }
-              return bands
-            })()}
-
-            {/* Axis */}
-            <line x1={PAD_L} y1={AXIS_Y} x2={W_DAY - PAD_R + 8} y2={AXIS_Y} stroke="#3a3828" strokeWidth="1.5" />
-            <polygon points={`${W_DAY - PAD_R + 8},${AXIS_Y} ${W_DAY - PAD_R + 2},${AXIS_Y - 3} ${W_DAY - PAD_R + 2},${AXIS_Y + 3}`} fill="#3a3828" />
-
-            {/* Day ticks */}
-            {Array.from({ length: Math.ceil((MAX_DAY - MIN_DAY) / (zoom === 'day' ? 10 : 30)) + 2 }, (_, i) => {
-              const step = zoom === 'day' ? 10 : 30
-              const day = Math.ceil(MIN_DAY / step) * step + i * step
-              if (day > MAX_DAY) return null
-              const x = dx(day)
-              return (
-                <g key={day}>
-                  <line x1={x} y1={AXIS_Y} x2={x} y2={AXIS_Y + 4} stroke="#2a2820" strokeWidth="1" />
-                  <text x={x} y={AXIS_Y + 13} textAnchor="middle" fill={day <= 0 ? '#6b5050' : '#3a3628'} fontSize="7" fontFamily="sans-serif">{`D${day}`}</text>
-                </g>
-              )
-            })}
-
-            {/* Arc tubes */}
-            {arcSpans.map(({ arc, start, end }) => {
-              const x1 = dx(start), x2 = dx(end), w = Math.max(x2 - x1, 6)
-              return (
-                <g key={arc.id}>
-                  <rect x={x1} y={ARC_Y} width={w} height={ARC_H} rx="4" fill={arc.color + '28'} stroke={arc.color + '55'} strokeWidth="1" />
-                  {w > 30 && <text x={x1 + w / 2} y={ARC_Y + ARC_H / 2 + 3} textAnchor="middle" fill={arc.color} fontSize="6" fontFamily="sans-serif" fontWeight="600">{arc.name}</text>}
-                </g>
-              )
-            })}
-
-            {/* Session / event / death dots */}
-            {sessionDots.map((s, i) => <circle key={i} cx={dx(s.day)} cy={AXIS_Y} r="3" fill={s.color} opacity={0.7} />)}
-            {events.map((e, i) => <circle key={i} cx={dx(e.day)} cy={AXIS_Y} r="2.5" fill={e.kind === 'death' ? '#9b7de8' : '#e05555'} opacity={0.7} />)}
-          </>}
-
-          {/* Draggable marker — shared */}
-          {hasMarker && sx !== null && (
-            <g onMouseDown={handleHandleMouseDown} style={{ cursor: 'ew-resize' }}>
-              <line x1={sx} y1={0} x2={sx} y2={AXIS_Y + 4} stroke="#c8a84b" strokeWidth="1.5" />
-              <rect x={sx - 16} y={1} width={32} height={13} rx="3" fill="#c8a84b" />
-              <text x={sx} y={10} textAnchor="middle" fill="#131210" fontSize="7" fontFamily="sans-serif" fontWeight="700">{markerLabel}</text>
-              <rect x={sx - 10} y={0} width={20} height={H} fill="transparent" />
-            </g>
-          )}
-        </svg>
-
-        {/* Bin hover tooltip */}
-        {hoverBin && (
-          <div style={{
-            position: 'absolute', pointerEvents: 'none', zIndex: 20,
-            left: Math.max(4, Math.min(hoverBin.sx - 64, (scrollRef.current?.clientWidth ?? 360) - 132)),
-            top: AXIS_Y - 66,
-            background: 'var(--bg-surface)', border: '1px solid var(--border-gold)',
-            borderRadius: 'var(--radius-sm)', padding: '6px 9px',
-            fontSize: 10, color: 'var(--text-secondary)', boxShadow: 'var(--shadow-lg)',
-          }}>
-            <div style={{ color: 'var(--gold)', fontWeight: 600, marginBottom: 3 }}>{hoverBin.label}</div>
-            {hoverBin.syCount > 0 && <div>{hoverBin.syCount} session{hoverBin.syCount !== 1 ? 's' : ''}</div>}
-            {hoverBin.evCount > 0 && <div>{hoverBin.evCount} event{hoverBin.evCount !== 1 ? 's' : ''}</div>}
-            {hoverBin.syCount === 0 && hoverBin.evCount === 0 && <div style={{ color: 'var(--text-muted)' }}>empty</div>}
-            <div style={{ color: 'var(--text-muted)', marginTop: 4, paddingTop: 3, borderTop: '1px solid var(--border)' }}>
-              click to zoom into {ZOOM_LABEL[hoverBin.nextZoom]}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+    <TimelineChronicle
+      variant="picker" height={290}
+      campaignId={campaign.id} eras={eras} cal={cal} sessions={sessionItems} arcMap={arcMap}
+      items={data.items} lifespans={data.lifespans} bounds={data.bounds} standing={data.standing} articles={data.articleInfo}
+      selectedDay={selectedDay} onPickDay={onPickDay}
+    />
   )
 }
 
@@ -402,7 +95,10 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
   const [day, setDay] = useState<number>(() => parseInWorldDate(value)?.day ?? 0)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const cal = currentCampaign ? getCampaignCalendar(currentCampaign) : defaultCalendar(baseYear)
+  const cal = useMemo(
+    () => currentCampaign ? getCampaignCalendar(currentCampaign) : defaultCalendar(baseYear),
+    [currentCampaign, baseYear],
+  )
   const plain = isPlainCalendar(cal)
   // Calendar date of the current selection (day 1 as the editing base when unset).
   const calDate = dayToCalendarDate(day || 1, cal)
@@ -432,8 +128,8 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
   const handleToggleOpen = () => {
     if (!open && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect()
-      setDropUp(window.innerHeight - rect.bottom < 340)
-      setDropLeft(window.innerWidth - rect.left < 360)
+      setDropUp(window.innerHeight - rect.bottom < 470 && rect.top > window.innerHeight - rect.bottom)
+      setDropLeft(window.innerWidth - rect.left < 430)
     }
     setOpen(o => !o)
   }
@@ -508,7 +204,7 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
           position: 'absolute', ...(dropUp ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }), ...(dropLeft ? { right: 0 } : { left: 0 }),
           background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
           borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
-          zIndex: 200, width: 380, maxHeight: 340, display: 'flex', flexDirection: 'column',
+          zIndex: 200, width: 420, maxHeight: 470, display: 'flex', flexDirection: 'column',
         }}>
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
@@ -561,14 +257,14 @@ export function InWorldDatePicker({ value, onChange, baseYear = DEFAULT_BASE_YEA
             </button>
           </div>
 
-          {/* Scrollable body: mini timeline + context */}
+          {/* Body: the timeline preview + context */}
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-            <div style={{ padding: '8px 12px 4px' }}>
+            <div style={{ padding: '8px 10px 6px' }}>
               {currentCampaign && (
-                <MiniTimeline
-                  campaignId={currentCampaign.id}
-                  selectedDay={day}
+                <TimelinePreview
+                  campaign={currentCampaign}
                   cal={cal}
+                  selectedDay={day}
                   onPickDay={handlePickDay}
                 />
               )}

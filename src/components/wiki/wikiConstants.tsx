@@ -82,7 +82,7 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
              'Island', 'Archipelago', 'Region', 'Continent', 'World','Plane of Existence'],
     Type:   ['Ruins', 'Dungeon', 'Wilderness', 'Landmark', 'Natural Wonder'],
     // Years since founding — the location's counterpart to a character's Age.
-    // Derived from Founded → Destroyed once both dates exist (see derivedAge).
+    // Derived once Founded is set: to Destroyed, or else to the present (see derivedAge).
     Age:    [],
     Government: ['Monarchy', 'Republic', 'Theocracy', 'Oligarchy', 'Magocracy', 'Tribal', 'Anarchy', 'Confederation'],
     'Ruler/Leader': [],
@@ -125,7 +125,7 @@ export const ARTICLE_TRACKS: Partial<Record<ArticleType, Record<string, string[]
                     'Discovery', 'Ritual', 'Founding', 'Coronation', 'Death', 'Betrayal', 'Prophecy', 'Plague', 'Uprising'],
     Scale:         ['Personal', 'Local', 'Regional', 'World-shaking'],
     Location:      [],
-    In_World_Date: [],
+    // The date moved to the Timeline section as "Happened" (same key).
   },
   culture:  { Status: ['Active', 'Undercover', 'Extinct', 'Unknown'] },
   religion: {

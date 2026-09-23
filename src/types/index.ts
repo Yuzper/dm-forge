@@ -176,6 +176,7 @@ export interface POI {
   color: string
   loot_table: string
   loot_table_id: number | null
+  sort_order: number  // hand-set Contents-list order; ties sort by label
   created_at: string
 }
 
@@ -715,6 +716,7 @@ export interface ElectronAPI {
   createPOI:       (data: CreatePOIInput)          => Promise<POI>
   updatePOI:       (id: number, data: Partial<CreatePOIInput & { content: string; loot_table: string; loot_table_id: number | null }>) => Promise<POI>
   deletePOI:       (id: number)                    => Promise<void>
+  reorderPOIs:     (orders: { id: number; sort_order: number }[]) => Promise<void>
 
   getShapeLayers:     (mapId: number)              => Promise<MapShapeLayer[]>
   createShapeLayer:   (mapId: number, name?: string) => Promise<MapShapeLayer>

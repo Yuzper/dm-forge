@@ -362,14 +362,19 @@ export function registerMapIPC(imagesPath: string) {
   })
 
   ipcMain.handle('pois:create', (_e, data: any) => {
+    // New pins join the end of a hand-ordered list rather than jumping into it.
+    const { m } = db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) AS m FROM pois WHERE map_id = ?'
+    ).get(data.map_id) as { m: number }
     const result = db.prepare(`
-      INSERT INTO pois (map_id, label, x, y, content, poi_type, color, layer_id)
-      VALUES (@map_id, @label, @x, @y, @content, @poi_type, @color, @layer_id)
+      INSERT INTO pois (map_id, label, x, y, content, poi_type, color, layer_id, sort_order)
+      VALUES (@map_id, @label, @x, @y, @content, @poi_type, @color, @layer_id, @sort_order)
     `).run({
       content: '{"type":"doc","content":[]}',
       poi_type: 'location',
       color: '#c8a84b',
       layer_id: null,
+      sort_order: m + 1,
       ...data,
     })
     return db.prepare('SELECT * FROM pois WHERE id = ?').get(result.lastInsertRowid)
@@ -389,6 +394,13 @@ export function registerMapIPC(imagesPath: string) {
       for (const p of oldPaths) { if (!newPaths.has(p)) safeUnlink(p) }
     }
     return db.prepare('SELECT * FROM pois WHERE id = ?').get(id)
+  })
+
+  ipcMain.handle('pois:reorder', (_e, orders: { id: number; sort_order: number }[]) => {
+    const stmt = db.prepare('UPDATE pois SET sort_order = @sort_order WHERE id = @id')
+    db.transaction((list: { id: number; sort_order: number }[]) => {
+      for (const o of list) stmt.run(o)
+    })(orders)
   })
 
   ipcMain.handle('pois:delete', (_e, id: number) => {

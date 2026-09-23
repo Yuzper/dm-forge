@@ -5,6 +5,7 @@
 //   Points  — the pins currently drawn on the map: filter, hover to highlight,
 //             click to focus. Hosts pass only the visible ones, so hiding a
 //             visit removes its pins from the list as well as from the canvas.
+//             A host that stores an order (the world map) makes it draggable.
 //   Visits  — session visit layers (pins made on a night); each toggles as a ghost.
 //   Layers  — hand-drawn regions; each toggles its shapes on and off.
 //
@@ -17,7 +18,7 @@ import type { ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, History, Layers, List, Lock, Pencil, Plus, Trash2, Unlock, X } from 'lucide-react'
 import type { MapLayer, MapShape, MapShapeLayer, POI } from '../../types'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
-import { useDragReorder } from '../../hooks/useDragReorder'
+import { reorder, useDragReorder } from '../../hooks/useDragReorder'
 import { layerLabel } from '../../utils/visitLayers'
 import { poiColor } from './MapPOIMarker'
 
@@ -100,19 +101,28 @@ function Section({ storageKey, icon, title, count, action, children, defaultOpen
 
 // ── Points ────────────────────────────────────────────────────────────────────
 
-function PointsSection({ pois, title, selectedId, hoveredId, filter, onFilterChange, onHover, onFocus }: {
+function PointsSection({ pois, title, selectedId, hoveredId, filter, editable, onFilterChange, onHover, onFocus, onReorder }: {
   pois: POI[]
   title: string
   selectedId?: number | null
   hoveredId?: number | null
   filter: string
+  editable: boolean
   onFilterChange: (v: string) => void
   onHover: (id: number | null) => void
   onFocus: (poi: POI) => void
+  /** Hosts that store a hand-set order get a draggable list; others stay A–Z. */
+  onReorder?: (ordered: POI[]) => void
 }) {
-  const visible = [...pois]
-    .filter(p => p.label.toLowerCase().includes(filter.trim().toLowerCase()))
-    .sort((a, b) => a.label.localeCompare(b.label))
+  // Unordered pins all share sort_order 0, so they fall back to A–Z — a list
+  // nobody has dragged yet looks exactly as it always did.
+  const ordered = [...pois].sort((a, b) =>
+    (onReorder ? (a.sort_order ?? 0) - (b.sort_order ?? 0) : 0) || a.label.localeCompare(b.label))
+  const query = filter.trim().toLowerCase()
+  const visible = query ? ordered.filter(p => p.label.toLowerCase().includes(query)) : ordered
+  // Dragging a filtered list would be ambiguous about where hidden rows go.
+  const canDrag = !!onReorder && editable && !query
+  const dnd = useDragReorder((from, to) => onReorder?.(reorder(ordered, from, to)), { enabled: canDrag })
 
   return (
     <Section storageKey="points" icon={<List size={12} style={{ color: 'rgba(255,255,255,0.55)', flexShrink: 0 }} />} title={title} count={pois.length}>
@@ -133,18 +143,27 @@ function PointsSection({ pois, title, selectedId, hoveredId, filter, onFilterCha
       )}
       {visible.length === 0 ? (
         <div style={emptyNote}>{pois.length === 0 ? 'Nothing on this map yet' : 'No matches'}</div>
-      ) : visible.map(poi => (
+      ) : <div {...(canDrag ? dnd.tailProps(visible.length) : {})}>{visible.map((poi, i) => (
         <button
           key={poi.id}
-          onMouseEnter={() => onHover(poi.id)}
+          {...dnd.rowProps(i)}
+          onMouseEnter={() => { if (!dnd.active) onHover(poi.id) }}
           onMouseLeave={() => onHover(null)}
           onClick={() => onFocus(poi)}
           style={{
             ...rowBtn,
-            background: hoveredId === poi.id ? 'rgba(255,255,255,0.09)'
+            cursor: canDrag ? 'grab' : 'pointer',
+            opacity: dnd.dragIndex === i ? 0.4 : 1,
+            boxShadow: dnd.isDropBefore(i) ? 'inset 0 2px 0 #c8733a'
+              : (i === visible.length - 1 && dnd.isDropAtEnd(visible.length)) ? 'inset 0 -2px 0 #c8733a'
+              : undefined,
+            background: hoveredId === poi.id && !dnd.active ? 'rgba(255,255,255,0.09)'
               : selectedId === poi.id ? 'rgba(200,115,58,0.16)' : 'none',
           }}
         >
+          {canDrag && (
+            <GripVertical size={11} style={{ color: 'rgba(255,255,255,0.28)', flexShrink: 0, marginLeft: -4, marginRight: -4 }} />
+          )}
           {/* Same colour rule as the marker, so list and map agree. */}
           <span style={{
             width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
@@ -154,7 +173,7 @@ function PointsSection({ pois, title, selectedId, hoveredId, filter, onFilterCha
             {poi.label}
           </span>
         </button>
-      ))}
+      ))}</div>}
     </Section>
   )
 }
@@ -457,7 +476,7 @@ function DrawingLayersSection({
 export default function MapContentsPanel({
   stacked, floatSide = 'left', onClose,
   pois, pointsTitle = 'Points', selectedPoiId, hoveredPoiId, poiFilter,
-  onPoiFilterChange, onPoiHover, onPoiFocus,
+  onPoiFilterChange, onPoiHover, onPoiFocus, onPoiReorder,
   visits,
   layers, shapes, activeLayerId, editable,
   onSetActiveLayer, onToggleLayerVisible, onToggleLayerLocked,
@@ -476,6 +495,8 @@ export default function MapContentsPanel({
   onPoiFilterChange: (v: string) => void
   onPoiHover: (id: number | null) => void
   onPoiFocus: (poi: POI) => void
+  /** The pins in their new order. Only the world map stores one today. */
+  onPoiReorder?: (ordered: POI[]) => void
 
   /** Omitted on maps with no visit history (the campaign world map). */
   visits?: VisitsSection | null
@@ -528,9 +549,11 @@ export default function MapContentsPanel({
           selectedId={selectedPoiId}
           hoveredId={hoveredPoiId}
           filter={poiFilter}
+          editable={editable}
           onFilterChange={onPoiFilterChange}
           onHover={onPoiHover}
           onFocus={onPoiFocus}
+          onReorder={onPoiReorder}
         />
 
         {visits && <VisitsSectionView visits={visits} />}

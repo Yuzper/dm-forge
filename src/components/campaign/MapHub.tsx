@@ -14,7 +14,7 @@
 // by type, needs attention — moved into WikiPage, which is where their
 // questions actually get answered.
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useStore } from '../../store/store'
 import { Flag, LayoutGrid, List, Scroll, Timer, Users, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -22,7 +22,6 @@ import type { POI } from '../../types'
 import HubWorldMap from './HubWorldMap'
 import { CLOCKS_INFO } from '../clocks/ClocksSection'
 import { InfoHint } from '../InfoHint'
-import { buildPartyTrail } from '../../utils/partyTrail'
 import { type HubPanelKey, ActiveQuestsPanel, ClocksPanel } from './HubPanels'
 import { NAV_ITEMS, type SectionView } from '../../constants/sections'
 
@@ -167,12 +166,8 @@ export default function MapHubView({ panels, onHasMapsChange, onSwitchLayout, st
   onSwitchLayout: () => void
   stats: MapHubStats
 }) {
-  const { currentCampaign, sessions } = useStore()
+  const { currentCampaign } = useStore()
   const setPlayersManagerOpen = useStore(s => s.setPlayersManagerOpen)
-  // The party card (and its Trail toggle) now lives in the sidebar, always
-  // mounted alongside this view — shared store state keeps them in sync
-  // instead of each holding a local copy that could drift apart.
-  const showTrail = useStore(s => s.partyTrailVisible)
 
   const [openPanels, setOpenPanels] = useState<Record<PanelKey, boolean>>(() =>
     currentCampaign ? loadOpenPanels(currentCampaign.id) : { contents: false, quests: false, clocks: false }
@@ -187,8 +182,6 @@ export default function MapHubView({ panels, onHasMapsChange, onSwitchLayout, st
   const [panelSlot, setPanelSlot] = useState<HTMLElement | null>(null)
   const [pois, setPois] = useState<POI[]>([])
   const [focusPoi, setFocusPoi] = useState<{ id: number; nonce: number } | null>(null)
-
-  const trail = useMemo(() => buildPartyTrail(pois, sessions), [pois, sessions])
 
   if (!currentCampaign) return null
 
@@ -272,8 +265,6 @@ export default function MapHubView({ panels, onHasMapsChange, onSwitchLayout, st
         measureOpen={travelOpen}
         onMeasureToggle={setTravelOpen}
         onPoisChange={setPois}
-        trail={trail}
-        showTrail={showTrail}
         focusPoi={focusPoi}
         hideContentsButton
         toolbarExtra={panelToggleGroup}

@@ -87,23 +87,16 @@ export interface SharedSlice {
   deletePlayer: (id: number) => Promise<void>
   setEntityAudience: (entityType: VisibilityEntityType, entityId: number, grantees: Grantee[]) => Promise<void>
 
-  // World map party trail — whether the route line draws on the world map.
-  // Shared rather than pane state because the toggle now lives in the sidebar
-  // (always mounted) while the map that draws it lives in the campaign hub;
-  // local state on either side could drift out of sync with the other.
-  partyTrailVisible: boolean
-  setPartyTrailVisible: (v: boolean) => void
+  // A world-map pin another surface wants centred (the sidebar's party card).
+  // The map clears it once answered, so a hub opened later doesn't jump to it.
+  worldMapFocusRequest: { poiId: number; nonce: number } | null
+  requestWorldMapFocus: (poiId: number | null) => void
 
   // Soundboard — the widget persists across the campaign, not per pane.
   soundboardOpen: boolean
   setSoundboardOpen: (v: boolean) => void
   soundboardMinimized: boolean
   setSoundboardMinimized: (v: boolean) => void
-  // A board another surface wants the widget to switch to (the hub's ambience
-  // panel). The nonce lets the same board be asked for twice — picking it,
-  // switching away in the widget, then picking it again has to work.
-  soundBoardRequest: { boardId: number; nonce: number } | null
-  requestSoundBoard: (boardId: number) => void
   soundBoards: SoundBoard[]
   soundsVersion: number
   bumpSoundsVersion: () => void
@@ -497,10 +490,12 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
     set({ grants })
   },
 
-  // ── World map party trail ───────────────────────────────────────────────────
+  // ── World map focus ─────────────────────────────────────────────────────────
 
-  partyTrailVisible: false,
-  setPartyTrailVisible: (partyTrailVisible) => set({ partyTrailVisible }),
+  worldMapFocusRequest: null,
+  requestWorldMapFocus: (poiId) => set({
+    worldMapFocusRequest: poiId == null ? null : { poiId, nonce: Date.now() },
+  }),
 
   // ── Soundboard ──────────────────────────────────────────────────────────────
 
@@ -508,14 +503,6 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
   setSoundboardOpen: (soundboardOpen) => set({ soundboardOpen }),
   soundboardMinimized: false,
   setSoundboardMinimized: (soundboardMinimized) => set({ soundboardMinimized }),
-  soundBoardRequest: null,
-  // Asking for a board also brings the widget up — a request nobody can see
-  // answered is just a silent no-op. Whether it sits expanded is the widget's
-  // own business (it minimises itself outside a session).
-  requestSoundBoard: (boardId) => set({
-    soundBoardRequest: { boardId, nonce: Date.now() },
-    soundboardOpen: true,
-  }),
 
   soundBoards: [],
   soundsVersion: 0,

@@ -9,9 +9,6 @@
 // user can close, rather than crashing the strip.
 import type { Session, ArticleSummary } from '../types'
 import type { View } from './pane'
-// Type-only (erased at build), so this doesn't create a runtime dependency from
-// the store on a component module.
-import type { DrilldownLevel, SpanOrientation } from '../components/TimelineDrilldown'
 
 export type Location =
   | { type: 'campaign'; subView?: 'hub' | 'sessions' }
@@ -21,10 +18,9 @@ export type Location =
   | { type: 'relations'; webId?: number | null }
   | { type: 'dm-notes'; pageId?: number | null }
   | { type: 'loot-tables' }
-  // The drill-down position is *where the tab is*, not a campaign preference —
-  // two timeline tabs must be able to sit on different years. Filters stay
-  // per-campaign on purpose: a filter is a lens you want applied everywhere.
-  | { type: 'timeline'; level?: DrilldownLevel; orient?: SpanOrientation }
+  // Tabs saved before the vertical timeline may still carry the old drill-down
+  // `level`/`orient` fields; they're ignored now.
+  | { type: 'timeline' }
   | { type: 'soundboard' }
 
 /** Which pane `view` this location renders as. */
@@ -55,19 +51,7 @@ export function sameLocation(a: Location, b: Location): boolean {
   if (a.type === 'campaign')  return (a.subView ?? 'hub') === ((b as typeof a).subView ?? 'hub')
   if (a.type === 'relations') return (a.webId ?? null) === ((b as typeof a).webId ?? null)
   if (a.type === 'dm-notes')  return (a.pageId ?? null) === ((b as typeof a).pageId ?? null)
-  if (a.type === 'timeline') {
-    const other = b as typeof a
-    return levelKey(a.level) === levelKey(other.level) && (a.orient ?? 'vertical') === (other.orient ?? 'vertical')
-  }
   return true
-}
-
-/** Stable string for a drill-down level, for comparison without deep-equal. */
-export function levelKey(l: DrilldownLevel | undefined): string {
-  if (!l) return 'decades'
-  if (l.view === 'year') return `year:${l.year}`
-  if (l.view === 'span') return `span:${l.year}:${l.span}`
-  return 'decades'
 }
 
 export interface LocationCtx {
@@ -100,9 +84,7 @@ export function locationLabel(loc: Location, ctx: LocationCtx): string | null {
     case 'dm-notes':
       return (loc.pageId != null && ctx.locationNames?.['dm-notes'][loc.pageId]) || 'DM Notes'
     case 'loot-tables': return 'Loot Tables'
-    // Two timeline tabs are far easier to tell apart by the year they sit on.
-    case 'timeline':
-      return loc.level && loc.level.view !== 'decades' ? `Timeline · ${loc.level.year}` : 'Timeline'
+    case 'timeline':    return 'Timeline'
     case 'soundboard':  return 'Soundboard'
     case 'session': {
       const s = [...ctx.sessions, ...ctx.drafts].find(x => x.id === loc.sessionId)

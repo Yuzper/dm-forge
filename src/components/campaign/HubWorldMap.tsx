@@ -12,7 +12,6 @@ import Modal from '../Modal'
 import EmptyState from '../EmptyState'
 import TravelMeasurePanel from '../map/TravelMeasurePanel'
 import MeasureOverlay from '../map/MeasureOverlay'
-import PartyTrailOverlay from '../map/PartyTrailOverlay'
 import MapContentsPanel from '../map/MapContentsPanel'
 import MapPOIMarker from '../map/MapPOIMarker'
 import MapShapeLayer from '../map/MapShapeLayer'
@@ -30,7 +29,6 @@ import { useDragReorder } from '../../hooks/useDragReorder'
 import { useMapMeasure } from '../../hooks/useMapMeasure'
 import { useShapeDrawing } from '../../hooks/useShapeDrawing'
 import { centroidOf, parsePoints } from '../../utils/mapShapeGeometry'
-import type { TrailStop } from '../../utils/partyTrail'
 import { makeDescriptionDoc as makePoiContent, parseHubLinks, resolveHubLinks } from '../../utils/hubLinks'
 import { useContextMenu, useMenuCtx } from '../../hooks/useContextMenu'
 import { openItems, truncate, type MenuItem } from '../../utils/contextMenus'
@@ -44,7 +42,7 @@ const TAB_STRIP_H = 34
 export default function HubWorldMap({
   fullBleed = false, onHasMapsChange, panelSlot = null,
   contentsOpen, onContentsToggle, measureOpen, onMeasureToggle,
-  onPoisChange, trail = [], showTrail = false, focusPoi = null, hideContentsButton = false,
+  onPoisChange, focusPoi = null, hideContentsButton = false,
   toolbarExtra = null,
 }: {
   fullBleed?: boolean
@@ -59,11 +57,9 @@ export default function HubWorldMap({
   onContentsToggle?: () => void
   measureOpen?: boolean
   onMeasureToggle?: (on: boolean) => void
-  // The hub derives the party trail from these pins, then hands the route back
-  // to be drawn — the map owns the pins, the hub owns the sessions.
+  // The hub looks pins up by name (e.g. to centre on a quest's location) —
+  // the map owns the pins, so it reports them outward.
   onPoisChange?: (pois: POI[]) => void
-  trail?: TrailStop[]
-  showTrail?: boolean
   /** Centre on this pin when the hub asks. The nonce re-fires the same pin. */
   focusPoi?: { id: number; nonce: number } | null
   /** The map hub merges its own Contents button into a bigger toggle group it
@@ -311,6 +307,19 @@ export default function HubWorldMap({
     if (poi) focusPOIFromList(poi)
   }, [focusPoi])
 
+  // The same, asked from outside the hub (the sidebar's party card). The card
+  // may have just navigated here, so wait until the pins and the fitted image
+  // exist, then clear the request so a map mounted later doesn't jump to it.
+  const focusRequest = useStore(s => s.worldMapFocusRequest)
+  const requestWorldMapFocus = useStore(s => s.requestWorldMapFocus)
+  useEffect(() => {
+    if (!focusRequest || !imgBounds) return
+    const poi = pois.find(p => p.id === focusRequest.poiId)
+    if (!poi) return
+    focusPOIFromList(poi)
+    requestWorldMapFocus(null)
+  }, [focusRequest, pois, imgBounds])
+
   // ── Shape interactions ────────────────────────────────────────────────────
   // The popup anchors on the shape's centroid, converted through the current
   // transform into map-panel space, exactly as computePopupPos does for a pin.
@@ -504,6 +513,14 @@ export default function HubWorldMap({
     setEditingPOI(null)
   }
 
+  // The whole list is renumbered, not just the moved pin: until the first drag
+  // every pin sits at 0 and the list is only alphabetical by tie-break.
+  const handleReorderPOIs = (ordered: POI[]) => {
+    const rank: Record<number, number> = Object.fromEntries(ordered.map((p, i) => [p.id, i]))
+    setPois((prev: POI[]) => prev.map(p => p.id in rank ? { ...p, sort_order: rank[p.id] } : p))
+    void window.api.reorderPOIs(ordered.map((p, i) => ({ id: p.id, sort_order: i })))
+  }
+
   // `target` lets a pin's context menu delete a pin without opening its editor.
   const handleDeletePOI = async (target?: POI) => {
     const doomed = target ?? editingPOI
@@ -565,6 +582,7 @@ export default function HubWorldMap({
       onPoiFilterChange={setPoiListFilter}
       onPoiHover={setHoveredPoiId}
       onPoiFocus={focusPOIFromList}
+      onPoiReorder={handleReorderPOIs}
       layers={shapeStore.layers}
       shapes={shapeStore.shapes}
       activeLayerId={shapeStore.activeLayerId}
@@ -747,8 +765,6 @@ export default function HubWorldMap({
                   calibPts={measure.calibPts}
                 />
               )}
-              {/* The party's route, under the pins so a stop never hides a town. */}
-              {showTrail && <PartyTrailOverlay scale={scale} trail={trail} />}
               {pois.map(poi => {
                 // While this pin's editor is open, show what's actually on its
                 // sliders rather than the last-saved appearance.

@@ -548,8 +548,9 @@ export function createPaneStore() {
     selectSession: (session) => {
       const { currentCampaign } = sharedStore.getState()
       if (!currentCampaign) return
-      // The soundboard widget is app-level, so opening a session raises it there.
-      sharedStore.setState({ soundboardOpen: true, soundboardMinimized: false })
+      // The soundboard widget is app-level, so opening a session raises it there
+      // — as the collapsed pill, out of the way until you reach for it.
+      sharedStore.setState({ soundboardOpen: true, soundboardMinimized: true })
       // _goto does the rest of the hydration (maps, POIs, articles).
       get()._recordLocation({ type: 'session', sessionId: session.id })
     },

@@ -22,9 +22,9 @@ import SectionDivider from '../SectionDivider'
 import { InWorldDatePicker } from '../InWorldDatePicker'
 import {
   TIMELINE_DATE_FIELDS, DATE_IMPLIES_TRACK, parseMilestones, trackDay,
-  AGE_TRACK_TYPES, derivedAge, ageSourceLabels, type Milestone,
+  AGE_TRACK_TYPES, derivedAge, ageSourceLabels, type DerivedAge, type Milestone,
 } from '../../constants/timelineDates'
-import { getCampaignCalendar, yearLength } from '../../utils/timelineGeometry'
+import { campaignPresentDay, getCampaignCalendar, yearLength } from '../../utils/timelineGeometry'
 import LocationMapSection from '../LocationMapSection'
 import AudienceControl from '../AudienceControl'
 import { useArticleContextMenu } from '../../hooks/useContextMenu'
@@ -148,12 +148,12 @@ function TrackRow({ trackKey, name, options, value, onChange, optionGroups, visC
   )
 }
 
-// Age is a number you fill in yourself while the subject is still going — there's
-// no dependable "now" in world to count up to. Once the end date is set the span
-// stops being a guess, so the row switches to a derived readout and the editor
-// writes that number into the track (see the sync effect in ArticleEditor).
+// Age is a number you fill in yourself until the dates can say it: once there's
+// a start date the row switches to a derived readout — to the end date, or for
+// people to the campaign's present — and the editor writes that number into the
+// track (see the sync effect in ArticleEditor).
 function AgeTrackRow({ name, value, derived, sourceLabels, onChange, visControl }: {
-  name: string; value: string; derived: number | null
+  name: string; value: string; derived: DerivedAge | null
   sourceLabels: { start: string; end: string } | null
   onChange: (v: string) => void; visControl?: React.ReactNode
 }) {
@@ -166,10 +166,11 @@ function AgeTrackRow({ name, value, derived, sourceLabels, onChange, visControl 
       <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>{formatTrackName(name)}</span>
       {derived !== null ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{derived} year{derived !== 1 ? 's' : ''}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{derived.years} year{derived.years !== 1 ? 's' : ''}</span>
           {sourceLabels && (
-            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-              from {sourceLabels.start.toLowerCase()} → {sourceLabels.end.toLowerCase()}
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}
+              title={derived.to === 'present' ? 'Counted to the end of the latest dated session' : undefined}>
+              from {sourceLabels.start.toLowerCase()} → {derived.to === 'present' ? 'now' : sourceLabels.end.toLowerCase()}
             </span>
           )}
           <span style={{ marginLeft: 'auto' }}>{visControl}</span>
@@ -576,8 +577,14 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
     setPairError(null)
     setTracks(prev => {
       const updated = { ...prev, [key]: v }
-      const implied = v ? DATE_IMPLIES_TRACK[key] : undefined
-      if (implied) updated[implied.track] = implied.value
+      const implied = DATE_IMPLIES_TRACK[key]
+      if (implied) {
+        if (v) updated[implied.track] = implied.value
+        // Clearing the date takes back the status it set, if that status still
+        // holds the implied value. Otherwise removing a death date would leave
+        // the character Dead — and an age that can't count to the present.
+        else if (prev[implied.track] === implied.value) updated[implied.track] = implied.cleared ?? ''
+      }
       return updated
     })
     setDirty(true)
@@ -609,7 +616,10 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
           {fields.map(f => (
             <div key={f.key}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{f.label}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {f.label}
+                  {f.optional && <span style={{ opacity: 0.7, fontStyle: 'italic' }}> (Optional)</span>}
+                </span>
                 {renderVis?.(f.key, false)}
               </div>
               <InWorldDatePicker value={tracks[f.key] || ''} onChange={v => setField(f.key, v)} label="" baseYear={baseYear} />
@@ -641,7 +651,7 @@ function TimelineDatesSection({ articleType, tracks, setTracks, setDirty, readMo
 }
 
 export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: { article: Article; onBack: () => void; backLabel?: string }) {
-  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, allArticles, loadAllArticles, navigateTo, setRelationsFocusArticleId, setHintContext, players, loadPlayers } = useStore()
+  const { updateArticle, deleteArticle, navigateToArticleByTitle, getArticleBacklinks, currentCampaign, articles, allArticles, loadAllArticles, navigateTo, setRelationsFocusArticleId, setHintContext, players, loadPlayers, sessions } = useStore()
   const articleMenu = useArticleContextMenu()
 
   // Article names per type for the track dropdowns, derived from the store's
@@ -746,13 +756,16 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   // people at its own rate.
   // Memoised: the calendar is parsed from JSON, and this sits on the typing path.
   const yearLen = useMemo(() => yearLength(getCampaignCalendar(currentCampaign as any)), [currentCampaign])
-  const ageFromDates = derivedAge(articleType, tracks, yearLen)
-  // Once both dates exist the derived span replaces whatever was typed before —
-  // otherwise a hand-filled age would sit there contradicting the lifespan. Only
-  // while editing: opening an article to read it shouldn't rewrite it.
+  // "Now" for a living character's age: the timeline's present.
+  const presentDay = useMemo(() => campaignPresentDay(sessions), [sessions])
+  const ageFromDates = derivedAge(articleType, tracks, yearLen, presentDay)
+  // Once the age can be derived it replaces whatever was typed before —
+  // otherwise a hand-filled age would sit there contradicting the dates. Only
+  // while editing: opening an article to read it shouldn't rewrite it. An age
+  // counted to the present is refreshed here too, as sessions move time on.
   useEffect(() => {
     if (readMode || ageFromDates === null) return
-    const derived = String(ageFromDates)
+    const derived = String(ageFromDates.years)
     if (tracks.Age === derived) return
     setTracks(prev => ({ ...prev, Age: derived }))
     setDirty(true)
@@ -1175,17 +1188,8 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                       // Reading doesn't write, so a derived age is applied here
                       // for display rather than trusted from the stored track.
                       const val = trackName === 'Age' && ageFromDates !== null
-                        ? String(ageFromDates) : tracks[trackName]
+                        ? String(ageFromDates.years) : tracks[trackName]
                       if (!val) return null
-                      if (trackName === 'In_World_Date') {
-                        let display = val
-                        try { const d = JSON.parse(val); display = `Day ${d.day}, Year ${d.year}` } catch {}
-                        return (
-                          <div key={trackName} style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold)', padding: '3px 10px', borderRadius: 99, border: '1px solid rgba(200,168,75,0.3)', background: 'rgba(200,168,75,0.1)' }}>
-                            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{formatTrackName(trackName)}: </span>{display}
-                          </div>
-                        )
-                      }
                       // Multi-value tracks (Allies/Rivals) render their entries
                       // joined; single-value tracks keep their status colour.
                       const vals = trackValues(val)
@@ -1211,21 +1215,6 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
                             <span style={{ fontSize: 12, color: val ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{val || '—'}</span>
                             <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>set in Item Stats</span>
                             <span style={{ marginLeft: 'auto' }}>{renderVis(trackName)}</span>
-                          </div>
-                        </div>
-                      )
-                    }
-                    if (trackName === 'In_World_Date') {
-                      return (
-                        <div key={articleType + trackName} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 84, flexShrink: 0 }}>{formatTrackName(trackName)}</span>
-                          {renderVis(trackName)}
-                          <div style={{ flex: 1 }}>
-                            <InWorldDatePicker
-                              value={tracks[trackName] || ''}
-                              onChange={v => { setTracks(prev => ({ ...prev, [trackName]: v })); setDirty(true) }}
-                              label=""
-                            />
                           </div>
                         </div>
                       )

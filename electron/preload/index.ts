@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('api', {
   createPOI:       (data: any)    => ipcRenderer.invoke('pois:create', data),
   updatePOI:       (id: number, data: any) => ipcRenderer.invoke('pois:update', id, data),
   deletePOI:       (id: number)   => ipcRenderer.invoke('pois:delete', id),
+  reorderPOIs:     (orders: { id: number; sort_order: number }[]) => ipcRenderer.invoke('pois:reorder', orders),
 
   // Drawing layers (kingdom borders, districts…) and the shapes on them
   getShapeLayers:     (mapId: number) => ipcRenderer.invoke('shape-layers:get-all', mapId),
