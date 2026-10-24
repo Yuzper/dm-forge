@@ -111,7 +111,7 @@ export interface PaneSlice {
   importMap: (sessionId: number) => Promise<void>
   createScene: (sessionId: number) => Promise<void>
   deleteMap: (id: number) => Promise<void>
-  updateMap: (id: number, data: { name?: string; content?: string }) => Promise<void>
+  updateMap: (id: number, data: { name?: string; content?: string; grid?: string | null }) => Promise<void>
   reorderMaps: (orders: { id: number; sort_order: number }[]) => Promise<void>
   reorderSessionTabs: (orderedMaps: GameMap[]) => Promise<void>
   moveMapToSession: (mapId: number, sessionId: number) => Promise<void>

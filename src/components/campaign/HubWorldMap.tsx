@@ -13,6 +13,7 @@ import EmptyState from '../EmptyState'
 import TravelMeasurePanel from '../map/TravelMeasurePanel'
 import MeasureOverlay from '../map/MeasureOverlay'
 import MapContentsPanel from '../map/MapContentsPanel'
+import CastMapButton from '../map/CastMapButton'
 import MapPOIMarker from '../map/MapPOIMarker'
 import MapShapeLayer from '../map/MapShapeLayer'
 import MapToolbar, { toolHint } from '../map/MapToolbar'
@@ -593,6 +594,13 @@ export default function HubWorldMap({ fullBleed = false, onHasMapsChange, listSl
               >
                 <List size={12} /> Contents
               </button>
+            )}
+            {maps.length > 0 && (
+              <CastMapButton
+                map={currentMap} pois={pois}
+                shapes={shapeStore.shapes} shapeLayers={shapeStore.layers}
+                variant="hub"
+              />
             )}
             {editable
               ? <button onClick={e => { e.stopPropagation(); leaveEditMode() }}

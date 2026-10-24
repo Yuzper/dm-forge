@@ -1,10 +1,11 @@
 // path: src/components/sidebar/SidebarFooter.tsx
 // A slim bar of buttons, replacing the six full-width setting rows the sidebar
-// used to end with. The controls themselves live in SettingsModal — these are
-// just the two doors into it, each landing on the tab it used to be a popover
-// for. The version sits in the tail.
+// used to end with. The first two open SettingsModal, each landing on the tab
+// it used to be a popover for; the third toggles the table (VTT) cast panel,
+// which is its own floating widget rather than a settings tab because it is
+// used *during* play. The version sits in the tail.
 import { useState } from 'react'
-import { Database, Settings, PanelLeftClose } from 'lucide-react'
+import { Database, Settings, PanelLeftClose, Tv } from 'lucide-react'
 import { useStore } from '../../store/store'
 
 export default function SidebarFooter({ rail = false, version = '', onCollapse }: {
@@ -15,6 +16,8 @@ export default function SidebarFooter({ rail = false, version = '', onCollapse }
   onCollapse?: () => void
 }) {
   const setSettingsTab = useStore(s => s.setSettingsTab)
+  const setTableCastOpen = useStore(s => s.setTableCastOpen)
+  const tableCastOpen = useStore(s => s.tableCastOpen)
 
   const buttons = (
     <>
@@ -25,6 +28,11 @@ export default function SidebarFooter({ rail = false, version = '', onCollapse }
       <FooterButton
         icon={<Database size={15} />} title="Backup & restore"
         onClick={() => setSettingsTab('data')}
+      />
+      <FooterButton
+        icon={<Tv size={15} />} title="Table / player screen"
+        active={tableCastOpen}
+        onClick={() => setTableCastOpen(!tableCastOpen)}
       />
     </>
   )
@@ -56,10 +64,12 @@ export default function SidebarFooter({ rail = false, version = '', onCollapse }
   )
 }
 
-function FooterButton({ icon, title, onClick }: {
+function FooterButton({ icon, title, onClick, active = false }: {
   icon: React.ReactNode
   title: string
   onClick: () => void
+  /** Lit while the thing this opens is on screen. */
+  active?: boolean
 }) {
   const [hovered, setHovered] = useState(false)
   return (
@@ -71,9 +81,9 @@ function FooterButton({ icon, title, onClick }: {
       style={{
         width: 30, height: 30, flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: hovered ? 'var(--bg-hover)' : 'transparent',
+        background: hovered || active ? 'var(--bg-hover)' : 'transparent',
         border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-        color: hovered ? 'var(--gold)' : 'var(--text-muted)',
+        color: hovered || active ? 'var(--gold)' : 'var(--text-muted)',
         transition: 'background var(--transition), color var(--transition)',
       }}
     >

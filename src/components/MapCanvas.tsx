@@ -9,6 +9,7 @@ import MapPOIMarker, { poiColor } from './map/MapPOIMarker'
 import MapShapeLayer from './map/MapShapeLayer'
 import MeasureOverlay from './map/MeasureOverlay'
 import MapContentsPanel, { type VisitsSection } from './map/MapContentsPanel'
+import CastMapButton from './map/CastMapButton'
 import TravelMeasurePanel from './map/TravelMeasurePanel'
 import MapToolbar, { toolHint } from './map/MapToolbar'
 import ShapePopup from './map/ShapePopup'
@@ -537,6 +538,15 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
         >
           <List size={12} /> Contents{extraLayersOn > 0 ? ` +${extraLayersOn}` : ''}
         </button>
+        {/* What the players get is what is on screen here right now: the
+            same visible set the Contents list indexes, ghosts included. */}
+        <CastMapButton
+          map={currentMap}
+          pois={visiblePois}
+          ghostIds={ghostPois.map(p => p.id)}
+          shapes={shapeStore.shapes}
+          shapeLayers={shapeStore.layers}
+        />
       </div>
 
       {showContents && (

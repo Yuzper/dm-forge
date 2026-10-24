@@ -9,6 +9,7 @@ import { applyAppearance, loadAppearance } from './constants/themes'
 applyAppearance(loadAppearance())
 import Sidebar from './components/sidebar/Sidebar'
 import StatBlockPage from './pages/StatBlockPage'
+import TablePage from './pages/TablePage'
 import { UpdateBanner } from './components/UpdateBanner'
 import SoundboardWidget from './components/SoundboardWidget'
 import StatBlockOverlay from './components/StatBlockOverlay'
@@ -17,21 +18,28 @@ import GlobalSearch from './components/GlobalSearch'
 import FindBar from './components/FindBar'
 import PlayersManager from './components/PlayersManager'
 import SettingsModal from './components/SettingsModal'
+import TableCastPanel from './components/TableCastPanel'
 import { ActivePaneProvider } from './context/PaneContext'
 import PaneView from './components/PaneView'
 import PaneSplitter from './components/PaneSplitter'
 import { useTabShortcuts } from './hooks/useTabShortcuts'
 
 const params = new URLSearchParams(window.location.search)
+// The table (VTT) window loads the same bundle with ?mode=vtt. It is checked
+// before anything else below, and renders a tree of its own: no sidebar, no
+// panes, no store — see src/pages/TablePage.tsx.
+const vttMode = params.get('mode') === 'vtt'
 const statblockMode = params.get('mode') === 'statblock'
 const statblockArticleId = statblockMode ? parseInt(params.get('articleId') || '0') : 0
 const statblockOverride = statblockMode ? params.get('statblockOverride') : null
 const nameOverride = statblockMode ? params.get('nameOverride') : null
 
 export default function App() {
-  const { loadCampaigns, bgStyle, currentCampaign, soundboardOpen, statBlockOverlays, playersManagerOpen, paneIds, splitRatio, themeVersion } = useStore()
+  const { loadCampaigns, bgStyle, currentCampaign, soundboardOpen, statBlockOverlays, playersManagerOpen, tableCastOpen, paneIds, splitRatio, themeVersion } = useStore()
 
-  useEffect(() => { if (!statblockMode) loadCampaigns() }, [])
+  useEffect(() => { if (!statblockMode && !vttMode) loadCampaigns() }, [])
+
+  if (vttMode) return <TablePage />
 
   if (statblockMode && statblockArticleId) {
     return (
@@ -61,6 +69,7 @@ export default function App() {
       <FindBar />
       <SettingsModal />
       {currentCampaign && playersManagerOpen && <PlayersManager />}
+      {tableCastOpen && <TableCastPanel />}
       <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' }}>
         {paneIds.map((id, i) => (
           <Fragment key={id}>

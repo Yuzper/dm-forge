@@ -7,8 +7,13 @@
 // The dividing line with pane.ts: if two panes showing different things would
 // still agree on a value, it belongs here.
 import { createStore } from 'zustand/vanilla'
-import type { Campaign, Session, Arc, ArticleSummary,
+import type { Campaign, Session, Arc, ArticleSummary, GameMap, MapShape, MapShapeLayer, POI, VTTTableStatus,
   Player, VisibilityGrant, VisibilityEntityType, Grantee, CreatePlayerInput, SoundBoard } from '../types'
+import type { CastPOI, CastShape, CastViewport, MapGrid, TableCalibration } from '../vtt/protocol'
+import { DEFAULT_CALIBRATION } from '../vtt/protocol'
+import { sendCast } from '../vtt/castChannel'
+import { calibrationMessage, parseMapGrid, projectPOI, projectShapes, sceneMessage, viewportMessage } from '../vtt/castProjection'
+import { loadGridPrefs, saveGridPrefs } from '../vtt/calibration'
 import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
 import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
 import {
@@ -22,6 +27,17 @@ import { sameLocation, type Location } from './location'
 import { saveWorkspace, loadWorkspace, clampRatio, savePins, loadPins } from './workspacePersist'
 
 const RECENT_ACCENTS_KEY = 'dmforge:recent-accents'
+const SHOW_POIS_KEY = 'dmforge:vtt:show-pois'
+
+/** Read an image's natural size; the table needs it to lay out before load. */
+function measureImage(url: string): Promise<{ w: number; h: number }> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => resolve({ w: 0, h: 0 })
+    img.src = url
+  })
+}
 
 function getStarterMonsters(system: string) {
   if (system === 'D&D 5e 2014') return MONSTERS_2014
@@ -85,6 +101,55 @@ export interface SharedSlice {
   updatePlayer: (id: number, data: Partial<CreatePlayerInput>) => Promise<void>
   deletePlayer: (id: number) => Promise<void>
   setEntityAudience: (entityType: VisibilityEntityType, entityId: number, grantees: Grantee[]) => Promise<void>
+
+  // ── The table (VTT) screen ────────────────────────────────────────────────
+  // All of it lives here rather than in the panel, because a map can be cast
+  // from the map itself (the Cast button beside Contents on the world map,
+  // session maps and wiki maps) with the panel never opened. The panel is one
+  // view of this state, not its owner.
+  tableCastOpen: boolean
+  setTableCastOpen: (v: boolean) => void
+
+  tableStatus: VTTTableStatus
+  setTableStatus: (s: VTTTableStatus) => void
+
+  /** The map currently on the table, or null when it is blank. */
+  castMapId: number | null
+  castMapName: string
+  castImage: { url: string; natural: { w: number; h: number } } | null
+  castGrid: MapGrid | null
+  castViewport: CastViewport
+  tableCalibration: TableCalibration
+
+  /**
+   * The points visible on the DM's canvas when this map was cast, already
+   * redacted. Held even while `castShowPois` is off, so flipping the toggle is
+   * instant and does not need a re-cast — but only what is sent crosses to the
+   * table, and with the toggle off nothing is.
+   */
+  castPois: CastPOI[]
+  /** Regions from the drawing layers that were on at cast time. */
+  castShapes: CastShape[]
+  /** DM's switch: do the players see the points and regions at all? */
+  castShowPois: boolean
+  setCastShowPois: (v: boolean) => void
+
+  /**
+   * Put a map on the table, opening the table window if it is closed.
+   * `visible` is what the canvas is actually showing — the enabled layers and
+   * visits — with the ids of any ghosted (dimmed) ones.
+   */
+  castMap: (map: GameMap, visible?: {
+    pois: POI[]
+    ghostIds?: number[]
+    shapes?: MapShape[]
+    shapeLayers?: MapShapeLayer[]
+  }) => Promise<void>
+  blankTable: () => void
+  /** Live grid edits from the panel. Persisting to the map row is the caller's. */
+  setCastGrid: (g: MapGrid | null) => void
+  setCastViewport: (v: CastViewport) => void
+  setTableCalibration: (patch: Partial<TableCalibration>) => void
 
   // Soundboard — the widget persists across the campaign, not per pane.
   soundboardOpen: boolean
@@ -444,6 +509,107 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
   grants: [],
   playersManagerOpen: false,
   setPlayersManagerOpen: (playersManagerOpen) => set({ playersManagerOpen }),
+
+  tableCastOpen: false,
+  setTableCastOpen: (tableCastOpen) => set({ tableCastOpen }),
+
+  tableStatus: { open: false, displayId: null, mode: null, fullscreen: false, screen: null },
+  setTableStatus: (tableStatus) => set({ tableStatus }),
+
+  castMapId: null,
+  castMapName: '',
+  castImage: null,
+  castGrid: null,
+  castViewport: { panX: 0, panY: 0 },
+  tableCalibration: { ...DEFAULT_CALIBRATION, ...loadGridPrefs() },
+
+  castPois: [],
+  castShapes: [],
+  castShowPois: localStorage.getItem(SHOW_POIS_KEY) === 'true',
+
+  setCastShowPois: (castShowPois) => {
+    set({ castShowPois })
+    try { localStorage.setItem(SHOW_POIS_KEY, String(castShowPois)) } catch { /* private mode */ }
+    const { castMapId, castImage, castGrid, castPois, castShapes } = get()
+    if (castMapId == null || !castImage) return
+    sendCast(sceneMessage({
+      mapId: castMapId, imageUrl: castImage.url, natural: castImage.natural, grid: castGrid,
+      pois: castShowPois ? castPois : [],
+      shapes: castShowPois ? castShapes : [],
+    }))
+  },
+
+  castMap: async (map, visible) => {
+    if (!map.image_path) return
+    const url = await window.api.getImagePath(map.image_path)
+    const natural = await measureImage(url)
+    const grid = parseMapGrid(map.grid)
+    // Snapshot, not a live view: what the players see stays put while the DM
+    // carries on toggling layers to plan the next scene.
+    const ghostIds = new Set(visible?.ghostIds ?? [])
+    const castPois = (visible?.pois ?? []).map(p => projectPOI(p, ghostIds.has(p.id)))
+    const castShapes = projectShapes(visible?.shapes ?? [], visible?.shapeLayers ?? [])
+    set({
+      castMapId: map.id,
+      castMapName: map.name,
+      castImage: { url, natural },
+      castGrid: grid,
+      castViewport: { panX: 0, panY: 0 },
+      castPois,
+      castShapes,
+    })
+    // Calibration first: a table window opening for the first time should not
+    // paint one scene at the default scale and then jump.
+    sendCast(calibrationMessage(get().tableCalibration))
+    sendCast(viewportMessage({ panX: 0, panY: 0 }))
+    sendCast(sceneMessage({
+      mapId: map.id, imageUrl: url, natural, grid,
+      pois: get().castShowPois ? castPois : [],
+      shapes: get().castShowPois ? castShapes : [],
+    }))
+    // Casting means "show this", so a closed table is opened rather than
+    // silently ignored. Placement and the single-screen fallback are the main
+    // process's call — see electron/main/vtt.ts.
+    if (!get().tableStatus.open) {
+      const status = await window.api.vttOpen()
+      set({ tableStatus: status })
+    }
+  },
+
+  blankTable: () => {
+    set({ castMapId: null, castMapName: '', castImage: null, castGrid: null, castPois: [], castShapes: [] })
+    sendCast(sceneMessage(null))
+  },
+
+  setCastGrid: (castGrid) => {
+    set({ castGrid })
+    const { castMapId, castImage, castShowPois, castPois, castShapes } = get()
+    if (castMapId == null || !castImage) return
+    sendCast(sceneMessage({
+      mapId: castMapId, imageUrl: castImage.url, natural: castImage.natural, grid: castGrid,
+      pois: castShowPois ? castPois : [],
+      shapes: castShowPois ? castShapes : [],
+    }))
+  },
+
+  setCastViewport: (castViewport) => {
+    set({ castViewport })
+    sendCast(viewportMessage(castViewport))
+  },
+
+  setTableCalibration: (patch) => {
+    const tableCalibration = { ...get().tableCalibration, ...patch }
+    set({ tableCalibration })
+    // pxPerInch is per display and saved against its id by the panel; the look
+    // of the grid is a global preference and saved here.
+    saveGridPrefs({
+      showGrid: tableCalibration.showGrid,
+      gridColor: tableCalibration.gridColor,
+      gridOpacity: tableCalibration.gridOpacity,
+      poiLabelSize: tableCalibration.poiLabelSize,
+    })
+    sendCast(calibrationMessage(tableCalibration))
+  },
 
   loadPlayers: async () => {
     const { currentCampaign } = get()
