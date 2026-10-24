@@ -410,6 +410,16 @@ export function initDatabase() {
     db.exec(`ALTER TABLE maps ADD COLUMN map_scale TEXT`)
   }
 
+  // Table-grid calibration for the VTT view: a JSON MapGrid
+  // ({ square, offsetX, offsetY }) giving the size and origin of one battle
+  // grid square in the map image's own pixels. Distinct from map_scale above,
+  // which is a travel distance ("this line is 40 miles"); this one is what
+  // makes a square on the TV come out one physical inch wide. NULL = the map
+  // has not been calibrated for the table.
+  if (!mapContentCols.some(c => c.name === 'grid')) {
+    db.exec(`ALTER TABLE maps ADD COLUMN grid TEXT`)
+  }
+
   const poiCols = db.pragma('table_info(pois)') as { name: string }[]
   if (!poiCols.some(c => c.name === 'loot_table')) {
     db.exec(`ALTER TABLE pois ADD COLUMN loot_table TEXT NOT NULL DEFAULT '{"name":"Loot","items":[]}'`)

@@ -51,6 +51,10 @@ export interface GameMap {
   layer_id?: number | null
   article_title?: string | null
   map_scale?: string | null   // JSON MapScale for the travel/measure tool; null = uncalibrated
+  // JSON MapGrid for the VTT table view: the size and origin of one battle-grid
+  // square in this image's pixels. Unrelated to map_scale above — see
+  // src/vtt/calibration.ts for why the two are kept apart. null = uncalibrated.
+  grid?: string | null
 }
 
 // Travel pace on foot (PHB p.182). See src/utils/travel.ts for mph values.
@@ -847,6 +851,42 @@ export interface ElectronAPI {
 
   // Native context menus — see src/hooks/useContextMenu.ts for the caller side.
   popupMenu:             (template: MenuTemplateItem[]) => Promise<string | null>
+
+  // The table (VTT) window. Cast messages are typed as CastMessage in
+  // src/vtt/protocol.ts; they stay `unknown` here so this file keeps no
+  // dependency on the VTT module.
+  vttListDisplays:       () => Promise<VTTDisplayInfo[]>
+  vttStatus:             () => Promise<VTTTableStatus>
+  vttOpen:               (displayId?: number | null) => Promise<VTTTableStatus>
+  vttClose:              () => Promise<VTTTableStatus>
+  vttSetFullscreen:      (on: boolean) => Promise<VTTTableStatus>
+  vttCast:               (msg: unknown) => Promise<boolean>
+  vttResend:             () => Promise<boolean>
+  /** Table view only: tell the DM side how big this screen is. */
+  vttReportSize:         (size: { w: number; h: number }) => Promise<boolean>
+  /** Returns an unsubscribe. */
+  onVTTMessage:          (cb: (msg: unknown) => void) => () => void
+  /** Returns an unsubscribe. */
+  onVTTStatus:           (cb: (status: VTTTableStatus) => void) => () => void
+}
+
+/** Mirrors DisplayInfo in electron/main/vtt.ts. */
+export interface VTTDisplayInfo {
+  id: number
+  label: string
+  bounds: { x: number; y: number; width: number; height: number }
+  scaleFactor: number
+  primary: boolean
+}
+
+/** Mirrors TableStatus in electron/main/vtt.ts. */
+export interface VTTTableStatus {
+  open: boolean
+  displayId: number | null
+  mode: 'secondary-fullscreen' | 'primary-windowed' | null
+  fullscreen: boolean
+  /** The table window's inner size in CSS px; null until it reports. */
+  screen: { w: number; h: number } | null
 }
 
 /** Serializable menu template sent to the main process. Mirrors electron/main/menu.ts. */

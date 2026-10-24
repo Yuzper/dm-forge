@@ -238,4 +238,25 @@ contextBridge.exposeInMainWorld('api', {
   // Native context menus. The template is data only; the renderer keeps the
   // behaviour and dispatches on the id that comes back (null = dismissed).
   popupMenu:           (template: any[]) => ipcRenderer.invoke('menu:popup', template),
+
+  // The table (VTT) window on the player-facing screen. `vttCast` is the only
+  // door state goes through — see src/vtt/castChannel.ts.
+  vttListDisplays:     ()                        => ipcRenderer.invoke('vtt:list-displays'),
+  vttStatus:           ()                        => ipcRenderer.invoke('vtt:status'),
+  vttOpen:             (displayId?: number | null) => ipcRenderer.invoke('vtt:open', displayId ?? null),
+  vttClose:            ()                        => ipcRenderer.invoke('vtt:close'),
+  vttSetFullscreen:    (on: boolean)             => ipcRenderer.invoke('vtt:set-fullscreen', on),
+  vttCast:             (msg: any)                => ipcRenderer.invoke('vtt:cast', msg),
+  vttResend:           ()                        => ipcRenderer.invoke('vtt:resend'),
+  vttReportSize:       (size: { w: number; h: number }) => ipcRenderer.invoke('vtt:report-size', size),
+  onVTTMessage:        (cb: (msg: any) => void) => {
+                         const h = (_e: any, msg: any) => cb(msg)
+                         ipcRenderer.on('vtt:message', h)
+                         return () => ipcRenderer.removeListener('vtt:message', h)
+                       },
+  onVTTStatus:         (cb: (status: any) => void) => {
+                         const h = (_e: any, status: any) => cb(status)
+                         ipcRenderer.on('vtt:status', h)
+                         return () => ipcRenderer.removeListener('vtt:status', h)
+                       },
 })
