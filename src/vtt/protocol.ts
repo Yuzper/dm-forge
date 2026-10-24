@@ -63,6 +63,20 @@ export interface CastShape {
 }
 
 /**
+ * Fog of war, as the lit regions rather than the walls that produced them.
+ *
+ * That choice matters. Sending the wall geometry would put the entire dungeon
+ * layout on the players' screen for anyone who cared to look at it — every
+ * room they have not reached, every corridor, drawn in full. The visibility
+ * polygons carry only what is already lit, so the unexplored map is not merely
+ * hidden on the table, it was never sent there.
+ */
+export interface CastFog {
+  /** Lit regions in percent space. Empty means the table is fully dark. */
+  polygons: { x: number; y: number }[][]
+}
+
+/**
  * What the table is showing. This is a projection, not a map row — see
  * castProjection.ts for why every field here is spelled out by hand.
  *
@@ -91,6 +105,8 @@ export interface CastScene {
    * cast. Same snapshot rule and same toggle as `pois`.
    */
   shapes: CastShape[]
+  /** null when the DM has fog off; the map is then simply all visible. */
+  fog: CastFog | null
 }
 
 /** Pan, in CSS pixels, applied to the scaled image on the table. */

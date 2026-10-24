@@ -6,10 +6,11 @@
 // field that reaches the players is written out by hand here, so adding a
 // column to `maps` cannot leak it onto the table by accident, and anyone
 // reviewing what players can see has one short function to read.
-import type { GameMap, MapShape, MapShapeLayer, POI } from '../types'
-import type { CastMessage, CastPOI, CastScene, CastShape, MapGrid, TableCalibration, CastViewport } from './protocol'
+import type { GameMap, MapShape, MapShapeLayer, MapWall, POI } from '../types'
+import type { CastFog, CastMessage, CastPOI, CastScene, CastShape, MapGrid, TableCalibration, CastViewport } from './protocol'
 import { CAST_PROTOCOL_VERSION } from './protocol'
 import { isRenderable, paintOrder } from '../utils/mapShapeGeometry'
+import { blockingSegments, visibilityPolygon } from './lineOfSight'
 
 /** Parse the JSON in `maps.grid`, tolerating anything malformed. */
 export function parseMapGrid(raw: string | null | undefined): MapGrid | null {
@@ -89,6 +90,22 @@ export function projectShapes(shapes: MapShape[], layers: MapShapeLayer[]): Cast
 }
 
 /**
+ * Work out what is lit, from the walls and wherever the party is standing.
+ *
+ * Returns null when there is nothing to compute from — no walls, or nobody
+ * placed — because a fog layer with no viewers would black out the whole map,
+ * which is never what the DM meant by switching fog on.
+ */
+export function projectFog(
+  walls: MapWall[],
+  viewers: { x: number; y: number }[],
+): CastFog | null {
+  if (walls.length === 0 || viewers.length === 0) return null
+  const segments = blockingSegments(walls)
+  return { polygons: viewers.map(v => visibilityPolygon(v, segments)) }
+}
+
+/**
  * The map as the players may see it: the picture, its size, where its grid
  * squares are, and the points and regions the DM chose to show. Nothing else — no name,
  * no shapes, no notes.
@@ -103,6 +120,7 @@ export function projectScene(
   natural: { w: number; h: number },
   pois: CastPOI[] = [],
   shapes: CastShape[] = [],
+  fog: CastFog | null = null,
 ): CastScene {
   return {
     mapId: map.id,
@@ -111,6 +129,7 @@ export function projectScene(
     grid: parseMapGrid(map.grid),
     pois,
     shapes,
+    fog,
   }
 }
 

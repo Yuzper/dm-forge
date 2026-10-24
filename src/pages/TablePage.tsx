@@ -24,6 +24,7 @@ import {
   centroidOf, dashArrayFor, ellipseAttrs, polygonPointsAttr, toLocalX, toLocalY,
 } from '../utils/mapShapeGeometry'
 import { layout, tableScale } from '../vtt/camera'
+import { polygonAttr } from '../vtt/lineOfSight'
 
 export default function TablePage() {
   const [scene, setScene] = useState<CastScene | null>(null)
@@ -79,6 +80,7 @@ export default function TablePage() {
 
   const pois = scene.pois ?? []
   const shapes = scene.shapes ?? []
+  const fog = scene.fog ?? null
 
   return (
     <div style={{
@@ -119,6 +121,29 @@ export default function TablePage() {
           style={{ position: 'absolute', left: originX, top: originY, pointerEvents: 'none', zIndex: 5 }}
         >
           {shapes.map(sh => <Region key={sh.id} shape={sh} box={{ w: imgW, h: imgH }} />)}
+        </svg>
+      )}
+
+      {fog && (
+        <svg
+          width={imgW} height={imgH} viewBox={`0 0 ${imgW} ${imgH}`}
+          style={{ position: 'absolute', left: originX, top: originY, pointerEvents: 'none', zIndex: 7 }}
+        >
+          <defs>
+            {/* White is lit, black is hidden. Each viewer punches its own
+                visible region out of the darkness; overlapping parties simply
+                union, which is what a mask gives for free. */}
+            <mask id="fog-mask">
+              <rect x={0} y={0} width={imgW} height={imgH} fill="white" />
+              {fog.polygons.map((poly, i) => (
+                <polygon key={i} points={polygonAttr(poly, { w: imgW, h: imgH })} fill="black" />
+              ))}
+            </mask>
+          </defs>
+          {/* Not pure black: a faint sense of the map under the fog keeps the
+              table from looking broken, and matches what players expect from
+              a battlemap they have partly explored. */}
+          <rect x={0} y={0} width={imgW} height={imgH} fill="rgba(0,0,0,0.93)" mask="url(#fog-mask)" />
         </svg>
       )}
 

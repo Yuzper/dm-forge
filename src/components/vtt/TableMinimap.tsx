@@ -17,7 +17,8 @@ import { cameraRect, type Size } from '../../vtt/camera'
 import { ellipseAttrs, polygonPointsAttr } from '../../utils/mapShapeGeometry'
 
 export default function TableMinimap({
-  imageUrl, natural, scale, screen, pan, pois, shapes, onCentre,
+  imageUrl, natural, scale, screen, pan, pois, shapes, viewers = [], mode = 'camera',
+  onCentre, onPlaceViewer,
 }: {
   imageUrl: string
   natural: Size
@@ -28,8 +29,14 @@ export default function TableMinimap({
   pan: { panX: number; panY: number }
   pois: CastPOI[]
   shapes: CastShape[]
+  /** Party positions, percent space, drawn so the DM can see the fog origin. */
+  viewers?: { x: number; y: number }[]
+  /** 'camera' aims the view; 'party' drops a fog viewpoint instead. */
+  mode?: 'camera' | 'party'
   /** Centre the table on this point, in image px. */
   onCentre: (point: { x: number; y: number }) => void
+  /** Place a fog viewpoint, in percent space. */
+  onPlaceViewer?: (point: { x: number; y: number }) => void
 }) {
   const boxRef = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -55,7 +62,9 @@ export default function TableMinimap({
   // Dragging continues outside the thumbnail, so the camera keeps following
   // past the edge instead of sticking the moment the cursor leaves.
   useEffect(() => {
-    if (!dragging) return
+    // Party mode is a single drop, not a drag: you are marking one spot, and
+    // recomputing line of sight on every mouse move would be wasted work.
+    if (!dragging || mode === 'party') return
     const move = (e: PointerEvent) => {
       const p = pointAt(e.clientX, e.clientY)
       if (p) onCentre(p)
@@ -67,7 +76,7 @@ export default function TableMinimap({
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
     }
-  }, [dragging, pointAt, onCentre])
+  }, [dragging, mode, pointAt, onCentre])
 
   // Clamped for drawing only: the true rect can hang off the edge when the map
   // is smaller than the screen, and a box drawn outside the thumbnail just
@@ -85,14 +94,21 @@ export default function TableMinimap({
         e.preventDefault()
         setDragging(true)
         const p = pointAt(e.clientX, e.clientY)
-        if (p) onCentre(p)
+        if (!p) return
+        if (mode === 'party') {
+          onPlaceViewer?.({ x: (p.x / natural.w) * 100, y: (p.y / natural.h) * 100 })
+        } else {
+          onCentre(p)
+        }
       }}
-      title="Click or drag to aim the players' view"
+      title={mode === 'party'
+        ? 'Click where the party is standing'
+        : "Click or drag to aim the players' view"}
       style={{
         position: 'relative', width: thumbW, height: thumbH,
         borderRadius: 'var(--radius-sm)', overflow: 'hidden',
         border: '1px solid var(--border)', background: '#0a0908',
-        cursor: dragging ? 'grabbing' : 'crosshair',
+        cursor: mode === 'party' ? 'copy' : dragging ? 'grabbing' : 'crosshair',
         userSelect: 'none', touchAction: 'none',
       }}
     >
@@ -120,6 +136,14 @@ export default function TableMinimap({
                 fill={sh.fillColor} fillOpacity={sh.fillOpacity}
                 stroke={sh.strokeColor} strokeWidth={1} />
             )
+        ))}
+        {viewers.map((v, i) => (
+          <g key={`viewer-${i}`}>
+            <circle cx={(v.x / 100) * thumbW} cy={(v.y / 100) * thumbH} r={6}
+              fill="none" stroke="#c8a84b" strokeWidth={1.5} opacity={0.9} />
+            <circle cx={(v.x / 100) * thumbW} cy={(v.y / 100) * thumbH} r={2}
+              fill="#c8a84b" />
+          </g>
         ))}
         {pois.map(p => (
           <circle

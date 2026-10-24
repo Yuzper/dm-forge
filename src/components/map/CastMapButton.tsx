@@ -13,11 +13,11 @@
 // two copies of the component.
 import { Tv } from 'lucide-react'
 import { useStore } from '../../store/store'
-import type { GameMap, MapShape, MapShapeLayer, POI } from '../../types'
+import type { GameMap, MapShape, MapShapeLayer, MapWall, POI } from '../../types'
 
 export type CastButtonVariant = 'canvas' | 'hub'
 
-export default function CastMapButton({ map, pois = [], ghostIds, shapes, shapeLayers, variant = 'canvas' }: {
+export default function CastMapButton({ map, pois = [], ghostIds, shapes, shapeLayers, walls, variant = 'canvas' }: {
   map: GameMap | null
   /**
    * The points currently on screen for the DM — already filtered by whichever
@@ -30,6 +30,8 @@ export default function CastMapButton({ map, pois = [], ghostIds, shapes, shapeL
   /** Drawing-layer regions, with their layers so visibility can be resolved. */
   shapes?: MapShape[]
   shapeLayers?: MapShapeLayer[]
+  /** Sight-blocking walls, for fog of war. Kept DM-side; never sent as-is. */
+  walls?: MapWall[]
   variant?: CastButtonVariant
 }) {
   const castMapId = useStore(s => s.castMapId)
@@ -71,7 +73,7 @@ export default function CastMapButton({ map, pois = [], ghostIds, shapes, shapeL
         e.stopPropagation()
         if (!castable) return
         if (on) blankTable()
-        else void castMap(map, { pois, ghostIds, shapes, shapeLayers })
+        else void castMap(map, { pois, ghostIds, shapes, shapeLayers, walls })
       }}
       disabled={!castable}
       title={

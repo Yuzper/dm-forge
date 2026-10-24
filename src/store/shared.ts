@@ -7,12 +7,12 @@
 // The dividing line with pane.ts: if two panes showing different things would
 // still agree on a value, it belongs here.
 import { createStore } from 'zustand/vanilla'
-import type { Campaign, Session, Arc, ArticleSummary, GameMap, MapShape, MapShapeLayer, POI, VTTTableStatus,
+import type { Campaign, Session, Arc, ArticleSummary, GameMap, MapShape, MapShapeLayer, MapWall, POI, VTTTableStatus,
   Player, VisibilityGrant, VisibilityEntityType, Grantee, CreatePlayerInput, SoundBoard } from '../types'
 import type { CastPOI, CastShape, CastViewport, MapGrid, TableCalibration } from '../vtt/protocol'
 import { DEFAULT_CALIBRATION } from '../vtt/protocol'
 import { sendCast } from '../vtt/castChannel'
-import { calibrationMessage, parseMapGrid, projectPOI, projectShapes, sceneMessage, viewportMessage } from '../vtt/castProjection'
+import { calibrationMessage, parseMapGrid, projectFog, projectPOI, projectShapes, sceneMessage, viewportMessage } from '../vtt/castProjection'
 import { loadGridPrefs, saveGridPrefs } from '../vtt/calibration'
 import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
 import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
@@ -28,6 +28,29 @@ import { saveWorkspace, loadWorkspace, clampRatio, savePins, loadPins } from './
 
 const RECENT_ACCENTS_KEY = 'dmforge:recent-accents'
 const SHOW_POIS_KEY = 'dmforge:vtt:show-pois'
+const SHOW_FOG_KEY = 'dmforge:vtt:show-fog'
+
+/**
+ * Push the current scene to the table again.
+ *
+ * Five separate controls change what the table should be showing -- the point
+ * toggle, the grid, the fog switch, placing the party, opening a door -- and
+ * each has to rebuild the whole scene message. Spelled out at every call site
+ * they drifted immediately; one of them forgot the fog.
+ */
+function resendScene(get: () => SharedSlice): void {
+  const s = get()
+  if (s.castMapId == null || !s.castImage) return
+  sendCast(sceneMessage({
+    mapId: s.castMapId,
+    imageUrl: s.castImage.url,
+    natural: s.castImage.natural,
+    grid: s.castGrid,
+    pois: s.castShowPois ? s.castPois : [],
+    shapes: s.castShowPois ? s.castShapes : [],
+    fog: s.castShowFog ? projectFog(s.castWalls, s.castViewers) : null,
+  }))
+}
 
 /** Read an image's natural size; the table needs it to lay out before load. */
 function measureImage(url: string): Promise<{ w: number; h: number }> {
@@ -134,6 +157,20 @@ export interface SharedSlice {
   castShowPois: boolean
   setCastShowPois: (v: boolean) => void
 
+  // -- Fog of war ------------------------------------------------------------
+  // Walls are kept DM-side and never sent; only the lit polygons cross to the
+  // table (see projectFog). Door state lives on this snapshot so opening one
+  // mid-scene reveals the corridor without a re-cast.
+  castWalls: MapWall[]
+  /** Where the party is standing, percent space. No viewers, no fog. */
+  castViewers: { x: number; y: number }[]
+  castShowFog: boolean
+  setCastShowFog: (v: boolean) => void
+  addCastViewer: (point: { x: number; y: number }) => void
+  clearCastViewers: () => void
+  /** Open or shut an imported door, live, and persist it to the map. */
+  toggleCastDoor: (wallId: number) => Promise<void>
+
   /**
    * Put a map on the table, opening the table window if it is closed.
    * `visible` is what the canvas is actually showing — the enabled layers and
@@ -144,6 +181,7 @@ export interface SharedSlice {
     ghostIds?: number[]
     shapes?: MapShape[]
     shapeLayers?: MapShapeLayer[]
+    walls?: MapWall[]
   }) => Promise<void>
   blankTable: () => void
   /** Live grid edits from the panel. Persisting to the map row is the caller's. */
@@ -525,18 +563,41 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
 
   castPois: [],
   castShapes: [],
+  castWalls: [],
+  castViewers: [],
+  castShowFog: localStorage.getItem(SHOW_FOG_KEY) === 'true',
   castShowPois: localStorage.getItem(SHOW_POIS_KEY) === 'true',
+
+  setCastShowFog: (castShowFog) => {
+    set({ castShowFog })
+    try { localStorage.setItem(SHOW_FOG_KEY, String(castShowFog)) } catch { /* private mode */ }
+    resendScene(get)
+  },
+
+  addCastViewer: (point) => {
+    set(s => ({ castViewers: [...s.castViewers, point] }))
+    resendScene(get)
+  },
+
+  clearCastViewers: () => {
+    set({ castViewers: [] })
+    resendScene(get)
+  },
+
+  toggleCastDoor: async (wallId) => {
+    const wall = get().castWalls.find(w => w.id === wallId)
+    if (!wall || wall.kind !== 'door') return
+    const door_open = wall.door_open ? 0 : 1
+    set(s => ({ castWalls: s.castWalls.map(w => w.id === wallId ? { ...w, door_open } : w) }))
+    resendScene(get)
+    // Persist too, so the state survives the next cast and the canvas agrees.
+    await window.api.updateWall(wallId, { door_open })
+  },
 
   setCastShowPois: (castShowPois) => {
     set({ castShowPois })
     try { localStorage.setItem(SHOW_POIS_KEY, String(castShowPois)) } catch { /* private mode */ }
-    const { castMapId, castImage, castGrid, castPois, castShapes } = get()
-    if (castMapId == null || !castImage) return
-    sendCast(sceneMessage({
-      mapId: castMapId, imageUrl: castImage.url, natural: castImage.natural, grid: castGrid,
-      pois: castShowPois ? castPois : [],
-      shapes: castShowPois ? castShapes : [],
-    }))
+    resendScene(get)
   },
 
   castMap: async (map, visible) => {
@@ -549,6 +610,10 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
     const ghostIds = new Set(visible?.ghostIds ?? [])
     const castPois = (visible?.pois ?? []).map(p => projectPOI(p, ghostIds.has(p.id)))
     const castShapes = projectShapes(visible?.shapes ?? [], visible?.shapeLayers ?? [])
+    const castWalls = visible?.walls ?? []
+    // Viewers are cleared on a new cast: last scene's party position is
+    // meaningless on a different map, and stale fog is worse than none.
+    const castViewers: { x: number; y: number }[] = []
     set({
       castMapId: map.id,
       castMapName: map.name,
@@ -557,6 +622,8 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
       castViewport: { panX: 0, panY: 0 },
       castPois,
       castShapes,
+      castWalls,
+      castViewers,
     })
     // Calibration first: a table window opening for the first time should not
     // paint one scene at the default scale and then jump.
@@ -566,6 +633,7 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
       mapId: map.id, imageUrl: url, natural, grid,
       pois: get().castShowPois ? castPois : [],
       shapes: get().castShowPois ? castShapes : [],
+      fog: get().castShowFog ? projectFog(castWalls, castViewers) : null,
     }))
     // Casting means "show this", so a closed table is opened rather than
     // silently ignored. Placement and the single-screen fallback are the main
@@ -577,19 +645,16 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
   },
 
   blankTable: () => {
-    set({ castMapId: null, castMapName: '', castImage: null, castGrid: null, castPois: [], castShapes: [] })
+    set({
+      castMapId: null, castMapName: '', castImage: null, castGrid: null,
+      castPois: [], castShapes: [], castWalls: [], castViewers: [],
+    })
     sendCast(sceneMessage(null))
   },
 
   setCastGrid: (castGrid) => {
     set({ castGrid })
-    const { castMapId, castImage, castShowPois, castPois, castShapes } = get()
-    if (castMapId == null || !castImage) return
-    sendCast(sceneMessage({
-      mapId: castMapId, imageUrl: castImage.url, natural: castImage.natural, grid: castGrid,
-      pois: castShowPois ? castPois : [],
-      shapes: castShowPois ? castShapes : [],
-    }))
+    resendScene(get)
   },
 
   setCastViewport: (castViewport) => {

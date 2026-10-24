@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Tv, X, Maximize2, Minimize2, Grid3x3, MonitorPlay, Ban,
-  Crosshair, AlertTriangle,
+  Crosshair, AlertTriangle, DoorOpen, DoorClosed, Users,
 } from 'lucide-react'
 import { useStore } from '../store/store'
 import type { VTTDisplayInfo } from '../types'
@@ -35,6 +35,13 @@ export default function TableCastPanel() {
   const castImage = useStore(s => s.castImage)
   const castPois = useStore(s => s.castPois)
   const castShapes = useStore(s => s.castShapes)
+  const castWalls = useStore(s => s.castWalls)
+  const castViewers = useStore(s => s.castViewers)
+  const castShowFog = useStore(s => s.castShowFog)
+  const setCastShowFog = useStore(s => s.setCastShowFog)
+  const addCastViewer = useStore(s => s.addCastViewer)
+  const clearCastViewers = useStore(s => s.clearCastViewers)
+  const toggleCastDoor = useStore(s => s.toggleCastDoor)
   const castShowPois = useStore(s => s.castShowPois)
   const setCastShowPois = useStore(s => s.setCastShowPois)
   const castViewport = useStore(s => s.castViewport)
@@ -47,6 +54,8 @@ export default function TableCastPanel() {
   const [displays, setDisplays] = useState<VTTDisplayInfo[]>([])
   const [pickedDisplay, setPickedDisplay] = useState<number | null>(null)
   const [diagonal, setDiagonal] = useState(55)
+  // The minimap does two jobs; this says which one a click does right now.
+  const [mapMode, setMapMode] = useState<'camera' | 'party'>('camera')
 
   useEffect(() => {
     void window.api.vttStatus().then(setTableStatus)
@@ -111,6 +120,10 @@ export default function TableCastPanel() {
 
   const natural = castImage?.natural ?? { w: 0, h: 0 }
   const mapScale = tableScale(natural, castGrid, calibration, screen)
+
+  // Doors get numbered buttons rather than names: a VTT import does not name
+  // them, and "door 3" next to a visible map is enough to find the right one.
+  const castDoors = castWalls.filter(w => w.kind === 'door')
 
   const centreOn = useCallback((point: { x: number; y: number }) => {
     if (!castImage) return
@@ -349,6 +362,65 @@ export default function TableCastPanel() {
               )}
             </Section>
 
+            <Section title="Fog of war">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                <input
+                  type="checkbox"
+                  checked={castShowFog}
+                  onChange={e => setCastShowFog(e.target.checked)}
+                />
+                Hide what the party cannot see
+              </label>
+
+              {castWalls.length === 0 ? (
+                <Note icon={<AlertTriangle size={11} />}>
+                  This map has no walls, so there is nothing to block sight.
+                  Import a Dungeon Alchemist scene, or draw walls with the
+                  Walls tool on the map.
+                </Note>
+              ) : !castShowFog ? (
+                <Note>{castWalls.length} walls ready. Players currently see the whole map.</Note>
+              ) : castViewers.length === 0 ? (
+                <Note icon={<AlertTriangle size={11} />}>
+                  Nobody placed yet — switch the map above to <strong>Place party</strong>
+                  {' '}and click where they are standing. Until then the table shows the map unfogged.
+                </Note>
+              ) : (
+                <Row label="Party">
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    {castViewers.length} point{castViewers.length === 1 ? '' : 's'}
+                  </span>
+                  <button onClick={clearCastViewers} style={{ ...btn, flex: '0 0 auto' }}>Clear</button>
+                </Row>
+              )}
+
+              {castShowFog && castDoors.length > 0 && (
+                <>
+                  <Note>Opening a door reveals what is behind it, live.</Note>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {castDoors.map((d, i) => (
+                      <button
+                        key={d.id}
+                        onClick={() => void toggleCastDoor(d.id)}
+                        title={d.door_open ? 'Open — click to shut' : 'Shut — click to open'}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 4,
+                          padding: '3px 7px', fontSize: 11, cursor: 'pointer',
+                          background: d.door_open ? 'rgba(200,168,75,0.16)' : 'var(--bg-surface)',
+                          color: d.door_open ? 'var(--gold)' : 'var(--text-secondary)',
+                          border: `1px solid ${d.door_open ? 'var(--border-gold)' : 'var(--border)'}`,
+                          borderRadius: 'var(--radius-sm)',
+                        }}
+                      >
+                        {d.door_open ? <DoorOpen size={11} /> : <DoorClosed size={11} />}
+                        {i + 1}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </Section>
+
             <Section title="Camera">
               {castImage ? (
                 <>
@@ -360,9 +432,26 @@ export default function TableCastPanel() {
                     pan={castViewport}
                     pois={castShowPois ? castPois : []}
                     shapes={castShowPois ? castShapes : []}
+                    viewers={castViewers}
+                    mode={mapMode}
                     onCentre={centreOn}
+                    onPlaceViewer={addCastViewer}
                   />
-                  <Note>Click or drag the map above to aim the players' view.</Note>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <ModeTab
+                      active={mapMode === 'camera'} onClick={() => setMapMode('camera')}
+                      icon={<Crosshair size={11} />} label="Aim view"
+                    />
+                    <ModeTab
+                      active={mapMode === 'party'} onClick={() => setMapMode('party')}
+                      icon={<Users size={11} />} label="Place party"
+                    />
+                  </div>
+                  <Note>
+                    {mapMode === 'party'
+                      ? 'Click where the party is standing. Fog is worked out from there.'
+                      : "Click or drag the map above to aim the players' view."}
+                  </Note>
                   <button
                     onClick={() => centreOn({ x: castImage.natural.w / 2, y: castImage.natural.h / 2 })}
                     style={{ ...btn, alignSelf: 'flex-start', flex: '0 0 auto' }}
@@ -420,6 +509,30 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       }}>{title}</h4>
       {children}
     </section>
+  )
+}
+
+/** A two-way switch for what clicking the minimap does. */
+function ModeTab({ active, onClick, icon, label }: {
+  active: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  label: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+        flex: 1, padding: '4px 6px', fontSize: 11, cursor: 'pointer',
+        background: active ? 'rgba(200,168,75,0.16)' : 'var(--bg-surface)',
+        color: active ? 'var(--gold)' : 'var(--text-secondary)',
+        border: `1px solid ${active ? 'var(--border-gold)' : 'var(--border)'}`,
+        borderRadius: 'var(--radius-sm)',
+      }}
+    >
+      {icon} {label}
+    </button>
   )
 }
 

@@ -5,7 +5,7 @@
 //
 // Which tools appear is up to the host: measuring needs a calibrated scale, so
 // only surfaces that support it pass it in.
-import { MousePointer2, MapPin, Pentagon, Square, Triangle, Circle, Ruler } from 'lucide-react'
+import { MousePointer2, MapPin, Pentagon, Square, Triangle, Circle, Ruler, BrickWall } from 'lucide-react'
 import type { MapTool } from '../../types'
 
 interface ToolDef {
@@ -23,6 +23,7 @@ export const MAP_TOOLS: Record<MapTool, ToolDef> = {
   triangle: { tool: 'triangle', icon: Triangle,      label: 'Triangle',  hint: 'Drag to draw' },
   ellipse:  { tool: 'ellipse',  icon: Circle,        label: 'Ellipse',   hint: 'Drag to draw · hold Shift for a circle' },
   measure:  { tool: 'measure',  icon: Ruler,         label: 'Measure',   hint: 'Click points to trace a route and read off travel time' },
+  wall:     { tool: 'wall',     icon: BrickWall,     label: 'Walls',     hint: 'Drag to draw a sight-blocking wall · click one to select it' },
 }
 
 // Groups are rendered with a divider between them: pointer work, then drawing,
@@ -30,7 +31,7 @@ export const MAP_TOOLS: Record<MapTool, ToolDef> = {
 const GROUPS: MapTool[][] = [
   ['select', 'pin'],
   ['polygon', 'rect', 'triangle', 'ellipse'],
-  ['measure'],
+  ['measure', 'wall'],
 ]
 
 export default function MapToolbar({ tool, available, onPick, dark = true }: {
@@ -100,5 +101,9 @@ export function toolHint(tool: MapTool, isDrawing: boolean): string {
       : 'Click to place the first point'
   }
   if (tool === 'select') return MAP_TOOLS.select.hint + ' · Delete removes the selection'
+  if (tool === 'wall') {
+    return MAP_TOOLS.wall.hint
+      + ' · drag an end to move it · K cycles wall/door/window · O opens or shuts a door · Delete removes it'
+  }
   return MAP_TOOLS[tool].hint + (tool === 'pin' || tool === 'measure' ? '' : ' · Esc cancels')
 }
