@@ -126,7 +126,7 @@ export type ShapeTool = 'polygon' | 'rect' | 'triangle' | 'ellipse'
 // mutually exclusive mode booleans (editMode/measureMode/shapeMode), which each
 // had to remember to switch the others off — a standing source of bugs. Exactly
 // one tool is active, and it owns canvas clicks.
-export type MapTool = 'select' | 'pin' | 'measure' | ShapeTool
+export type MapTool = 'select' | 'pin' | 'measure' | 'wall' | ShapeTool
 
 // 'select' is the resting state: nothing is placed, and POIs and shapes are
 // both clickable to open their details.
@@ -158,6 +158,51 @@ export interface MapShape {
   show_label: number  // 0/1
   sort_order: number
   created_at: string
+}
+
+// ── Walls (fog of war) ────────────────────────────────────────────────────────
+
+// 'wall' blocks sight outright; 'door' blocks it only while closed; 'window'
+// never blocks it, for railings, counters and low walls that you still want
+// drawn so the map reads correctly while editing.
+export type MapWallKind = 'wall' | 'door' | 'window'
+
+// A single sight-blocking segment. Endpoints are percent of the image (0–100),
+// matching POIs and map shapes, so they survive the import downscale.
+export interface MapWall {
+  id: number
+  map_id: number
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  kind: MapWallKind
+  door_open: number   // 0/1 — SQLite has no boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface CreateMapWallInput {
+  map_id: number
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  kind?: MapWallKind
+  door_open?: number
+}
+
+/** What a VTT import produced, for the confirmation the user sees. */
+export interface VTTImportResult {
+  success: boolean
+  canceled?: boolean
+  error?: string
+  mapId?: number
+  source?: 'uvtt' | 'foundry'
+  walls?: number
+  doors?: number
+  /** Grid square in stored-image pixels, written to maps.grid. */
+  gridSquare?: number
 }
 
 export interface POI {
@@ -864,6 +909,14 @@ export interface ElectronAPI {
   vttResend:             () => Promise<boolean>
   /** Table view only: tell the DM side how big this screen is. */
   vttReportSize:         (size: { w: number; h: number }) => Promise<boolean>
+
+  // VTT scene import and sight-blocking walls.
+  importVTTMap:          (owner: { kind: 'article' | 'session' | 'campaign'; id: number }) => Promise<VTTImportResult>
+  getWalls:              (mapId: number) => Promise<MapWall[]>
+  createWall:            (data: CreateMapWallInput) => Promise<MapWall>
+  updateWall:            (id: number, data: Partial<Omit<MapWall, 'id' | 'map_id'>>) => Promise<MapWall>
+  deleteWall:            (id: number) => Promise<boolean>
+  clearWalls:            (mapId: number) => Promise<number>
   /** Returns an unsubscribe. */
   onVTTMessage:          (cb: (msg: unknown) => void) => () => void
   /** Returns an unsubscribe. */

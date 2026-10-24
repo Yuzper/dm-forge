@@ -58,6 +58,30 @@ export function useMapCollection({
   const ownerColumns = useCallback((o: MapOwner) =>
     o.kind === 'campaign' ? { campaign_id: o.id } : { article_id: o.id }, [])
 
+  /**
+   * Import a VTT scene. Unlike the image import, the main process builds the
+   * map row (and its walls) itself, so the list is refetched rather than
+   * having a row pushed onto it.
+   */
+  const importVTT = useCallback(async () => {
+    if (!owner) return null
+    setImporting(true)
+    try {
+      const res = await window.api.importVTTMap(owner)
+      if (res.success) {
+        const fetched = await listMaps(owner)
+        setMaps(fetched)
+        onCountChange?.(fetched.length)
+        const made = fetched.find(m => m.id === res.mapId)
+        if (made) selectMap(made)
+      }
+      return res
+    } finally {
+      setImporting(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownerKey, listMaps])
+
   // ── Selection ───────────────────────────────────────────────────────────────
   const selectMap = useCallback((map: GameMap | null) => {
     setCurrentMap(map)
@@ -136,7 +160,7 @@ export function useMapCollection({
   }, [])
 
   return {
-    maps, currentMap, importing,
+    maps, currentMap, importing, importVTT,
     selectMap, addMap, renameMap, replaceImage, deleteMap, patchMap,
   }
 }

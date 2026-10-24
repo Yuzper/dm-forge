@@ -22,6 +22,7 @@ import { registerClockIPC } from './ipc/clocks'
 import { registerPlayerIPC } from './ipc/players'
 import { registerPublishIPC } from './ipc/publish'
 import { registerVTTIPC } from './vtt'
+import { registerVTTImportIPC } from './ipc/vttImport'
 
 function registerIPC(imagesPath: string) {
   registerCampaignIPC()
@@ -40,6 +41,7 @@ function registerIPC(imagesPath: string) {
   registerPlayerIPC()
   registerPublishIPC()
   registerVTTIPC()
+  registerVTTImportIPC(imagesPath)
   registerMenuIPC()
 }
 

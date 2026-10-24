@@ -249,6 +249,16 @@ contextBridge.exposeInMainWorld('api', {
   vttCast:             (msg: any)                => ipcRenderer.invoke('vtt:cast', msg),
   vttResend:           ()                        => ipcRenderer.invoke('vtt:resend'),
   vttReportSize:       (size: { w: number; h: number }) => ipcRenderer.invoke('vtt:report-size', size),
+
+  // VTT scene import (Dungeon Alchemist / Foundry / Universal VTT) and the
+  // sight-blocking walls it brings with it.
+  importVTTMap:        (owner: { kind: 'article' | 'session' | 'campaign'; id: number }) =>
+                         ipcRenderer.invoke('vtt:import-map', owner),
+  getWalls:            (mapId: number)           => ipcRenderer.invoke('walls:get-all', mapId),
+  createWall:          (data: any)               => ipcRenderer.invoke('walls:create', data),
+  updateWall:          (id: number, data: any)   => ipcRenderer.invoke('walls:update', id, data),
+  deleteWall:          (id: number)              => ipcRenderer.invoke('walls:delete', id),
+  clearWalls:          (mapId: number)           => ipcRenderer.invoke('walls:clear', mapId),
   onVTTMessage:        (cb: (msg: any) => void) => {
                          const h = (_e: any, msg: any) => cb(msg)
                          ipcRenderer.on('vtt:message', h)

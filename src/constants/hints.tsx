@@ -15,6 +15,14 @@ export function Kbd({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ * Shown on the (i) beside every VTT import button. The question it exists to
+ * answer is "which of Dungeon Alchemist's exports do I pick?", so it names
+ * both and says what each one costs you.
+ */
+export const VTT_IMPORT_HINT =
+  'Import a map from Dungeon Alchemist, Foundry VTT or anything that writes Universal VTT. Both formats work: a .dd2vtt / .uvtt file carries its own picture, while a Foundry scene .json needs you to pick the image too. Either way the walls come across for fog of war, and the grid is calibrated for the table automatically.'
+
 export interface Hint {
   title: string
   items: ReactNode[]

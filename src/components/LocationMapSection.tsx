@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Map, Upload, MoreHorizontal, Pencil, Trash2, Image as ImageIcon } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, BrickWall } from 'lucide-react'
+import { InfoHint } from './InfoHint'
+import { VTT_IMPORT_HINT } from '../constants/hints'
 import { MapContext } from '../context/MapContext'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
@@ -136,7 +138,7 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
   // itself is only responsible for the list and its lifecycle.
   const {
     maps, currentMap, importing,
-    selectMap: handleSelectMap, addMap: handleUploadNew,
+    selectMap: handleSelectMap, addMap: handleUploadNew, importVTT,
     renameMap, replaceImage, deleteMap: handleDeleteMap, patchMap,
   } = useMapCollection({
     owner: { kind: 'article', id: articleId },
@@ -153,6 +155,12 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
       window.api.getMapLayers(map.id).then(setLayers)
     },
   })
+
+  const handleImportVTT = async () => {
+    const res = await importVTT()
+    // A good import announces itself as a new tab; only failure needs words.
+    if (res && !res.success && !res.canceled && res.error) window.alert(res.error)
+  }
 
   const handleReplaceMapImage = (map: GameMap) => replaceImage(map)
 
@@ -274,6 +282,28 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
           >
             <Upload size={11} />
             {importing ? 'Importing…' : maps.length === 0 ? 'Import Map Image' : 'Add Map'}
+          </button>
+        )}
+
+        {/* The wiki article is where most maps live, so the VTT route belongs
+            here as much as in a session. Brings walls and a calibrated grid. */}
+        {editMode && (
+          <button
+            onClick={handleImportVTT}
+            disabled={importing}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '0 12px', background: 'transparent', border: 'none',
+              borderRight: '1px solid var(--border)',
+              color: 'var(--text-muted)', fontSize: 12,
+              cursor: importing ? 'wait' : 'pointer',
+              transition: 'color var(--transition)', whiteSpace: 'nowrap', height: 36,
+            }}
+            className="hover-gold"
+          >
+            <BrickWall size={11} />
+            Import VTT
+            <InfoHint text={VTT_IMPORT_HINT} stopPropagation />
           </button>
         )}
       </div>

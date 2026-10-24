@@ -10,7 +10,7 @@
 // Stage 1 runs a single pane, so this file is a move, not a rewrite — the bodies
 // below are the originals from store.ts with their shared reads redirected.
 import { createStore } from 'zustand/vanilla'
-import type { Campaign, Session, GameMap, POI, Article, ArticleSummary, ArticleType } from '../types'
+import type { Campaign, Session, GameMap, POI, Article, ArticleSummary, ArticleType, VTTImportResult } from '../types'
 import { loadVisitView, saveVisitView, sessionScope } from '../utils/visitLayers'
 import { sharedStore } from './shared'
 import { forEachPane } from './paneRegistry'
@@ -109,6 +109,8 @@ export interface PaneSlice {
   loadMaps: (sessionId: number) => Promise<void>
   selectMap: (m: GameMap) => void
   importMap: (sessionId: number) => Promise<void>
+  /** VTT scene import; resolves with what the main process made of the file. */
+  importVTTMap: (sessionId: number) => Promise<VTTImportResult>
   createScene: (sessionId: number) => Promise<void>
   deleteMap: (id: number) => Promise<void>
   updateMap: (id: number, data: { name?: string; content?: string; grid?: string | null }) => Promise<void>
@@ -587,6 +589,22 @@ export function createPaneStore() {
       get().selectMap(map)
       const { currentCampaign, loadSessions } = sharedStore.getState()
       if (currentCampaign) loadSessions(currentCampaign.id)
+    },
+
+    /**
+     * Import a VTT scene (Dungeon Alchemist and friends). The main process
+     * creates the map row itself, walls and all, so this reloads rather than
+     * appending the way importMap does.
+     */
+    importVTTMap: async (sessionId) => {
+      const res = await window.api.importVTTMap({ kind: 'session', id: sessionId })
+      if (!res.success) return res
+      await get().loadMaps(sessionId)
+      const map = get().maps.find(m => m.id === res.mapId)
+      if (map) get().selectMap(map)
+      const { currentCampaign, loadSessions } = sharedStore.getState()
+      if (currentCampaign) loadSessions(currentCampaign.id)
+      return res
     },
 
     // A mapless scene: a tab with no image, just a rich-text page (image_path '').

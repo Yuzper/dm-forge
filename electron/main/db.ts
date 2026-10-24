@@ -420,6 +420,31 @@ export function initDatabase() {
     db.exec(`ALTER TABLE maps ADD COLUMN grid TEXT`)
   }
 
+  // Sight-blocking geometry for the table's fog of war, imported from a VTT
+  // file (Dungeon Alchemist and friends) or drawn by hand.
+  //
+  // Coordinates are percent of the image, 0–100, the same space POIs and map
+  // shapes already use. That is deliberate: map images are downscaled to
+  // 4000px on import, and a wall stored in pixels would quietly land in the
+  // wrong place the moment that happened.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS map_walls (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      map_id     INTEGER NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+      x1         REAL    NOT NULL,
+      y1         REAL    NOT NULL,
+      x2         REAL    NOT NULL,
+      y2         REAL    NOT NULL,
+      -- 'wall' blocks sight, 'door' blocks it only while closed, 'window'
+      -- never does (a low wall, a railing, a counter).
+      kind       TEXT    NOT NULL DEFAULT 'wall',
+      door_open  INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_map_walls_map ON map_walls(map_id);
+  `)
+
   const poiCols = db.pragma('table_info(pois)') as { name: string }[]
   if (!poiCols.some(c => c.name === 'loot_table')) {
     db.exec(`ALTER TABLE pois ADD COLUMN loot_table TEXT NOT NULL DEFAULT '{"name":"Loot","items":[]}'`)
