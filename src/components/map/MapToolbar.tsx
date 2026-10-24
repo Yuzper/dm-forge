@@ -23,7 +23,7 @@ export const MAP_TOOLS: Record<MapTool, ToolDef> = {
   triangle: { tool: 'triangle', icon: Triangle,      label: 'Triangle',  hint: 'Drag to draw' },
   ellipse:  { tool: 'ellipse',  icon: Circle,        label: 'Ellipse',   hint: 'Drag to draw · hold Shift for a circle' },
   measure:  { tool: 'measure',  icon: Ruler,         label: 'Measure',   hint: 'Click points to trace a route and read off travel time' },
-  wall:     { tool: 'wall',     icon: BrickWall,     label: 'Walls',     hint: 'Drag to draw a sight-blocking wall · click one to select it' },
+  wall:     { tool: 'wall',     icon: BrickWall,     label: 'Walls',     hint: 'Drag to draw a sight-blocking wall · ends snap to nearby corners and gridlines · click one to select it' },
 }
 
 // Groups are rendered with a divider between them: pointer work, then drawing,

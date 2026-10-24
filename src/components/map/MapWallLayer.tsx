@@ -20,8 +20,11 @@ export const WALL_COLORS: Record<string, string> = {
 
 export interface WallDraft { x1: number; y1: number; x2: number; y2: number }
 
+/** Where the cursor will land, and why, so the DM can see a snap take hold. */
+export interface SnapHint { x: number; y: number; kind: 'endpoint' | 'grid' }
+
 export default function MapWallLayer({
-  walls, box, scale, interactive, selectedId, draft,
+  walls, box, scale, interactive, selectedId, draft, snap,
   onSelect, onEndpointDown,
 }: {
   walls: MapWall[]
@@ -32,6 +35,8 @@ export default function MapWallLayer({
   selectedId?: number | null
   /** The wall being dragged out right now, not yet saved. */
   draft?: WallDraft | null
+  /** The point the next click will snap to, if any. */
+  snap?: SnapHint | null
   onSelect?: (wall: MapWall, e: React.MouseEvent) => void
   onEndpointDown?: (wall: MapWall, end: 1 | 2, e: React.MouseEvent) => void
 }) {
@@ -97,6 +102,22 @@ export default function MapWallLayer({
           style={{ pointerEvents: 'none' }}
         />
       )}
+
+      {/* Snap target. Two shapes rather than two colours, so it reads at a
+          glance which kind of snap is about to happen: a ring for an existing
+          corner, a small cross for a gridline crossing. */}
+      {snap && (snap.kind === 'endpoint' ? (
+        <circle
+          cx={lx(snap.x)} cy={ly(snap.y)} r={w(7)}
+          fill="none" stroke="#c8a84b" strokeWidth={w(2)}
+          style={{ pointerEvents: 'none' }}
+        />
+      ) : (
+        <g stroke="#c8a84b" strokeWidth={w(1.5)} style={{ pointerEvents: 'none' }}>
+          <line x1={lx(snap.x) - w(6)} y1={ly(snap.y)} x2={lx(snap.x) + w(6)} y2={ly(snap.y)} />
+          <line x1={lx(snap.x)} y1={ly(snap.y) - w(6)} x2={lx(snap.x)} y2={ly(snap.y) + w(6)} />
+        </g>
+      ))}
     </svg>
   )
 }

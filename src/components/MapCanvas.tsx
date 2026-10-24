@@ -1,5 +1,5 @@
 // path: src/components/MapCanvas.tsx
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useMapContext } from '../context/MapContext'
 import { MapPin, Maximize, List } from 'lucide-react'
 import type { MapShape, MapTool, POI } from '../types'
@@ -10,7 +10,8 @@ import MapShapeLayer from './map/MapShapeLayer'
 import MeasureOverlay from './map/MeasureOverlay'
 import MapContentsPanel, { type VisitsSection } from './map/MapContentsPanel'
 import CastMapButton from './map/CastMapButton'
-import MapWallLayer from './map/MapWallLayer'
+import MapWallLayer, { type SnapHint } from './map/MapWallLayer'
+import { snapWallPoint, gridStepPercent } from '../utils/wallSnap'
 import { useMapWalls } from '../hooks/useMapWalls'
 import TravelMeasurePanel from './map/TravelMeasurePanel'
 import MapToolbar, { toolHint } from './map/MapToolbar'
@@ -225,6 +226,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
   // The wall being dragged out, and which endpoint of an existing wall is
   // being moved. Both live outside React's cycle during the gesture.
   const [wallDraft, setWallDraft] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  const [wallSnap, setWallSnap] = useState<SnapHint | null>(null)
   const wallDragRef = useRef<{ wallId: number; end: 1 | 2 } | null>(null)
 
   const drawing = useShapeDrawing({
@@ -271,7 +273,10 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     // The wall tool owns bare-canvas drags: start a new segment rather than
     // panning. Panning is still available with the select tool.
     if (tool === 'wall' && pt && !wallDragRef.current) {
-      setWallDraft({ x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y })
+      // Snapped at both ends: a run of walls is only sight-tight if each one
+      // starts exactly where the last finished.
+      const a = snapWall(pt)
+      setWallDraft({ x1: a.x, y1: a.y, x2: a.x, y2: a.y })
       return
     }
     // A box tool claims this drag for the shape it's drawing.
@@ -287,13 +292,21 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
         const drag = wallDragRef.current
         if (drag) {
           // Moving an existing endpoint: optimistic, so it tracks the cursor.
-          const patch = drag.end === 1 ? { x1: pt.x, y1: pt.y } : { x2: pt.x, y2: pt.y }
+          const s = snapWall(pt, drag.wallId)
+          const patch = drag.end === 1 ? { x1: s.x, y1: s.y } : { x2: s.x, y2: s.y }
           wallStore.setWallsLocal(drag.wallId, patch)
         } else {
-          setWallDraft(d => (d ? { ...d, x2: pt.x, y2: pt.y } : d))
+          const s = snapWall(pt)
+          setWallDraft(d => (d ? { ...d, x2: s.x, y2: s.y } : d))
         }
       }
       return
+    }
+    if (tool === 'wall') {
+      // Nothing in flight: preview where a click would land, so the snap is
+      // visible before committing to the drag rather than after.
+      const pt = toPercent(e.clientX, e.clientY)
+      if (pt) snapWall(pt)
     }
     if (drawing.tool === 'polygon') {
       const pt = toPercent(e.clientX, e.clientY)
@@ -304,6 +317,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
 
   const handleMouseUp = () => {
     const drag = wallDragRef.current
+    setWallSnap(null)
     if (drag) {
       wallDragRef.current = null
       const moved = wallStore.walls.find(w => w.id === drag.wallId)
@@ -335,6 +349,23 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     }
     return best
   }
+
+  // Grid snapping needs the map's calibration; absent on an uncalibrated map,
+  // in which case only endpoint snapping applies.
+  const wallGridStep = useMemo(
+    () => gridStepPercent(currentMap?.grid, imgNatural),
+    [currentMap?.grid, imgNatural],
+  )
+
+  /**
+   * Put a wall point where the DM meant it rather than where the cursor was.
+   * Also records what it snapped to, so the canvas can show it.
+   */
+  const snapWall = useCallback((pt: { x: number; y: number }, excludeWallId?: number) => {
+    const res = snapWallPoint(pt, wallStore.walls, { grid: wallGridStep, excludeWallId })
+    setWallSnap(res.snappedTo ? { x: res.x, y: res.y, kind: res.snappedTo } : null)
+    return res
+  }, [wallStore.walls, wallGridStep])
 
   // Wall keys. Scoped to the wall tool so Delete keeps meaning "delete the
   // selected pin or region" everywhere else.
@@ -773,6 +804,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
                   interactive
                   selectedId={wallStore.selectedId}
                   draft={wallDraft}
+                  snap={wallSnap}
                   onSelect={w => wallStore.setSelectedId(w.id)}
                   onEndpointDown={(w, end) => {
                     wallStore.setSelectedId(w.id)

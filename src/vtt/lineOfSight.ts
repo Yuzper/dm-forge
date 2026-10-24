@@ -87,6 +87,65 @@ export function visibilityPolygon(origin: Point, segments: Segment[]): Point[] {
 }
 
 /**
+ * How far apart two endpoints can be and still count as the same corner.
+ *
+ * In percent of the image. Small enough that a doorway — at least a grid
+ * square, so several percent on any normal battlemap — is never welded shut,
+ * and large enough to close the hand-drawn misses that leak light.
+ */
+export const WELD_TOLERANCE = 0.45
+
+/**
+ * Pull near-coincident endpoints onto a single point.
+ *
+ * Two walls that only *look* joined leave a gap a fraction of a percent wide,
+ * and a visibility ray will go straight through it. On the players' screen
+ * that is a thin wedge of light stretching out through a solid wall — the
+ * classic symptom, and the reason this exists.
+ *
+ * Snapping while drawing (src/utils/wallSnap.ts) stops new gaps appearing;
+ * this catches the ones already in the data, including imports whose
+ * polylines do not quite close. It runs on the copy used for casting and
+ * never touches the stored walls, so nothing is silently rewritten under the
+ * DM's editing.
+ *
+ * Buckets of one tolerance, checking the eight neighbours as well, so a pair
+ * straddling a bucket boundary still welds. First point seen in a cluster
+ * wins, which is arbitrary but stable.
+ */
+export function weldEndpoints(segments: Segment[], tolerance = WELD_TOLERANCE): Segment[] {
+  if (tolerance <= 0 || segments.length === 0) return segments
+
+  const anchors = new Map<string, Point>()
+  const key = (ix: number, iy: number) => `${ix}:${iy}`
+
+  const resolve = (x: number, y: number): Point => {
+    const ix = Math.floor(x / tolerance)
+    const iy = Math.floor(y / tolerance)
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const hit = anchors.get(key(ix + dx, iy + dy))
+        if (hit && Math.hypot(hit.x - x, hit.y - y) <= tolerance) return hit
+      }
+    }
+    const fresh = { x, y }
+    anchors.set(key(ix, iy), fresh)
+    return fresh
+  }
+
+  const out: Segment[] = []
+  for (const s of segments) {
+    const a = resolve(s.x1, s.y1)
+    const b = resolve(s.x2, s.y2)
+    // Welding can collapse a very short segment to a point. It blocked almost
+    // nothing anyway, and a zero-length segment only confuses the ray maths.
+    if (a.x === b.x && a.y === b.y) continue
+    out.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y })
+  }
+  return out
+}
+
+/**
  * Which walls actually block sight right now.
  *
  * A window never does. A door does only while it is shut — that is the whole
@@ -95,6 +154,7 @@ export function visibilityPolygon(origin: Point, segments: Segment[]): Point[] {
  */
 export function blockingSegments(
   walls: { x1: number; y1: number; x2: number; y2: number; kind: string; door_open?: number }[],
+  tolerance = WELD_TOLERANCE,
 ): Segment[] {
   const out: Segment[] = []
   for (const w of walls) {
@@ -102,7 +162,9 @@ export function blockingSegments(
     if (w.kind === 'door' && w.door_open) continue
     out.push({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })
   }
-  return out
+  // Welded on the way out, so every caster gets gap-free geometry without
+  // having to remember to ask for it.
+  return weldEndpoints(out, tolerance)
 }
 
 /** `points` as an SVG polygon attribute, scaled from percent into a box. */
