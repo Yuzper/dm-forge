@@ -167,6 +167,9 @@ export interface SharedSlice {
   castShowFog: boolean
   setCastShowFog: (v: boolean) => void
   addCastViewer: (point: { x: number; y: number }) => void
+  /** Drag an already-placed party marker. */
+  moveCastViewer: (index: number, point: { x: number; y: number }) => void
+  removeCastViewer: (index: number) => void
   clearCastViewers: () => void
   /** Open or shut an imported door, live, and persist it to the map. */
   toggleCastDoor: (wallId: number) => Promise<void>
@@ -576,6 +579,16 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
 
   addCastViewer: (point) => {
     set(s => ({ castViewers: [...s.castViewers, point] }))
+    resendScene(get)
+  },
+
+  moveCastViewer: (index, point) => {
+    set(s => ({ castViewers: s.castViewers.map((v, i) => i === index ? point : v) }))
+    resendScene(get)
+  },
+
+  removeCastViewer: (index) => {
+    set(s => ({ castViewers: s.castViewers.filter((_, i) => i !== index) }))
     resendScene(get)
   },
 
