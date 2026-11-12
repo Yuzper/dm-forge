@@ -13,6 +13,7 @@ import EmptyState from '../EmptyState'
 import TravelMeasurePanel from '../map/TravelMeasurePanel'
 import MeasureOverlay from '../map/MeasureOverlay'
 import MapContentsPanel from '../map/MapContentsPanel'
+import CastMapButton from '../map/CastMapButton'
 import MapPOIMarker from '../map/MapPOIMarker'
 import MapShapeLayer from '../map/MapShapeLayer'
 import MapToolbar, { toolHint } from '../map/MapToolbar'
@@ -674,6 +675,13 @@ export default function HubWorldMap({
             </button>
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderLeft: '1px solid rgba(255,255,255,0.07)' }}>
+            {maps.length > 0 && (
+              <CastMapButton
+                map={currentMap} pois={pois}
+                shapes={shapeStore.shapes} shapeLayers={shapeStore.layers}
+                variant="hub"
+              />
+            )}
             {editable
               ? <button onClick={e => { e.stopPropagation(); leaveEditMode() }}
                   title="Finish editing — the map becomes read-only again"

@@ -1,7 +1,7 @@
 // path: src/pages/SessionPage.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
-import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft, FileText, FilePlus, BookOpen, Link2, Layers, Plus, Search, Unlink } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft, FileText, FilePlus, BookOpen, Link2, Layers, Plus, Search, Unlink, BrickWall } from 'lucide-react'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
 import RichEditor from '../components/RichEditor'
@@ -14,6 +14,8 @@ import { parseDay } from '../utils/dates'
 import { layerLabel } from '../utils/visitLayers'
 import Modal from '../components/Modal'
 import { SECTION_ACCENTS } from '../constants/sections'
+import { InfoHint } from '../components/InfoHint'
+import { VTT_IMPORT_HINT } from '../constants/hints'
 
 // The in-world date chip is timeline-flavoured, so it borrows that accent.
 // Read during render — see the note in constants/sections.ts.
@@ -581,7 +583,7 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
 export default function SessionPage() {
   const {
     currentSession, currentCampaign, setView, setCampaignSubView,
-    maps, currentMap, selectMap, importMap, createScene, reorderSessionTabs, sessionReadMode, setSessionReadMode,
+    maps, currentMap, selectMap, importMap, importVTTMap, createScene, reorderSessionTabs, sessionReadMode, setSessionReadMode,
     setHintContext,
   } = useStore()
 
@@ -615,6 +617,16 @@ export default function SessionPage() {
     setImporting(true)
     await importMap(currentSession.id)
     setImporting(false)
+  }
+
+  const handleImportVTT = async () => {
+    if (!currentSession) return
+    setImporting(true)
+    const res = await importVTTMap(currentSession.id)
+    setImporting(false)
+    // Only worth interrupting for the bad news; a good import is visible as a
+    // new tab with its walls already in place.
+    if (res && !res.success && !res.canceled && res.error) window.alert(res.error)
   }
 
   const handleNewScene = async () => {
@@ -741,6 +753,29 @@ export default function SessionPage() {
             >
               <Upload size={12} />
               {importing ? 'Importing…' : 'Import Map'}
+            </button>
+          )}
+
+          {/* VTT scene import: brings walls (for fog) and a calibrated grid. */}
+          {!sessionReadMode && (
+            <button
+              onClick={handleImportVTT}
+              disabled={importing}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '0 14px',
+                background: 'transparent', border: 'none',
+                borderRight: '1px solid var(--border)',
+                color: 'var(--text-muted)', fontSize: 12,
+                cursor: importing ? 'wait' : 'pointer',
+                transition: 'color var(--transition)',
+                whiteSpace: 'nowrap',
+              }}
+              className="hover-gold"
+            >
+              <BrickWall size={12} />
+              Import VTT
+              <InfoHint text={VTT_IMPORT_HINT} stopPropagation />
             </button>
           )}
 

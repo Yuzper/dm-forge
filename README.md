@@ -18,12 +18,19 @@ A desktop companion app for Dungeon Masters — manage campaigns, sessions, inte
 | Layer | Technology |
 |---|---|
 | Desktop shell | Electron 29 |
-| UI framework | React 18 + TypeScript |
-| Build tool | electron-vite |
-| Database | SQLite via better-sqlite3 |
-| Rich text | TipTap 2 |
-| State | Zustand |
+| UI framework | React 19 + TypeScript 5 |
+| Build tool | electron-vite (app) + Vite (player viewer) |
+| Packaging | electron-builder, electron-updater |
+| Database | SQLite via better-sqlite3 (WAL) |
+| Rich text | TipTap 2 + custom marks/extensions |
+| State | Zustand (split shared / per-pane stores) |
+| Graphs & layout | ReactFlow, dagre, d3-force |
 | Icons | Lucide React |
+
+The app builds to four targets: the Electron **main** process, the **preload**
+bridge, the **renderer** (the DM-facing React app), and a standalone **player
+viewer** — a plain static web app with no Electron and no `window.api`, bundled
+into the installer and copied into each published player site.
 
 ## Setup
 
@@ -100,34 +107,95 @@ No data is ever sent anywhere. Everything is yours, offline-first.
 ```
 dm-forge/
 ├── electron/
-│   ├── main/index.ts       # Main process: window, SQLite, IPC handlers
-│   └── preload/index.ts    # Secure bridge: exposes window.api
-├── src/
-│   ├── types/index.ts      # Shared TypeScript types
-│   ├── store/store.ts      # Zustand global state
+│   ├── main/
+│   │   ├── index.ts            # Startup: menu → window → DB → register IPC
+│   │   ├── db.ts               # SQLite schema (~27 tables) + column migrations
+│   │   ├── defaults.ts         # Seed creatures, loot tables, sound library
+│   │   ├── window.ts  appMenu.ts  menu.ts  contextMenu.ts  updater.ts
+│   │   ├── relationsSync.ts    # Derives each campaign's auto "territory web"
+│   │   └── ipc/                # One module per domain, each `register*IPC()`
+│   │       ├── campaigns.ts  sessions.ts  maps.ts  articles.ts
+│   │       ├── combat.ts  dmNotes.ts  lootTables.ts  relations.ts
+│   │       ├── sounds.ts  clocks.ts  players.ts  search.ts
+│   │       ├── files.ts  backup.ts
+│   │       ├── publish.ts      # Electron shell for the player-site export
+│   │       └── publishCore.ts  # Pure projection + crypto (no electron/db)
+│   └── preload/index.ts        # contextBridge → window.api
+├── src/                        # Renderer (DM-facing app)
+│   ├── App.tsx                 # Pane layout, floating widgets, backgrounds
+│   ├── types/index.ts          # Shared types incl. the window.api surface
+│   ├── store/
+│   │   ├── store.ts            # The merged `useStore` hook over both slices
+│   │   ├── shared.ts           # Campaign-wide state (campaigns, articles, …)
+│   │   ├── pane.ts             # Per-pane state: view, tabs, back/forward
+│   │   ├── location.ts         # A Location = where a tab points, stored by id
+│   │   ├── paneRegistry.ts     workspacePersist.ts
+│   ├── context/                # MapContext, PaneContext (active-pane routing)
+│   ├── pages/                  # One per `view`
+│   │   ├── CampaignsPage.tsx   CampaignDetailPage.tsx  SessionPage.tsx
+│   │   ├── WikiPage.tsx        DMNotesPage.tsx         LootTablesPage.tsx
+│   │   └── RelationsPage.tsx   TimelinePage.tsx        SoundboardPage.tsx
 │   ├── components/
-│   │   ├── Sidebar.tsx         # Navigation sidebar
-│   │   ├── MapCanvas.tsx       # Map image + POI marker overlay
-│   │   ├── POIPanel.tsx        # Sliding POI detail panel
-│   │   ├── RichEditor.tsx      # TipTap toolbar + editor
-│   │   └── WikiLinkExtension.ts # Custom [[wikilink]] TipTap mark
-│   ├── pages/
-│   │   ├── CampaignsPage.tsx   # Campaign grid home
-│   │   ├── CampaignDetailPage.tsx # Sessions list
-│   │   ├── SessionPage.tsx     # Map tabs + canvas
-│   │   └── WikiPage.tsx        # Wiki browser + article editor
-│   └── index.css           # Dark grimoire theme + global styles
+│   │   ├── PaneView.tsx  TabStrip.tsx  PaneSplitter.tsx   # Workspace shell
+│   │   ├── RichEditor.tsx                                 # TipTap toolbar + editor
+│   │   ├── WikiLinkExtension.ts  WikiAutolinkExtension.ts
+│   │   ├── SessionLinkExtension.ts  SpellLinkExtension.tsx  DmOnlyMark.ts
+│   │   ├── MapCanvas.tsx  POIPanel.tsx  POIList.tsx
+│   │   ├── CombatPanel.tsx  EncounterBalance.tsx  StatBlockEditor.tsx
+│   │   ├── SoundboardWidget.tsx  GlobalSearch.tsx  SettingsModal.tsx
+│   │   ├── map/                # POI markers, shape layers, measure, travel
+│   │   ├── wiki/               # ArticleEditor, graph view, relations panel
+│   │   ├── relations/          # ReactFlow relation-web canvas + modals
+│   │   ├── campaign/           # Campaign hub, hub world map, sessions view
+│   │   ├── clocks/  sidebar/
+│   ├── constants/              # POI & article types, themes, sections, hints
+│   ├── hooks/                  # Map viewport/shapes/measure, tabs, menus
+│   ├── utils/                  # Geometry, travel, encounter budget, timeline
+│   ├── data/                   # Spells 2014/2024, starter monsters, loot, sounds
+│   └── index.css               # Theme tokens + global styles
+├── viewer/                     # Player-facing static site (no Electron)
+│   ├── src/App.tsx  MapView.tsx  GraphView.tsx  StatBlock.tsx
+│   ├── src/crypto.ts           # WebCrypto decrypt of the published bundle
+│   └── vite.config.ts          # Builds to dist-viewer/
+├── docs/                       # Design plans (player pages, tabs & menus)
 ├── electron.vite.config.ts
 └── package.json
 ```
 
+### Architecture Notes
+
+**Store split.** `useStore` is one hook over two Zustand stores: `shared.ts` holds
+campaign-wide state (campaigns, sessions, arcs, the article index, players and
+visibility grants, soundboard, appearance), while `pane.ts` holds what *one* view
+of the campaign is showing (current view, tabs with their own back/forward stacks,
+current article/map/POI). `store.ts` routes writes to the correct side and caches
+merged snapshots per pane. Rule of thumb: if two panes could legitimately disagree
+about a value, it belongs on the pane.
+
+**Workspace.** `App.tsx` renders one or two panes; each `PaneView` is a tab strip
+plus the page its active tab points at. Tabs store a `Location` by id rather than
+an embedded row, so a persisted tab never holds a stale or deleted entity — labels
+and icons resolve at render time from the shared caches.
+
+**Articles are the source of truth.** Maps hang off articles, and sessions *attach*
+article-maps (optionally scoped to a visit layer) rather than owning them.
+
+**Publishing.** `publish.ts` writes a per-player static site: each player's redacted
+corpus is projected first, and tags and backlinks are derived from *that* corpus
+only — never the DM master. Bundles are encrypted PBKDF2-SHA256 → AES-256-GCM and
+decrypted in the browser by the viewer.
+
 ### Adding New POI Types
 
-In `src/components/POIPanel.tsx` and `src/components/MapCanvas.tsx`, extend the `POI_TYPES` / `TYPE_COLORS` arrays with your new type.
+In `src/constants/POITypes.ts`, add an entry to `POI_TYPE_LIST` (value, label, icon,
+colour) and to `TYPE_ORDER`, then add the value to the `POIType` union in
+`src/types/index.ts`.
 
 ### Adding New Article Types
 
-In `src/pages/WikiPage.tsx`, extend the `ARTICLE_TYPES` array.
+In `src/components/wiki/wikiConstants.tsx`, add an entry to `ARTICLE_TYPES`, add the
+value to the `ArticleType` union in `src/types/index.ts`, and give it a colour in
+`src/constants/articleTypes.ts`.
 
 ## Roadmap Ideas
 

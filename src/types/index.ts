@@ -55,6 +55,10 @@ export interface GameMap {
   layer_id?: number | null
   article_title?: string | null
   map_scale?: string | null   // JSON MapScale for the travel/measure tool; null = uncalibrated
+  // JSON MapGrid for the VTT table view: the size and origin of one battle-grid
+  // square in this image's pixels. Unrelated to map_scale above — see
+  // src/vtt/calibration.ts for why the two are kept apart. null = uncalibrated.
+  grid?: string | null
 }
 
 // Travel pace on foot (PHB p.182). See src/utils/travel.ts for mph values.
@@ -126,7 +130,7 @@ export type ShapeTool = 'polygon' | 'rect' | 'triangle' | 'ellipse'
 // mutually exclusive mode booleans (editMode/measureMode/shapeMode), which each
 // had to remember to switch the others off — a standing source of bugs. Exactly
 // one tool is active, and it owns canvas clicks.
-export type MapTool = 'select' | 'pin' | 'measure' | ShapeTool
+export type MapTool = 'select' | 'pin' | 'measure' | 'wall' | ShapeTool
 
 // 'select' is the resting state: nothing is placed, and POIs and shapes are
 // both clickable to open their details.
@@ -158,6 +162,51 @@ export interface MapShape {
   show_label: number  // 0/1
   sort_order: number
   created_at: string
+}
+
+// ── Walls (fog of war) ────────────────────────────────────────────────────────
+
+// 'wall' blocks sight outright; 'door' blocks it only while closed; 'window'
+// never blocks it, for railings, counters and low walls that you still want
+// drawn so the map reads correctly while editing.
+export type MapWallKind = 'wall' | 'door' | 'window'
+
+// A single sight-blocking segment. Endpoints are percent of the image (0–100),
+// matching POIs and map shapes, so they survive the import downscale.
+export interface MapWall {
+  id: number
+  map_id: number
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  kind: MapWallKind
+  door_open: number   // 0/1 — SQLite has no boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface CreateMapWallInput {
+  map_id: number
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  kind?: MapWallKind
+  door_open?: number
+}
+
+/** What a VTT import produced, for the confirmation the user sees. */
+export interface VTTImportResult {
+  success: boolean
+  canceled?: boolean
+  error?: string
+  mapId?: number
+  source?: 'uvtt' | 'foundry'
+  walls?: number
+  doors?: number
+  /** Grid square in stored-image pixels, written to maps.grid. */
+  gridSquare?: number
 }
 
 export interface POI {
@@ -874,6 +923,50 @@ export interface ElectronAPI {
 
   // Native context menus — see src/hooks/useContextMenu.ts for the caller side.
   popupMenu:             (template: MenuTemplateItem[]) => Promise<string | null>
+
+  // The table (VTT) window. Cast messages are typed as CastMessage in
+  // src/vtt/protocol.ts; they stay `unknown` here so this file keeps no
+  // dependency on the VTT module.
+  vttListDisplays:       () => Promise<VTTDisplayInfo[]>
+  vttStatus:             () => Promise<VTTTableStatus>
+  vttOpen:               (displayId?: number | null) => Promise<VTTTableStatus>
+  vttClose:              () => Promise<VTTTableStatus>
+  vttSetFullscreen:      (on: boolean) => Promise<VTTTableStatus>
+  vttCast:               (msg: unknown) => Promise<boolean>
+  vttResend:             () => Promise<boolean>
+  /** Table view only: tell the DM side how big this screen is. */
+  vttReportSize:         (size: { w: number; h: number }) => Promise<boolean>
+
+  // VTT scene import and sight-blocking walls.
+  importVTTMap:          (owner: { kind: 'article' | 'session' | 'campaign'; id: number }) => Promise<VTTImportResult>
+  getWalls:              (mapId: number) => Promise<MapWall[]>
+  createWall:            (data: CreateMapWallInput) => Promise<MapWall>
+  updateWall:            (id: number, data: Partial<Omit<MapWall, 'id' | 'map_id'>>) => Promise<MapWall>
+  deleteWall:            (id: number) => Promise<boolean>
+  clearWalls:            (mapId: number) => Promise<number>
+  /** Returns an unsubscribe. */
+  onVTTMessage:          (cb: (msg: unknown) => void) => () => void
+  /** Returns an unsubscribe. */
+  onVTTStatus:           (cb: (status: VTTTableStatus) => void) => () => void
+}
+
+/** Mirrors DisplayInfo in electron/main/vtt.ts. */
+export interface VTTDisplayInfo {
+  id: number
+  label: string
+  bounds: { x: number; y: number; width: number; height: number }
+  scaleFactor: number
+  primary: boolean
+}
+
+/** Mirrors TableStatus in electron/main/vtt.ts. */
+export interface VTTTableStatus {
+  open: boolean
+  displayId: number | null
+  mode: 'secondary-fullscreen' | 'primary-windowed' | null
+  fullscreen: boolean
+  /** The table window's inner size in CSS px; null until it reports. */
+  screen: { w: number; h: number } | null
 }
 
 /** Serializable menu template sent to the main process. Mirrors electron/main/menu.ts. */

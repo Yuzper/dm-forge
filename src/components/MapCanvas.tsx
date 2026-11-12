@@ -1,5 +1,5 @@
 // path: src/components/MapCanvas.tsx
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useMapContext } from '../context/MapContext'
 import { MapPin, Maximize, List } from 'lucide-react'
 import type { MapShape, MapTool, POI } from '../types'
@@ -9,6 +9,10 @@ import MapPOIMarker, { poiColor } from './map/MapPOIMarker'
 import MapShapeLayer from './map/MapShapeLayer'
 import MeasureOverlay from './map/MeasureOverlay'
 import MapContentsPanel, { type VisitsSection } from './map/MapContentsPanel'
+import CastMapButton from './map/CastMapButton'
+import MapWallLayer, { type SnapHint } from './map/MapWallLayer'
+import { snapWallPoint, gridStepPercent } from '../utils/wallSnap'
+import { useMapWalls } from '../hooks/useMapWalls'
 import TravelMeasurePanel from './map/TravelMeasurePanel'
 import MapToolbar, { toolHint } from './map/MapToolbar'
 import ShapePopup from './map/ShapePopup'
@@ -218,6 +222,12 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
   }, [editingShape, currentCampaign?.id])
 
   const shapeStore = useMapShapes(currentMap?.id ?? null)
+  const wallStore = useMapWalls(currentMap?.id ?? null)
+  // The wall being dragged out, and which endpoint of an existing wall is
+  // being moved. Both live outside React's cycle during the gesture.
+  const [wallDraft, setWallDraft] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  const [wallSnap, setWallSnap] = useState<SnapHint | null>(null)
+  const wallDragRef = useRef<{ wallId: number; end: 1 | 2 } | null>(null)
 
   const drawing = useShapeDrawing({
     mapId: currentMap?.id ?? null,
@@ -259,14 +269,45 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return
-    // A box tool claims this drag for the shape it's drawing.
     const pt = toPercent(e.clientX, e.clientY)
+    // The wall tool owns bare-canvas drags: start a new segment rather than
+    // panning. Panning is still available with the select tool.
+    if (tool === 'wall' && pt && !wallDragRef.current) {
+      // Snapped at both ends: a run of walls is only sight-tight if each one
+      // starts exactly where the last finished.
+      const a = snapWall(pt)
+      setWallDraft({ x1: a.x, y1: a.y, x2: a.x, y2: a.y })
+      return
+    }
+    // A box tool claims this drag for the shape it's drawing.
     if (pt && drawing.handleCanvasMouseDown(pt, e)) return
     vp.panDown(e)
     setCursorStyle('grabbing')
   }
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (wallDragRef.current || wallDraft) {
+      const pt = toPercent(e.clientX, e.clientY)
+      if (pt) {
+        const drag = wallDragRef.current
+        if (drag) {
+          // Moving an existing endpoint: optimistic, so it tracks the cursor.
+          const s = snapWall(pt, drag.wallId)
+          const patch = drag.end === 1 ? { x1: s.x, y1: s.y } : { x2: s.x, y2: s.y }
+          wallStore.setWallsLocal(drag.wallId, patch)
+        } else {
+          const s = snapWall(pt)
+          setWallDraft(d => (d ? { ...d, x2: s.x, y2: s.y } : d))
+        }
+      }
+      return
+    }
+    if (tool === 'wall') {
+      // Nothing in flight: preview where a click would land, so the snap is
+      // visible before committing to the drag rather than after.
+      const pt = toPercent(e.clientX, e.clientY)
+      if (pt) snapWall(pt)
+    }
     if (drawing.tool === 'polygon') {
       const pt = toPercent(e.clientX, e.clientY)
       if (pt) drawing.handleCanvasMouseMove(pt)
@@ -275,6 +316,24 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
   }
 
   const handleMouseUp = () => {
+    const drag = wallDragRef.current
+    setWallSnap(null)
+    if (drag) {
+      wallDragRef.current = null
+      const moved = wallStore.walls.find(w => w.id === drag.wallId)
+      // Persist once, at the end of the gesture, not once per mouse move.
+      if (moved) void wallStore.patchWall(moved.id, {
+        x1: moved.x1, y1: moved.y1, x2: moved.x2, y2: moved.y2,
+      })
+      return
+    }
+    if (wallDraft) {
+      const d = wallDraft
+      setWallDraft(null)
+      // A click rather than a drag: too short to be a wall anyone meant.
+      if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 0.4) void wallStore.createWall(d)
+      return
+    }
     vp.panUp()
     setCursorStyle(placing ? 'crosshair' : 'grab')
   }
@@ -290,6 +349,41 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     }
     return best
   }
+
+  // Grid snapping needs the map's calibration; absent on an uncalibrated map,
+  // in which case only endpoint snapping applies.
+  const wallGridStep = useMemo(
+    () => gridStepPercent(currentMap?.grid, imgNatural),
+    [currentMap?.grid, imgNatural],
+  )
+
+  /**
+   * Put a wall point where the DM meant it rather than where the cursor was.
+   * Also records what it snapped to, so the canvas can show it.
+   */
+  const snapWall = useCallback((pt: { x: number; y: number }, excludeWallId?: number) => {
+    const res = snapWallPoint(pt, wallStore.walls, { grid: wallGridStep, excludeWallId })
+    setWallSnap(res.snappedTo ? { x: res.x, y: res.y, kind: res.snappedTo } : null)
+    return res
+  }, [wallStore.walls, wallGridStep])
+
+  // Wall keys. Scoped to the wall tool so Delete keeps meaning "delete the
+  // selected pin or region" everywhere else.
+  useEffect(() => {
+    if (tool !== 'wall') return
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
+      const wall = wallStore.walls.find(w => w.id === wallStore.selectedId)
+      if (!wall) return
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); void wallStore.removeWall(wall.id) }
+      else if (e.key === 'k' || e.key === 'K') { e.preventDefault(); void wallStore.cycleKind(wall) }
+      else if (e.key === 'o' || e.key === 'O') { e.preventDefault(); void wallStore.toggleDoor(wall) }
+      else if (e.key === 'Escape') wallStore.setSelectedId(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tool, wallStore])
 
   const focusPOIFromList = (poi: POI) => {
     centreOn(poi)
@@ -514,7 +608,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
         {editMode && (
           <MapToolbar
             tool={tool}
-            available={['select', 'pin', 'polygon', 'rect', 'triangle', 'ellipse', 'measure']}
+            available={['select', 'pin', 'polygon', 'rect', 'triangle', 'ellipse', 'measure', 'wall']}
             onPick={next => {
               setTool(next)
               if (isShapeTool(next)) setContentsOpen(true)
@@ -536,6 +630,16 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
         >
           <List size={12} /> Contents{extraLayersOn > 0 ? ` +${extraLayersOn}` : ''}
         </button>
+        {/* What the players get is what is on screen here right now: the
+            same visible set the Contents list indexes, ghosts included. */}
+        <CastMapButton
+          map={currentMap}
+          pois={visiblePois}
+          ghostIds={ghostPois.map(p => p.id)}
+          shapes={shapeStore.shapes}
+          shapeLayers={shapeStore.layers}
+          walls={wallStore.walls}
+        />
       </div>
 
       {showContents && (
@@ -691,6 +795,25 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
                   waypoints={measure.waypoints}
                   isCalibrating={measure.isCalibrating}
                   calibPts={measure.calibPts}
+                />
+              )}
+              {/* Walls sit above the regions and below the pins, and only
+                  while the wall tool is up: an imported map carries hundreds
+                  of segments and they would bury the art otherwise. */}
+              {tool === 'wall' && (
+                <MapWallLayer
+                  walls={wallStore.walls}
+                  box={{ w: imgBounds.w, h: imgBounds.h }}
+                  scale={scale}
+                  interactive
+                  selectedId={wallStore.selectedId}
+                  draft={wallDraft}
+                  snap={wallSnap}
+                  onSelect={w => wallStore.setSelectedId(w.id)}
+                  onEndpointDown={(w, end) => {
+                    wallStore.setSelectedId(w.id)
+                    wallDragRef.current = { wallId: w.id, end }
+                  }}
                 />
               )}
               {/* Regions paint under the pins so a district never hides a marker. */}

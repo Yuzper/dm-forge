@@ -7,9 +7,14 @@
 // The dividing line with pane.ts: if two panes showing different things would
 // still agree on a value, it belongs here.
 import { createStore } from 'zustand/vanilla'
-import type { Campaign, Session, Arc, ArticleSummary,
+import type { Campaign, Session, Arc, ArticleSummary, GameMap, MapShape, MapShapeLayer, MapWall, POI, VTTTableStatus,
   Player, VisibilityGrant, VisibilityEntityType, Grantee, CreatePlayerInput, SoundBoard } from '../types'
 import { getTrackTags } from '../../shared/tracks'
+import type { CastPOI, CastShape, CastViewport, MapGrid, TableCalibration } from '../vtt/protocol'
+import { DEFAULT_CALIBRATION } from '../vtt/protocol'
+import { sendCast } from '../vtt/castChannel'
+import { calibrationMessage, parseMapGrid, projectFog, projectPOI, projectShapes, sceneMessage, viewportMessage } from '../vtt/castProjection'
+import { loadGridPrefs, saveGridPrefs } from '../vtt/calibration'
 import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
 import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
 import {
@@ -23,6 +28,40 @@ import { sameLocation, type Location } from './location'
 import { saveWorkspace, loadWorkspace, clampRatio, savePins, loadPins } from './workspacePersist'
 
 const RECENT_ACCENTS_KEY = 'dmforge:recent-accents'
+const SHOW_POIS_KEY = 'dmforge:vtt:show-pois'
+const SHOW_FOG_KEY = 'dmforge:vtt:show-fog'
+
+/**
+ * Push the current scene to the table again.
+ *
+ * Five separate controls change what the table should be showing -- the point
+ * toggle, the grid, the fog switch, placing the party, opening a door -- and
+ * each has to rebuild the whole scene message. Spelled out at every call site
+ * they drifted immediately; one of them forgot the fog.
+ */
+function resendScene(get: () => SharedSlice): void {
+  const s = get()
+  if (s.castMapId == null || !s.castImage) return
+  sendCast(sceneMessage({
+    mapId: s.castMapId,
+    imageUrl: s.castImage.url,
+    natural: s.castImage.natural,
+    grid: s.castGrid,
+    pois: s.castShowPois ? s.castPois : [],
+    shapes: s.castShowPois ? s.castShapes : [],
+    fog: s.castShowFog ? projectFog(s.castWalls, s.castViewers) : null,
+  }))
+}
+
+/** Read an image's natural size; the table needs it to lay out before load. */
+function measureImage(url: string): Promise<{ w: number; h: number }> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => resolve({ w: 0, h: 0 })
+    img.src = url
+  })
+}
 
 function getStarterMonsters(system: string) {
   if (system === 'D&D 5e 2014') return MONSTERS_2014
@@ -91,6 +130,72 @@ export interface SharedSlice {
   // The map clears it once answered, so a hub opened later doesn't jump to it.
   worldMapFocusRequest: { poiId: number; nonce: number } | null
   requestWorldMapFocus: (poiId: number | null) => void
+  // ── The table (VTT) screen ────────────────────────────────────────────────
+  // All of it lives here rather than in the panel, because a map can be cast
+  // from the map itself (the Cast button beside Contents on the world map,
+  // session maps and wiki maps) with the panel never opened. The panel is one
+  // view of this state, not its owner.
+  tableCastOpen: boolean
+  setTableCastOpen: (v: boolean) => void
+
+  tableStatus: VTTTableStatus
+  setTableStatus: (s: VTTTableStatus) => void
+
+  /** The map currently on the table, or null when it is blank. */
+  castMapId: number | null
+  castMapName: string
+  castImage: { url: string; natural: { w: number; h: number } } | null
+  castGrid: MapGrid | null
+  castViewport: CastViewport
+  tableCalibration: TableCalibration
+
+  /**
+   * The points visible on the DM's canvas when this map was cast, already
+   * redacted. Held even while `castShowPois` is off, so flipping the toggle is
+   * instant and does not need a re-cast — but only what is sent crosses to the
+   * table, and with the toggle off nothing is.
+   */
+  castPois: CastPOI[]
+  /** Regions from the drawing layers that were on at cast time. */
+  castShapes: CastShape[]
+  /** DM's switch: do the players see the points and regions at all? */
+  castShowPois: boolean
+  setCastShowPois: (v: boolean) => void
+
+  // -- Fog of war ------------------------------------------------------------
+  // Walls are kept DM-side and never sent; only the lit polygons cross to the
+  // table (see projectFog). Door state lives on this snapshot so opening one
+  // mid-scene reveals the corridor without a re-cast.
+  castWalls: MapWall[]
+  /** Where the party is standing, percent space. No viewers, no fog. */
+  castViewers: { x: number; y: number }[]
+  castShowFog: boolean
+  setCastShowFog: (v: boolean) => void
+  addCastViewer: (point: { x: number; y: number }) => void
+  /** Drag an already-placed party marker. */
+  moveCastViewer: (index: number, point: { x: number; y: number }) => void
+  removeCastViewer: (index: number) => void
+  clearCastViewers: () => void
+  /** Open or shut an imported door, live, and persist it to the map. */
+  toggleCastDoor: (wallId: number) => Promise<void>
+
+  /**
+   * Put a map on the table, opening the table window if it is closed.
+   * `visible` is what the canvas is actually showing — the enabled layers and
+   * visits — with the ids of any ghosted (dimmed) ones.
+   */
+  castMap: (map: GameMap, visible?: {
+    pois: POI[]
+    ghostIds?: number[]
+    shapes?: MapShape[]
+    shapeLayers?: MapShapeLayer[]
+    walls?: MapWall[]
+  }) => Promise<void>
+  blankTable: () => void
+  /** Live grid edits from the panel. Persisting to the map row is the caller's. */
+  setCastGrid: (g: MapGrid | null) => void
+  setCastViewport: (v: CastViewport) => void
+  setTableCalibration: (patch: Partial<TableCalibration>) => void
 
   // Soundboard — the widget persists across the campaign, not per pane.
   soundboardOpen: boolean
@@ -448,6 +553,144 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
   grants: [],
   playersManagerOpen: false,
   setPlayersManagerOpen: (playersManagerOpen) => set({ playersManagerOpen }),
+
+  tableCastOpen: false,
+  setTableCastOpen: (tableCastOpen) => set({ tableCastOpen }),
+
+  tableStatus: { open: false, displayId: null, mode: null, fullscreen: false, screen: null },
+  setTableStatus: (tableStatus) => set({ tableStatus }),
+
+  castMapId: null,
+  castMapName: '',
+  castImage: null,
+  castGrid: null,
+  castViewport: { panX: 0, panY: 0 },
+  tableCalibration: { ...DEFAULT_CALIBRATION, ...loadGridPrefs() },
+
+  castPois: [],
+  castShapes: [],
+  castWalls: [],
+  castViewers: [],
+  castShowFog: localStorage.getItem(SHOW_FOG_KEY) === 'true',
+  castShowPois: localStorage.getItem(SHOW_POIS_KEY) === 'true',
+
+  setCastShowFog: (castShowFog) => {
+    set({ castShowFog })
+    try { localStorage.setItem(SHOW_FOG_KEY, String(castShowFog)) } catch { /* private mode */ }
+    resendScene(get)
+  },
+
+  addCastViewer: (point) => {
+    set(s => ({ castViewers: [...s.castViewers, point] }))
+    resendScene(get)
+  },
+
+  moveCastViewer: (index, point) => {
+    set(s => ({ castViewers: s.castViewers.map((v, i) => i === index ? point : v) }))
+    resendScene(get)
+  },
+
+  removeCastViewer: (index) => {
+    set(s => ({ castViewers: s.castViewers.filter((_, i) => i !== index) }))
+    resendScene(get)
+  },
+
+  clearCastViewers: () => {
+    set({ castViewers: [] })
+    resendScene(get)
+  },
+
+  toggleCastDoor: async (wallId) => {
+    const wall = get().castWalls.find(w => w.id === wallId)
+    if (!wall || wall.kind !== 'door') return
+    const door_open = wall.door_open ? 0 : 1
+    set(s => ({ castWalls: s.castWalls.map(w => w.id === wallId ? { ...w, door_open } : w) }))
+    resendScene(get)
+    // Persist too, so the state survives the next cast and the canvas agrees.
+    await window.api.updateWall(wallId, { door_open })
+  },
+
+  setCastShowPois: (castShowPois) => {
+    set({ castShowPois })
+    try { localStorage.setItem(SHOW_POIS_KEY, String(castShowPois)) } catch { /* private mode */ }
+    resendScene(get)
+  },
+
+  castMap: async (map, visible) => {
+    if (!map.image_path) return
+    const url = await window.api.getImagePath(map.image_path)
+    const natural = await measureImage(url)
+    const grid = parseMapGrid(map.grid)
+    // Snapshot, not a live view: what the players see stays put while the DM
+    // carries on toggling layers to plan the next scene.
+    const ghostIds = new Set(visible?.ghostIds ?? [])
+    const castPois = (visible?.pois ?? []).map(p => projectPOI(p, ghostIds.has(p.id)))
+    const castShapes = projectShapes(visible?.shapes ?? [], visible?.shapeLayers ?? [])
+    const castWalls = visible?.walls ?? []
+    // Viewers are cleared on a new cast: last scene's party position is
+    // meaningless on a different map, and stale fog is worse than none.
+    const castViewers: { x: number; y: number }[] = []
+    set({
+      castMapId: map.id,
+      castMapName: map.name,
+      castImage: { url, natural },
+      castGrid: grid,
+      castViewport: { panX: 0, panY: 0 },
+      castPois,
+      castShapes,
+      castWalls,
+      castViewers,
+    })
+    // Calibration first: a table window opening for the first time should not
+    // paint one scene at the default scale and then jump.
+    sendCast(calibrationMessage(get().tableCalibration))
+    sendCast(viewportMessage({ panX: 0, panY: 0 }))
+    sendCast(sceneMessage({
+      mapId: map.id, imageUrl: url, natural, grid,
+      pois: get().castShowPois ? castPois : [],
+      shapes: get().castShowPois ? castShapes : [],
+      fog: get().castShowFog ? projectFog(castWalls, castViewers) : null,
+    }))
+    // Casting means "show this", so a closed table is opened rather than
+    // silently ignored. Placement and the single-screen fallback are the main
+    // process's call — see electron/main/vtt.ts.
+    if (!get().tableStatus.open) {
+      const status = await window.api.vttOpen()
+      set({ tableStatus: status })
+    }
+  },
+
+  blankTable: () => {
+    set({
+      castMapId: null, castMapName: '', castImage: null, castGrid: null,
+      castPois: [], castShapes: [], castWalls: [], castViewers: [],
+    })
+    sendCast(sceneMessage(null))
+  },
+
+  setCastGrid: (castGrid) => {
+    set({ castGrid })
+    resendScene(get)
+  },
+
+  setCastViewport: (castViewport) => {
+    set({ castViewport })
+    sendCast(viewportMessage(castViewport))
+  },
+
+  setTableCalibration: (patch) => {
+    const tableCalibration = { ...get().tableCalibration, ...patch }
+    set({ tableCalibration })
+    // pxPerInch is per display and saved against its id by the panel; the look
+    // of the grid is a global preference and saved here.
+    saveGridPrefs({
+      showGrid: tableCalibration.showGrid,
+      gridColor: tableCalibration.gridColor,
+      gridOpacity: tableCalibration.gridOpacity,
+      poiLabelSize: tableCalibration.poiLabelSize,
+    })
+    sendCast(calibrationMessage(tableCalibration))
+  },
 
   loadPlayers: async () => {
     const { currentCampaign } = get()
