@@ -87,7 +87,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Search — the visible entry point for the Ctrl+S palette */}
+      {/* Search — the visible entry point for the Ctrl+K palette */}
       {currentCampaign && (
         <div style={{ padding: '0 10px 10px' }}>
           <button
@@ -109,7 +109,7 @@ export default function Sidebar() {
               background: 'var(--bg-surface)', border: '1px solid var(--border)',
               borderRadius: 3, padding: '1px 5px', color: 'var(--text-muted)',
             }}>
-              Ctrl+S
+              Ctrl+K
             </kbd>
           </button>
         </div>

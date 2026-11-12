@@ -38,7 +38,7 @@ export const HINTS: Record<string, Hint> = {
       <>Panels surface recent edits, articles by type, active quests, and a session timeline at a glance.</>,
       <>After adding a world map, you can press <strong>Edit</strong> to add Points of Interest (POIs) and link sessions and wiki articles that are related to that area.</>,
       <>POI's on the world map are clickable to show the linked articles and session, which are also clickable.</>,
-      <>Press <Kbd>Ctrl+S</Kbd> anywhere to search the whole campaign — articles, sessions, DM notes, and map pins.</>,
+      <>Press <Kbd>Ctrl+K</Kbd> anywhere to search the whole campaign — articles, sessions, DM notes, and map pins.</>,
       <>Press <Kbd>Ctrl+F</Kbd> to find and highlight a word on the current page.</>,
     ],
   },
@@ -71,7 +71,7 @@ export const HINTS: Record<string, Hint> = {
       <>Articles open read-only — click <strong>Edit</strong> (top right) to make changes.</>,
       <>Changes save on their own when you hit Save or leave the article.</>,
       <>Press <Kbd>Ctrl+F</Kbd> to highlight a word on a page.</>,
-      <>Press <Kbd>Ctrl+S</Kbd> to search the whole campaign.</>,
+      <>Press <Kbd>Ctrl+K</Kbd> to search the whole campaign.</>,
     ],
   },
 
@@ -156,7 +156,7 @@ export const HINTS: Record<string, Hint> = {
     items: [
       <>Drag pages to reorder them, or drop them into a folder.</>,
       <>Notes support the same <Kbd>[[</Kbd> <Kbd>@@</Kbd> <Kbd>\\</Kbd> links as articles — plus the autolink dropdown (type a capitalised name) and click-to-link underlines.</>,
-      <>Press <Kbd>Ctrl+F</Kbd> to highlight a word in the open note; <Kbd>Ctrl+S</Kbd> searches all notes, articles, and sessions at once.</>,
+      <>Press <Kbd>Ctrl+F</Kbd> to highlight a word in the open note; <Kbd>Ctrl+K</Kbd> searches all notes, articles, and sessions at once.</>,
     ],
   },
 

@@ -12,7 +12,7 @@ import type { MenuItemConstructorOptions } from 'electron'
 // `registerAccelerator: false` would still *display* a shortcut that does
 // nothing. No role, no accelerator, nothing registered.
 //
-// Chords already owned by the renderer are left out entirely: Ctrl+S is the
+// Chords already owned by the renderer are left out entirely: Ctrl+K is the
 // search palette (GlobalSearch.tsx) and Ctrl+F is the find bar (FindBar.tsx).
 // A menu accelerator would win over their keydown handlers.
 

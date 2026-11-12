@@ -31,10 +31,10 @@ export default function GlobalSearch() {
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  // Ctrl+S / Cmd+S toggles; Esc closes.
+  // Ctrl+K / Cmd+K toggles (the usual chord for a search palette); Esc closes.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         const s = useStore.getState()
         if (s.currentCampaign) s.setSearchOpen(!s.searchOpen)

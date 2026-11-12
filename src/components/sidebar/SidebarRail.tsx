@@ -42,7 +42,7 @@ export default function SidebarRail({ inCampaign, onExpand }: {
       {inCampaign && currentCampaign && (
         <>
           <RailIcon
-            icon={<Search size={16} />} title="Search campaign (Ctrl+S)"
+            icon={<Search size={16} />} title="Search campaign (Ctrl+K)"
             onClick={() => setSearchOpen(true)}
           />
           <RailIcon

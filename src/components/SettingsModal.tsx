@@ -614,8 +614,7 @@ function HelpTab() {
       <Group title="Shortcuts">
         <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 14px', fontSize: 12 }}>
           {[
-            ['Ctrl+S', 'Search this campaign'],
-            ['Ctrl+K', 'Command palette'],
+            ['Ctrl+K', 'Search this campaign'],
             ['Ctrl+T', 'New tab'],
             ['Ctrl+W', 'Close tab'],
             ['Ctrl+Tab', 'Next tab'],
