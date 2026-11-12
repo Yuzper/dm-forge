@@ -11,6 +11,7 @@
 //   · click a door    open or shut it, live
 //   · click a pin     centre the players' view on it
 //   · right-click a party marker removes it
+//   · while placing (after "Add party"), a click drops a new party marker there
 //
 // One gesture, one meaning, decided by what is under the cursor when it goes
 // down — doors first, since they are the smallest target and the one you are
@@ -39,6 +40,7 @@ export default function TableMinimap({
   imageUrl, natural, scale, screen, pan, pois, shapes,
   walls = [], viewers = [], showWalls = false, width, maxHeight = 460,
   onCentre, onMoveViewer, onRemoveViewer, onToggleDoor,
+  placing = false, onPlace,
 }: {
   imageUrl: string
   natural: Size
@@ -63,10 +65,20 @@ export default function TableMinimap({
   onMoveViewer?: (index: number, point: { x: number; y: number }) => void
   onRemoveViewer?: (index: number) => void
   onToggleDoor?: (wallId: number) => void
+  /**
+   * "Add party" has been pressed and the next click chooses where the marker goes.
+   * While set, that click wins over every other gesture -- you may well be
+   * placing the party right on top of a door or a pin.
+   */
+  placing?: boolean
+  onPlace?: (point: { x: number; y: number }) => void
 }) {
   const boxRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [hover, setHover] = useState<'door' | 'viewer' | 'poi' | null>(null)
+  // Where the marker will land, drawn under the cursor while placing.
+  const [placeGhost, setPlaceGhost] = useState<{ x: number; y: number } | null>(null)
+  useEffect(() => { if (!placing) setPlaceGhost(null) }, [placing])
 
   const aspect = natural.w > 0 ? natural.h / natural.w : 0.6
   const thumbW = Math.max(120, Math.round(width))
@@ -145,6 +157,11 @@ export default function TableMinimap({
     e.preventDefault()
     const local = localAt(e.clientX, e.clientY)
     if (!local) return
+    if (placing) {
+      const pct = toPercent(local)
+      onPlace?.({ x: Math.max(0, Math.min(100, pct.x)), y: Math.max(0, Math.min(100, pct.y)) })
+      return
+    }
     const hit = hitTest(local)
     if (hit.kind === 'door') { onToggleDoor?.(hit.id); return }
     if (hit.kind === 'viewer') { setDrag({ kind: 'viewer', index: hit.index }); return }
@@ -174,6 +191,7 @@ export default function TableMinimap({
     if (drag) return
     const local = localAt(e.clientX, e.clientY)
     if (!local) { setHover(null); return }
+    if (placing) { setPlaceGhost(toPercent(local)); return }
     const hit = hitTest(local)
     setHover(hit.kind === 'camera' ? null : hit.kind)
   }
@@ -187,7 +205,8 @@ export default function TableMinimap({
   const rh = Math.min(thumbH - ry, rect.h * sy)
   const coversAll = rw >= thumbW - 1 && rh >= thumbH - 1
 
-  const cursor = drag?.kind === 'viewer' ? 'grabbing'
+  const cursor = placing ? 'crosshair'
+    : drag?.kind === 'viewer' ? 'grabbing'
     : drag ? 'grabbing'
       : hover === 'door' ? 'pointer'
         : hover === 'viewer' ? 'grab'
@@ -199,13 +218,14 @@ export default function TableMinimap({
       ref={boxRef}
       onPointerDown={handleDown}
       onPointerMove={handleHover}
-      onPointerLeave={() => setHover(null)}
+      onPointerLeave={() => { setHover(null); setPlaceGhost(null) }}
       onContextMenu={handleContext}
       title="Drag to aim · drag the party · click a door or a pin"
       style={{
         position: 'relative', width: thumbW, height: thumbH,
         borderRadius: 'var(--radius-sm)', overflow: 'hidden',
-        border: '1px solid var(--border)', background: '#0a0908',
+        border: `1px solid ${placing ? 'var(--gold)' : 'var(--border)'}`, background: '#0a0908',
+        boxShadow: placing ? '0 0 0 1px var(--gold)' : undefined,
         cursor, userSelect: 'none', touchAction: 'none', flexShrink: 0,
       }}
     >
@@ -279,6 +299,11 @@ export default function TableMinimap({
             <circle cx={px(v.x)} cy={py(v.y)} r={2.2} fill="#c8a84b" />
           </g>
         ))}
+        {/* Where the next marker will drop, while choosing. */}
+        {placing && placeGhost && (
+          <circle cx={px(placeGhost.x)} cy={py(placeGhost.y)} r={7}
+            fill="rgba(200,168,75,0.12)" stroke="#c8a84b" strokeWidth={1.5} strokeDasharray="3 2" />
+        )}
       </svg>
 
       {/* The camera. Hidden when it covers the whole map — a border tracing the

@@ -1,7 +1,8 @@
 // path: src/pages/SessionPage.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/store'
-import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft, FileText, FilePlus, BookOpen, Link2, Layers, Plus, Search, Unlink, BrickWall } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Trash2, Pencil, ChevronLeft, ScrollText, X, ImageIcon, Clock, ArrowRightLeft, FileText, FilePlus, BookOpen, Link2, Layers, Plus, Search, Unlink, BrickWall, Film, ChevronDown } from 'lucide-react'
+import { chooseMapAnimation, removeMapAnimation } from '../utils/mapAnimation'
 import MapCanvas from '../components/MapCanvas'
 import POIPanel from '../components/POIPanel'
 import RichEditor from '../components/RichEditor'
@@ -245,7 +246,86 @@ function AttachMapModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function MapTabMenu({ map, onEdit, onReplace, onMove }: { map: GameMap; onEdit: () => void; onReplace: () => void; onMove: () => void }) {
+/**
+ * The session tab strip's single import entry. The three ways to bring a map in
+ * used to be three separate buttons; they live in one dropdown now, opened by
+ * hovering or clicking, in the order a DM reaches for them.
+ */
+function ImportMapsMenu({ importing, onPlain, onWiki, onVTT }: {
+  importing: boolean
+  onPlain: () => void
+  onWiki: () => void
+  onVTT: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const show = () => {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null }
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom, left: r.left })
+    }
+    setOpen(true)
+  }
+  // A short grace period so crossing from the button to the menu doesn't close it.
+  const hide = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    closeTimer.current = setTimeout(() => setOpen(false), 150)
+  }
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current) }, [])
+
+  const pick = (fn: () => void) => () => { setOpen(false); fn() }
+
+  return (
+    <div onMouseEnter={show} onMouseLeave={hide} style={{ display: 'flex', alignItems: 'stretch', borderRight: '1px solid var(--border)' }}>
+      <button
+        ref={btnRef}
+        onClick={() => (open ? setOpen(false) : show())}
+        disabled={importing}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '0 14px',
+          background: open ? 'var(--bg-active)' : 'transparent', border: 'none',
+          color: open ? 'var(--text-secondary)' : 'var(--text-muted)', fontSize: 12,
+          cursor: importing ? 'wait' : 'pointer',
+          transition: 'color var(--transition)',
+          whiteSpace: 'nowrap',
+        }}
+        className="hover-gold"
+      >
+        <Upload size={12} />
+        {importing ? 'Importing…' : 'Import Maps'}
+        <ChevronDown size={11} />
+      </button>
+
+      {open && !importing && (
+        <div
+          style={{
+            position: 'fixed', top: pos.top, left: pos.left, minWidth: 190, zIndex: 1000,
+            background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+            borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', overflow: 'hidden',
+          }}
+        >
+          <button onClick={pick(onPlain)} className="menu-item">
+            <Upload size={13} /> Import Plain Map
+          </button>
+          <button onClick={pick(onWiki)} className="menu-item">
+            <BookOpen size={13} /> Import From Wiki Map
+          </button>
+          <button onClick={pick(onVTT)} className="menu-item">
+            <BrickWall size={13} /> Import VTT Map
+            <InfoHint text={VTT_IMPORT_HINT} stopPropagation />
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MapTabMenu({ map, onEdit, onReplace, onMove, onAnimate, onClearAnimation }: { map: GameMap; onEdit: () => void; onReplace: () => void; onMove: () => void; onAnimate: () => void; onClearAnimation: () => void }) {
   const { deleteMap, selectMap, detachMapFromSession } = useStore()
   const [open, setOpen] = useState(false)
   const { confirming: confirmDelete, trigger: triggerDelete } = useConfirmDelete()
@@ -313,6 +393,16 @@ function MapTabMenu({ map, onEdit, onReplace, onMove }: { map: GameMap; onEdit: 
               {map.image_path && (
                 <button onClick={() => { onReplace(); setOpen(false) }} className="menu-item">
                   <ImageIcon size={13} /> Replace image
+                </button>
+              )}
+              {map.image_path && (
+                <button onClick={() => { onAnimate(); setOpen(false) }} className="menu-item">
+                  <Film size={13} /> {map.animation_path ? 'Change animation…' : 'Animated version…'}
+                </button>
+              )}
+              {map.animation_path && (
+                <button onClick={() => { onClearAnimation(); setOpen(false) }} className="menu-item">
+                  <Film size={13} /> Remove animation
                 </button>
               )}
               <button onClick={() => { onMove(); setOpen(false) }} className="menu-item">
@@ -634,6 +724,12 @@ export default function SessionPage() {
     await createScene(currentSession.id)
   }
 
+  // Session maps live in the store rather than a collection hook.
+  const patchSessionMap = (updated: GameMap) => useStore.setState(s => ({
+    maps: s.maps.map(m => m.id === updated.id ? { ...m, ...updated } : m),
+    currentMap: s.currentMap?.id === updated.id ? { ...s.currentMap, ...updated } : s.currentMap,
+  }))
+
   const handleReplaceMapImage = async (map: GameMap) => {
     const result = await window.api.replaceMapImage(map.id)
     if (!result) return
@@ -728,81 +824,29 @@ export default function SessionPage() {
                   map={map}
                   onEdit={() => setEditingMap(map)}
                   onReplace={() => handleReplaceMapImage(map)}
+                  onAnimate={async () => { const u = await chooseMapAnimation(map); if (u) patchSessionMap(u) }}
+                  onClearAnimation={async () => patchSessionMap(await removeMapAnimation(map))}
                   onMove={() => setMovingMap(map)}
                 />
               )}
             </div>
           ))}
 
-          {/* Import map button — edit mode only */}
+          {/* One "Import Maps" entry, three ways in, plus a text-only scene. Edit mode only. */}
           {!sessionReadMode && (
-            <button
-              onClick={handleImportMap}
-              disabled={importing}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '0 14px',
-                background: 'transparent', border: 'none',
-                borderRight: '1px solid var(--border)',
-                color: 'var(--text-muted)', fontSize: 12,
-                cursor: importing ? 'wait' : 'pointer',
-                transition: 'color var(--transition)',
-                whiteSpace: 'nowrap',
-              }}
-              className="hover-gold"
-            >
-              <Upload size={12} />
-              {importing ? 'Importing…' : 'Import Map'}
-            </button>
-          )}
-
-          {/* VTT scene import: brings walls (for fog) and a calibrated grid. */}
-          {!sessionReadMode && (
-            <button
-              onClick={handleImportVTT}
-              disabled={importing}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '0 14px',
-                background: 'transparent', border: 'none',
-                borderRight: '1px solid var(--border)',
-                color: 'var(--text-muted)', fontSize: 12,
-                cursor: importing ? 'wait' : 'pointer',
-                transition: 'color var(--transition)',
-                whiteSpace: 'nowrap',
-              }}
-              className="hover-gold"
-            >
-              <BrickWall size={12} />
-              Import VTT
-              <InfoHint text={VTT_IMPORT_HINT} stopPropagation />
-            </button>
-          )}
-
-          {/* Attach an article map for this session's visit */}
-          {!sessionReadMode && (
-            <button
-              onClick={() => setAttachOpen(true)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '0 14px',
-                background: 'transparent', border: 'none',
-                borderRight: '1px solid var(--border)',
-                color: 'var(--text-muted)', fontSize: 12,
-                cursor: 'pointer', transition: 'color var(--transition)',
-                whiteSpace: 'nowrap',
-                '--hover-accent': SECTION_ACCENTS['wiki'],
-              } as React.CSSProperties}
-              className="hover-accent"
-            >
-              <BookOpen size={12} /> From Wiki
-            </button>
+            <ImportMapsMenu
+              importing={importing}
+              onPlain={handleImportMap}
+              onWiki={() => setAttachOpen(true)}
+              onVTT={handleImportVTT}
+            />
           )}
 
           {/* New mapless scene — a plain text page tab (no image import) */}
           {!sessionReadMode && (
             <button
               onClick={handleNewScene}
+              title="Create a text-only scene: a tab that is just a rich-text page"
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '0 14px',
@@ -814,7 +858,7 @@ export default function SessionPage() {
               }}
               className="hover-gold"
             >
-              <FilePlus size={12} /> New Scene
+              <FilePlus size={12} /> Create New Text Scene
             </button>
           )}
         </div>
@@ -856,7 +900,7 @@ export default function SessionPage() {
             {!sessionReadMode && (
               <div style={{ display: 'flex', gap: 10 }}>
                 <button className="btn btn-primary" onClick={handleImportMap} disabled={importing}>
-                  <Upload size={14} /> {importing ? 'Importing…' : 'Import Map Image'}
+                  <Upload size={14} /> {importing ? 'Importing…' : 'Import Plain Map'}
                 </button>
                 <button className="btn" onClick={handleNewScene}>
                   <FilePlus size={14} /> New Scene

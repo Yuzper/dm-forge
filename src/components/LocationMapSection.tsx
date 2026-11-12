@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Map, Upload, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, BrickWall } from 'lucide-react'
+import { Map, Upload, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, BrickWall, Film } from 'lucide-react'
+import { chooseMapAnimation, removeMapAnimation } from '../utils/mapAnimation'
 import { InfoHint } from './InfoHint'
 import { VTT_IMPORT_HINT } from '../constants/hints'
 import { MapContext } from '../context/MapContext'
@@ -33,8 +34,9 @@ function RenameMapModal({ map, onSave, onClose }: { map: GameMap; onSave: (name:
 
 // ── Tab context menu ──────────────────────────────────────────────────────────
 
-function MapTabMenu({ map: _map, onRename, onReplaceImage, onDelete }: {
-  map: GameMap; onRename: () => void; onReplaceImage: () => void; onDelete: () => void
+function MapTabMenu({ map, onRename, onReplaceImage, onSetAnimation, onClearAnimation, onDelete }: {
+  map: GameMap; onRename: () => void; onReplaceImage: () => void
+  onSetAnimation: () => void; onClearAnimation: () => void; onDelete: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
@@ -84,6 +86,14 @@ function MapTabMenu({ map: _map, onRename, onReplaceImage, onDelete }: {
           <button onClick={() => { onReplaceImage(); setOpen(false) }} style={menuItemStyle}>
             <ImageIcon size={13} /> Replace image
           </button>
+          <button onClick={() => { onSetAnimation(); setOpen(false) }} style={menuItemStyle}>
+            <Film size={13} /> {map.animation_path ? 'Change animation…' : 'Animated version…'}
+          </button>
+          {map.animation_path && (
+            <button onClick={() => { onClearAnimation(); setOpen(false) }} style={menuItemStyle}>
+              <Film size={13} /> Remove animation
+            </button>
+          )}
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
           <button
             onClick={e => { e.stopPropagation(); trigger(() => { onDelete(); setOpen(false) }) }}
@@ -270,6 +280,8 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
                 map={map}
                 onRename={() => setRenamingMap(map)}
                 onReplaceImage={() => handleReplaceMapImage(map)}
+                onSetAnimation={async () => { const u = await chooseMapAnimation(map); if (u) patchMap(u) }}
+                onClearAnimation={async () => patchMap(await removeMapAnimation(map))}
                 onDelete={() => handleDeleteMap(map.id)}
               />
             )}
@@ -320,7 +332,7 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
 
       {/* ── Canvas + panel ── */}
       <div style={{
-        height: 480, display: 'flex', overflow: 'hidden',
+        height: 640, display: 'flex', overflow: 'hidden',
         border: '1px solid var(--border)', borderTop: 'none',
         borderRadius: '0 0 var(--radius-md) var(--radius-md)',
       }}>

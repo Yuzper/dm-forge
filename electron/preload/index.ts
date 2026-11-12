@@ -40,6 +40,10 @@ contextBridge.exposeInMainWorld('api', {
   deleteMap:          (id: number)         => ipcRenderer.invoke('maps:delete', id),
   importMapImage:     (sessionId: number)  => ipcRenderer.invoke('maps:import-image', sessionId),
   replaceMapImage:    (...args)            => ipcRenderer.invoke('maps:replace-image', ...args),
+  setMapAnimation:    (...args)            => ipcRenderer.invoke('maps:set-animation', ...args),
+  saveMapStill:       (...args)            => ipcRenderer.invoke('maps:save-still', ...args),
+  discardUpload:      (...args)            => ipcRenderer.invoke('maps:discard-upload', ...args),
+  clearMapAnimation:  (...args)            => ipcRenderer.invoke('maps:clear-animation', ...args),
   importMapForArticle:(articleId: number)  => ipcRenderer.invoke('maps:import-for-article', articleId),
   getMapsForCampaign:   (campaignId: number) => ipcRenderer.invoke('maps:get-by-campaign', campaignId),
   importMapForCampaign: (campaignId: number) => ipcRenderer.invoke('maps:import-for-campaign', campaignId),
@@ -276,8 +280,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // VTT scene import (Dungeon Alchemist / Foundry / Universal VTT) and the
   // sight-blocking walls it brings with it.
-  importVTTMap:        (owner: { kind: 'article' | 'session' | 'campaign'; id: number }) =>
-                         ipcRenderer.invoke('vtt:import-map', owner),
+  importVTTMap:        (owner: { kind: 'article' | 'session' | 'campaign'; id: number }, resume?: unknown) =>
+                         ipcRenderer.invoke('vtt:import-map', owner, resume),
   getWalls:            (mapId: number)           => ipcRenderer.invoke('walls:get-all', mapId),
   createWall:          (data: any)               => ipcRenderer.invoke('walls:create', data),
   updateWall:          (id: number, data: any)   => ipcRenderer.invoke('walls:update', id, data),

@@ -72,6 +72,11 @@ function isDegenerate(w: ParsedWall): boolean {
   return Math.abs(w.x1 - w.x2) < 1e-6 && Math.abs(w.y1 - w.y2) < 1e-6
 }
 
+/** DA's own save format: building blocks and terrain, no image, no grid in pixels. */
+function isDungeonAlchemistProject(doc: any): boolean {
+  return Array.isArray(doc.buildingBlockInstances) || (Array.isArray(doc.foundations) && Array.isArray(doc.rooms))
+}
+
 /**
  * Sniff and parse. Throws VTTParseError with something a human can act on,
  * because the usual cause is picking the wrong file out of an export folder.
@@ -86,6 +91,18 @@ export function parseVTT(text: string): ParsedVTT {
   if (!doc || typeof doc !== 'object') throw new VTTParseError('That file does not contain a VTT scene.')
 
   if (doc.resolution && typeof doc.resolution === 'object') return parseUniversalVTT(doc)
+
+  // A Dungeon Alchemist project file (.dam) is JSON too, and even has a `walls`
+  // array, so without this check it would fall into the Foundry branch and fail
+  // with a baffling "no grid size". It holds the scene's building blocks, not a
+  // picture or sight lines; those only exist after DA renders and exports.
+  if (isDungeonAlchemistProject(doc)) {
+    throw new VTTParseError(
+      'This is a Dungeon Alchemist project file (.dam), not an export. In Dungeon Alchemist choose Export, ' +
+      'pick the Universal VTT format (.dd2vtt) and import that file instead.',
+    )
+  }
+
   if (Array.isArray(doc.walls)) return parseFoundryScene(doc)
 
   throw new VTTParseError(

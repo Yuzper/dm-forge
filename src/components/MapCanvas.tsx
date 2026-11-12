@@ -2,19 +2,20 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useMapContext } from '../context/MapContext'
 import { MapPin, Maximize, List } from 'lucide-react'
-import type { MapShape, MapTool, POI } from '../types'
+import type { MapShape, MapTool, MapWallKind, POI } from '../types'
 import { isShapeTool } from '../types'
 import { useStore } from '../store/store'
 import MapPOIMarker, { poiColor } from './map/MapPOIMarker'
 import MapShapeLayer from './map/MapShapeLayer'
 import MeasureOverlay from './map/MeasureOverlay'
-import MapContentsPanel, { type VisitsSection } from './map/MapContentsPanel'
+import MapAnimation, { useMapAnimationUrl } from './map/MapAnimation'
+import MapContentsPanel, { type VisitsSection, type WallsSection } from './map/MapContentsPanel'
 import CastMapButton from './map/CastMapButton'
 import MapWallLayer, { type SnapHint } from './map/MapWallLayer'
 import { snapWallPoint, gridStepPercent } from '../utils/wallSnap'
 import { useMapWalls } from '../hooks/useMapWalls'
 import TravelMeasurePanel from './map/TravelMeasurePanel'
-import MapToolbar, { toolHint } from './map/MapToolbar'
+import MapToolbar, { toolHint, WallKindPicker } from './map/MapToolbar'
 import ShapePopup from './map/ShapePopup'
 import ShapeEditModal from './map/ShapeEditModal'
 import { useMapShapes } from '../hooks/useMapShapes'
@@ -175,6 +176,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
   const extraLayersOn = ghosts.length + (toggleBaseLayer && showBase ? 1 : 0)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imageLoaded, setImageLoaded] = useState(false)
+  const animationUrl = useMapAnimationUrl(currentMap)
 
   // Pan, zoom, image fitting and viewport persistence all live in the shared
   // hook — this surface has no tab strip, so no top inset.
@@ -223,6 +225,21 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
 
   const shapeStore = useMapShapes(currentMap?.id ?? null)
   const wallStore = useMapWalls(currentMap?.id ?? null)
+  // Walls are a single layer of the map. Hidden by default (an import brings
+  // hundreds of segments); the wall tool shows them regardless.
+  const [showWalls, setShowWalls] = useState(false)
+  // What the next dragged-out segment becomes. Persisting across drags is the
+  // point: a room is mostly walls with a few doors, drawn in runs.
+  const [wallKind, setWallKind] = useState<MapWallKind>('wall')
+  const wallsSection: WallsSection | null = wallStore.walls.length > 0 || tool === 'wall'
+    ? {
+        count: wallStore.walls.length,
+        doors: wallStore.walls.filter(w => w.kind === 'door').length,
+        shown: showWalls || tool === 'wall',
+        onToggle: () => setShowWalls(v => !v),
+        shared: !!currentMap?.attached,
+      }
+    : null
   // The wall being dragged out, and which endpoint of an existing wall is
   // being moved. Both live outside React's cycle during the gesture.
   const [wallDraft, setWallDraft] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
@@ -331,7 +348,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
       const d = wallDraft
       setWallDraft(null)
       // A click rather than a drag: too short to be a wall anyone meant.
-      if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 0.4) void wallStore.createWall(d)
+      if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 0.4) void wallStore.createWall(d, wallKind)
       return
     }
     vp.panUp()
@@ -616,6 +633,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
             }}
           />
         )}
+        {editMode && tool === 'wall' && <WallKindPicker kind={wallKind} onPick={setWallKind} />}
         <button
           onClick={() => setContentsOpen(!showContents)}
           title={showContents ? 'Hide contents' : 'Everything on this map: points, visits, layers'}
@@ -655,6 +673,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
             onPoiHover={setHoveredPoiId}
             onPoiFocus={focusPOIFromList}
             visits={visits}
+            walls={wallsSection}
             layers={shapeStore.layers}
             shapes={shapeStore.shapes}
             activeLayerId={shapeStore.activeLayerId}
@@ -785,6 +804,9 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
               draggable={false}
             />
           )}
+          {/* The animated version plays over the still, which keeps carrying the
+              map's size and coordinates. */}
+          {imageUrl && animationUrl && <MapAnimation url={animationUrl} />}
 
           {imageLoaded && imgBounds && (
             <div style={{ position: 'absolute', left: imgBounds.left, top: imgBounds.top, width: imgBounds.w, height: imgBounds.h }}>
@@ -800,14 +822,15 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
               {/* Walls sit above the regions and below the pins, and only
                   while the wall tool is up: an imported map carries hundreds
                   of segments and they would bury the art otherwise. */}
-              {tool === 'wall' && (
+              {(tool === 'wall' || showWalls) && (
                 <MapWallLayer
                   walls={wallStore.walls}
                   box={{ w: imgBounds.w, h: imgBounds.h }}
                   scale={scale}
-                  interactive
+                  interactive={tool === 'wall'}
                   selectedId={wallStore.selectedId}
                   draft={wallDraft}
+                  draftKind={wallKind}
                   snap={wallSnap}
                   onSelect={w => wallStore.setSelectedId(w.id)}
                   onEndpointDown={(w, end) => {

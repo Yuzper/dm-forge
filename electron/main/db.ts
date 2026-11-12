@@ -429,6 +429,14 @@ export function initDatabase() {
     db.exec(`ALTER TABLE maps ADD COLUMN grid TEXT`)
   }
 
+  // An animated version of the map (GIF, MP4 or WebM). image_path stays the
+  // still the whole app is built on -- pins, walls, grid, thumbnails, backups
+  // and the player export all keep reading it -- and this plays in its place
+  // on the DM canvas and the table. NULL = a plain still map.
+  if (!mapContentCols.some(c => c.name === 'animation_path')) {
+    db.exec(`ALTER TABLE maps ADD COLUMN animation_path TEXT`)
+  }
+
   // Sight-blocking geometry for the table's fog of war, imported from a VTT
   // file (Dungeon Alchemist and friends) or drawn by hand.
   //

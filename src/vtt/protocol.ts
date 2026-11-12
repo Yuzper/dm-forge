@@ -87,6 +87,11 @@ export interface CastScene {
   mapId: number
   /** Resolved file:// URL of the image. */
   imageUrl: string
+  /**
+   * Animated version (GIF/MP4/WebM), played over the still. Optional: a plain
+   * map has none, and an older table window simply ignores it.
+   */
+  animationUrl?: string
   /** Natural pixel size of the image, so the table can lay out before load. */
   natural: { w: number; h: number }
   grid: MapGrid | null

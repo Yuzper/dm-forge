@@ -18,6 +18,7 @@
 // DM pans; nothing here zooms.
 import { useEffect, useMemo, useState } from 'react'
 import type { CastPOI, CastScene, CastShape, CastViewport, TableCalibration } from '../vtt/protocol'
+import MapAnimation from '../components/map/MapAnimation'
 import { DEFAULT_CALIBRATION } from '../vtt/protocol'
 import { subscribeCast, requestCastResend } from '../vtt/castChannel'
 import {
@@ -100,6 +101,12 @@ export default function TablePage() {
           pointerEvents: 'none',
         }}
       />
+      {scene.animationUrl && (
+        <MapAnimation
+          url={scene.animationUrl}
+          style={{ position: 'absolute', left: originX, top: originY, width: imgW, height: imgH, objectFit: 'fill' }}
+        />
+      )}
 
       {showGrid && spacing > 2 && (
         <div style={{
@@ -140,10 +147,11 @@ export default function TablePage() {
               ))}
             </mask>
           </defs>
-          {/* Not pure black: a faint sense of the map under the fog keeps the
-              table from looking broken, and matches what players expect from
-              a battlemap they have partly explored. */}
-          <rect x={0} y={0} width={imgW} height={imgH} fill="rgba(0,0,0,0.93)" mask="url(#fog-mask)" />
+          {/* Fully opaque. It used to be 93% black so the table would not look
+              broken, but at that strength the rooms behind a closed door were
+              still readable -- more so with a bright animated map -- and the
+              point of the fog is that the players cannot see them. */}
+          <rect x={0} y={0} width={imgW} height={imgH} fill="#000" mask="url(#fog-mask)" />
         </svg>
       )}
 

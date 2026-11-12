@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { useStore } from '../../store/store'
 import {
   Map, MoreHorizontal, Trash2, Pencil, Upload,
-  Maximize, Image as ImageIcon, List,
+  Maximize, Image as ImageIcon, List, Film,
 } from 'lucide-react'
 import type { GameMap, POI, MapShape, MapTool } from '../../types'
 import { isShapeTool } from '../../types'
@@ -23,7 +23,10 @@ import POIPopup from '../map/POIPopup'
 import POIEditModal, {
   DEFAULT_HUB_POI_SIZE, MIN_HUB_POI_SIZE, type POIEditResult,
 } from '../map/POIEditModal'
+import MapAnimation, { useMapAnimationUrl } from '../map/MapAnimation'
+import { chooseMapAnimation, removeMapAnimation } from '../../utils/mapAnimation'
 import { useMapShapes } from '../../hooks/useMapShapes'
+import { useMapWalls } from '../../hooks/useMapWalls'
 import { useMapViewport } from '../../hooks/useMapViewport'
 import { useMapCollection } from '../../hooks/useMapCollection'
 import { useDragReorder } from '../../hooks/useDragReorder'
@@ -100,6 +103,7 @@ export default function HubWorldMap({
     },
   })
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const animationUrl = useMapAnimationUrl(currentMap)
 
   // One tool owns canvas clicks. This replaced three mutually exclusive mode
   // booleans (edit / measure / shape) that each had to remember to switch the
@@ -181,6 +185,8 @@ export default function HubWorldMap({
 
   // ── Shapes ────────────────────────────────────────────────────────────────
   const shapeStore = useMapShapes(currentMap?.id ?? null)
+  // Only for casting: the hub has no wall editor, but the table's fog needs them.
+  const wallStore = useMapWalls(currentMap?.id ?? null)
 
   const drawing = useShapeDrawing({
     mapId: currentMap?.id ?? null,
@@ -659,6 +665,14 @@ export default function HubWorldMap({
                   <button onClick={() => { handleReplaceMapImage(map); setMenuOpenId(null) }} className="menu-item">
                     <ImageIcon size={12} /> Replace image
                   </button>
+                  <button onClick={async () => { setMenuOpenId(null); const u = await chooseMapAnimation(map); if (u) patchMap(u) }} className="menu-item">
+                    <Film size={12} /> {map.animation_path ? 'Change animation…' : 'Animated version…'}
+                  </button>
+                  {map.animation_path && (
+                    <button onClick={async () => { setMenuOpenId(null); patchMap(await removeMapAnimation(map)) }} className="menu-item">
+                      <Film size={12} /> Remove animation
+                    </button>
+                  )}
                   <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
                   <button onClick={() => { handleDeleteMap(map.id); setMenuOpenId(null) }} className="menu-item menu-item-danger">
                     <Trash2 size={12} /> Delete
@@ -679,6 +693,7 @@ export default function HubWorldMap({
               <CastMapButton
                 map={currentMap} pois={pois}
                 shapes={shapeStore.shapes} shapeLayers={shapeStore.layers}
+                walls={wallStore.walls}
                 variant="hub"
               />
             )}
@@ -732,6 +747,7 @@ export default function HubWorldMap({
                   draggable={false}
                 />
               )}
+              {imageUrl && animationUrl && <MapAnimation url={animationUrl} />}
               {imageUrl && imgBoundsRef.current && (
               <div style={{ position: 'absolute', left: imgBoundsRef.current.left, top: imgBoundsRef.current.top, width: imgBoundsRef.current.w, height: imgBoundsRef.current.h }}>
               {/* Drawing shapes sit under the pins so a border never hides a town. */}

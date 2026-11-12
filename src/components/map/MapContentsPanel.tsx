@@ -15,7 +15,7 @@
 // sit next to each other here.
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, History, Layers, List, Lock, Pencil, Plus, Trash2, Unlock, X } from 'lucide-react'
+import { BrickWall, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, History, Layers, List, Lock, Pencil, Plus, Trash2, Unlock, X } from 'lucide-react'
 import type { MapLayer, MapShape, MapShapeLayer, POI } from '../../types'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import { reorder, useDragReorder } from '../../hooks/useDragReorder'
@@ -33,6 +33,20 @@ export interface VisitsSection {
   base?: { label: string; shown: boolean; onToggle: () => void }
   /** Article maps let you name a visit; a session in progress does not. */
   onRename?: (id: number, name: string) => void
+}
+
+/**
+ * The map's walls as one layer. They belong to the map itself, so a session
+ * running an article's map sees and edits the article's walls — nothing is
+ * copied per visit.
+ */
+export interface WallsSection {
+  count: number
+  doors: number
+  shown: boolean
+  onToggle: () => void
+  /** True when this is an article's map being run by a session. */
+  shared: boolean
 }
 
 const PANEL_BG = 'rgba(0,0,0,0.62)'
@@ -61,7 +75,7 @@ const emptyNote: React.CSSProperties = {
 const openKey = (section: string) => `map-contents-open-${section}`
 
 function Section({ storageKey, icon, title, count, action, children, defaultOpen = true }: {
-  storageKey: 'points' | 'visits' | 'layers'
+  storageKey: 'points' | 'visits' | 'layers' | 'walls'
   icon: ReactNode
   title: string
   count: number
@@ -471,13 +485,48 @@ function DrawingLayersSection({
   )
 }
 
+// ── Walls ─────────────────────────────────────────────────────────────────────
+
+function WallsSectionView({ walls }: { walls: WallsSection }) {
+  return (
+    <Section
+      storageKey="walls"
+      icon={<BrickWall size={12} style={{ color: 'rgba(255,255,255,0.55)', flexShrink: 0 }} />}
+      title="Walls"
+      count={walls.count}
+      defaultOpen={false}
+    >
+      <button
+        onClick={walls.onToggle}
+        title={walls.shown ? 'Hide walls on the map' : 'Show walls on the map'}
+        style={rowBtn}
+      >
+        {walls.shown
+          ? <Eye size={12} style={{ color: '#c8733a', flexShrink: 0 }} />
+          : <EyeOff size={12} style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }} />}
+        <span style={{ flex: 1, fontSize: 12, color: walls.shown ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.4)' }}>
+          Sight walls
+        </span>
+        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+          {walls.count - walls.doors} walls · {walls.doors} doors
+        </span>
+      </button>
+      <div style={emptyNote}>
+        {walls.shared
+          ? "One layer, owned by the article's map. Walls drawn here or in the article are the same walls."
+          : 'One layer. Pick the wall tool to draw or fix them.'}
+      </div>
+    </Section>
+  )
+}
+
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
 export default function MapContentsPanel({
   stacked, floatSide = 'left', onClose,
   pois, pointsTitle = 'Points', selectedPoiId, hoveredPoiId, poiFilter,
   onPoiFilterChange, onPoiHover, onPoiFocus, onPoiReorder,
-  visits,
+  visits, walls,
   layers, shapes, activeLayerId, editable,
   onSetActiveLayer, onToggleLayerVisible, onToggleLayerLocked,
   onRenameLayer, onDeleteLayer, onCreateLayer, onReorderLayers, onSelectShape,
@@ -500,6 +549,8 @@ export default function MapContentsPanel({
 
   /** Omitted on maps with no visit history (the campaign world map). */
   visits?: VisitsSection | null
+  /** Omitted where walls are not a thing (the campaign world map). */
+  walls?: WallsSection | null
 
   layers: MapShapeLayer[]
   shapes: MapShape[]
@@ -557,6 +608,8 @@ export default function MapContentsPanel({
         />
 
         {visits && <VisitsSectionView visits={visits} />}
+
+        {walls && <WallsSectionView walls={walls} />}
 
         <DrawingLayersSection
           layers={layers}

@@ -4,13 +4,13 @@
 // fitted image box, so it pans and zooms with the image for free — the same
 // arrangement MapShapeLayer uses.
 //
-// Walls only appear while the wall tool is active. A VTT import brings
-// hundreds of segments, and painting them over the art the rest of the time
-// would bury the map the DM is actually working on.
+// Walls appear while the wall tool is active, or when the DM switches the
+// Walls layer on in Contents. A VTT import brings hundreds of segments, so
+// they are off by default rather than buried over the art.
 //
 // Stroke widths divide by zoom so a wall stays the same thickness on screen at
 // any magnification, which is what makes endpoint handles stay grabbable.
-import type { MapWall } from '../../types'
+import type { MapWall, MapWallKind } from '../../types'
 
 export const WALL_COLORS: Record<string, string> = {
   wall: '#e05555',
@@ -24,7 +24,7 @@ export interface WallDraft { x1: number; y1: number; x2: number; y2: number }
 export interface SnapHint { x: number; y: number; kind: 'endpoint' | 'grid' }
 
 export default function MapWallLayer({
-  walls, box, scale, interactive, selectedId, draft, snap,
+  walls, box, scale, interactive, selectedId, draft, draftKind = 'wall', snap,
   onSelect, onEndpointDown,
 }: {
   walls: MapWall[]
@@ -35,6 +35,8 @@ export default function MapWallLayer({
   selectedId?: number | null
   /** The wall being dragged out right now, not yet saved. */
   draft?: WallDraft | null
+  /** What the dragged-out segment will become, so it is drawn in that colour. */
+  draftKind?: MapWallKind
   /** The point the next click will snap to, if any. */
   snap?: SnapHint | null
   onSelect?: (wall: MapWall, e: React.MouseEvent) => void
@@ -97,8 +99,8 @@ export default function MapWallLayer({
       {draft && (
         <line
           x1={lx(draft.x1)} y1={ly(draft.y1)} x2={lx(draft.x2)} y2={ly(draft.y2)}
-          stroke="#fff" strokeWidth={w(2.5)} strokeLinecap="round"
-          strokeDasharray={`${w(6)} ${w(4)}`} opacity={0.85}
+          stroke={WALL_COLORS[draftKind] ?? '#fff'} strokeWidth={w(2.5)} strokeLinecap="round"
+          strokeDasharray={`${w(6)} ${w(4)}`} opacity={0.9}
           style={{ pointerEvents: 'none' }}
         />
       )}

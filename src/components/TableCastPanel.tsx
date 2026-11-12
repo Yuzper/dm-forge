@@ -32,7 +32,7 @@ import {
   loadScreenCalibration, pxPerInchFromDiagonal, saveScreenCalibration,
 } from '../vtt/calibration'
 import { POI_LABEL_SIZE_MAX, POI_LABEL_SIZE_MIN } from '../vtt/protocol'
-import { cameraRect, panToCentre, percentToImage, tableScale } from '../vtt/camera'
+import { panToCentre, percentToImage, tableScale } from '../vtt/camera'
 import TableMinimap from './vtt/TableMinimap'
 
 type Tab = 'play' | 'setup'
@@ -56,6 +56,51 @@ function loadSize(): PanelSize {
   } catch {
     return fallback
   }
+}
+
+/**
+ * A control that streams values while it is being dragged (the colour picker,
+ * a slider) without streaming them into the store.
+ *
+ * Every store update re-renders each component that reads the whole store -- the
+ * app root and the open map canvas among them -- and also writes localStorage
+ * and sends a message to the table window. The native colour picker fires an
+ * input event on every pixel of a drag, so committing each one made the picker
+ * stutter. The control follows the pointer through local state (instant, cheap)
+ * and the store is only updated about every `ms`, plus once more at the end so
+ * the final value is never lost.
+ */
+function useThrottledCommit<T>(committed: T, commit: (v: T) => void, ms = 90) {
+  const [draft, setDraft] = useState<T>(committed)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pending = useRef<{ v: T } | null>(null)
+  const lastAt = useRef(0)
+  const commitRef = useRef(commit)
+  commitRef.current = commit
+
+  const flush = useCallback(() => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null }
+    if (pending.current) {
+      const { v } = pending.current
+      pending.current = null
+      lastAt.current = Date.now()
+      commitRef.current(v)
+    }
+  }, [])
+
+  // Follow outside changes (another surface, a reset) but never fight a drag.
+  useEffect(() => { if (!pending.current) setDraft(committed) }, [committed])
+  useEffect(() => flush, [flush])
+
+  const update = useCallback((v: T) => {
+    setDraft(v)
+    pending.current = { v }
+    const wait = ms - (Date.now() - lastAt.current)
+    if (wait <= 0) flush()
+    else if (!timer.current) timer.current = setTimeout(flush, wait)
+  }, [ms, flush])
+
+  return [draft, update, flush] as const
 }
 
 export default function TableCastPanel() {
@@ -87,8 +132,16 @@ export default function TableCastPanel() {
   const setCastGrid = useStore(s => s.setCastGrid)
   const setCastViewport = useStore(s => s.setCastViewport)
   const setTableCalibration = useStore(s => s.setTableCalibration)
+  const [gridColorDraft, setGridColorDraft, flushGridColor] = useThrottledCommit(
+    calibration.gridColor, v => setTableCalibration({ gridColor: v }))
+  const [gridOpacityDraft, setGridOpacityDraft, flushGridOpacity] = useThrottledCommit(
+    calibration.gridOpacity, v => setTableCalibration({ gridOpacity: v }))
+  const [labelSizeDraft, setLabelSizeDraft, flushLabelSize] = useThrottledCommit(
+    calibration.poiLabelSize, v => setTableCalibration({ poiLabelSize: v }))
 
   const [tab, setTab] = useState<Tab>('play')
+  // "Add party" arms this; the next click on the minimap chooses the spot.
+  const [placingParty, setPlacingParty] = useState(false)
   const [size, setSize] = useState<PanelSize>(loadSize)
   const [displays, setDisplays] = useState<VTTDisplayInfo[]>([])
   const [pickedDisplay, setPickedDisplay] = useState<number | null>(null)
@@ -192,21 +245,22 @@ export default function TableCastPanel() {
     setCastViewport(panToCentre(castImage.natural, mapScale, screen, point))
   }, [castImage, mapScale, screen.w, screen.h, setCastViewport])
 
-  // Party markers are dropped at the middle of what the players can currently
-  // see, which is almost always where the party is, then dragged from there.
-  const addPartyAtView = () => {
-    if (!castImage) return
-    // Derived from cameraRect rather than from the pan directly: the pan is
-    // measured from a base that shifts when the map is smaller than the
-    // screen, and re-deriving that here would be a second copy of it.
-    const r = cameraRect(castImage.natural, mapScale, screen, castViewport)
-    const cx = ((r.x + r.w / 2) / castImage.natural.w) * 100
-    const cy = ((r.y + r.h / 2) / castImage.natural.h) * 100
-    addCastViewer({
-      x: Math.max(0, Math.min(100, cx)),
-      y: Math.max(0, Math.min(100, cy)),
-    })
+  // "Add party" no longer guesses a position (it used to drop the marker in the
+  // middle of the players' current view): it arms placing, and the next click on
+  // the minimap decides where the marker goes. Esc, a second press of the button,
+  // or a new map all cancel it.
+  const placeParty = (point: { x: number; y: number }) => {
+    addCastViewer(point)
+    setPlacingParty(false)
   }
+
+  useEffect(() => { setPlacingParty(false) }, [castMapId])
+  useEffect(() => {
+    if (!placingParty) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPlacingParty(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [placingParty])
 
   const innerW = size.w - 20
 
@@ -302,10 +356,14 @@ export default function TableCastPanel() {
                   onMoveViewer={moveCastViewer}
                   onRemoveViewer={removeCastViewer}
                   onToggleDoor={toggleCastDoor}
+                  placing={placingParty}
+                  onPlace={placeParty}
                 />
                 <Note>
-                  Drag to aim · drag the party · click a door to open or shut it
-                  · click a pin to centre on it · right-click a party marker to remove it
+                  {placingParty
+                    ? <>Click the map where the party is standing · <strong>Esc</strong> cancels</>
+                    : <>Drag to aim · drag the party · click a door to open or shut it
+                      · click a pin to centre on it · right-click a party marker to remove it</>}
                 </Note>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
@@ -314,8 +372,12 @@ export default function TableCastPanel() {
                   >
                     <Crosshair size={12} /> Centre
                   </button>
-                  <button onClick={addPartyAtView} style={btn}>
-                    <Users size={12} /> Add party
+                  <button
+                    onClick={() => setPlacingParty(v => !v)}
+                    title={placingParty ? 'Cancel placing' : 'Then click the map to choose where the party stands'}
+                    style={placingParty ? primaryBtn : btn}
+                  >
+                    <Users size={12} /> {placingParty ? 'Click the map…' : 'Add party'}
                   </button>
                 </div>
               </>
@@ -338,8 +400,8 @@ export default function TableCastPanel() {
                 <Note>{castWalls.length} walls ready. Players currently see the whole map.</Note>
               ) : castViewers.length === 0 ? (
                 <Note icon={<AlertTriangle size={11} />}>
-                  Nobody placed — press <strong>Add party</strong>, then drag the
-                  marker to where they are. Until then the table shows the map unfogged.
+                  Nobody placed, so the table is black. Press <strong>Add party</strong>, then click the
+                  map where they are, or untick the box above to show the whole map.
                 </Note>
               ) : (
                 <>
@@ -445,13 +507,15 @@ export default function TableCastPanel() {
                   onChange={e => setTableCalibration({ showGrid: e.target.checked })}
                 />
                 <input
-                  type="color" value={calibration.gridColor}
-                  onChange={e => setTableCalibration({ gridColor: e.target.value })}
+                  type="color" value={gridColorDraft}
+                  onChange={e => setGridColorDraft(e.target.value)}
+                  onBlur={flushGridColor}
                   style={{ width: 28, height: 22, padding: 0, border: '1px solid var(--border)', background: 'none', cursor: 'pointer' }}
                 />
                 <input
-                  type="range" min={0} max={1} step={0.05} value={calibration.gridOpacity}
-                  onChange={e => setTableCalibration({ gridOpacity: Number(e.target.value) })}
+                  type="range" min={0} max={1} step={0.05} value={gridOpacityDraft}
+                  onChange={e => setGridOpacityDraft(Number(e.target.value))}
+                  onPointerUp={flushGridOpacity}
                   style={{ flex: 1 }}
                 />
               </Row>
@@ -470,12 +534,13 @@ export default function TableCastPanel() {
                   <input
                     type="range"
                     min={POI_LABEL_SIZE_MIN} max={POI_LABEL_SIZE_MAX} step={1}
-                    value={calibration.poiLabelSize}
-                    onChange={e => setTableCalibration({ poiLabelSize: Number(e.target.value) })}
+                    value={labelSizeDraft}
+                    onChange={e => setLabelSizeDraft(Number(e.target.value))}
+                    onPointerUp={flushLabelSize}
                     style={{ flex: 1 }}
                   />
                   <span style={{ ...unitText, width: 30, textAlign: 'right' }}>
-                    {calibration.poiLabelSize}px
+                    {labelSizeDraft}px
                   </span>
                 </Row>
               )}

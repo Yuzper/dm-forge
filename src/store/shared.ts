@@ -28,8 +28,6 @@ import { sameLocation, type Location } from './location'
 import { saveWorkspace, loadWorkspace, clampRatio, savePins, loadPins } from './workspacePersist'
 
 const RECENT_ACCENTS_KEY = 'dmforge:recent-accents'
-const SHOW_POIS_KEY = 'dmforge:vtt:show-pois'
-const SHOW_FOG_KEY = 'dmforge:vtt:show-fog'
 
 /**
  * Push the current scene to the table again.
@@ -45,6 +43,7 @@ function resendScene(get: () => SharedSlice): void {
   sendCast(sceneMessage({
     mapId: s.castMapId,
     imageUrl: s.castImage.url,
+    ...(s.castImage.animationUrl ? { animationUrl: s.castImage.animationUrl } : {}),
     natural: s.castImage.natural,
     grid: s.castGrid,
     pois: s.castShowPois ? s.castPois : [],
@@ -144,7 +143,7 @@ export interface SharedSlice {
   /** The map currently on the table, or null when it is blank. */
   castMapId: number | null
   castMapName: string
-  castImage: { url: string; natural: { w: number; h: number } } | null
+  castImage: { url: string; animationUrl?: string; natural: { w: number; h: number } } | null
   castGrid: MapGrid | null
   castViewport: CastViewport
   tableCalibration: TableCalibration
@@ -161,6 +160,15 @@ export interface SharedSlice {
   /** DM's switch: do the players see the points and regions at all? */
   castShowPois: boolean
   setCastShowPois: (v: boolean) => void
+
+  /**
+   * Walls belong to the map row, so the article's map and every session that
+   * attaches it are looking at the same rows. Each mutation bumps the map's
+   * revision so any other mounted view of it (a split pane, a second tab)
+   * refetches instead of showing a stale copy and overwriting it.
+   */
+  wallRevision: Record<number, number>
+  bumpWalls: (mapId: number) => number
 
   // -- Fog of war ------------------------------------------------------------
   // Walls are kept DM-side and never sent; only the lit polygons cross to the
@@ -571,12 +579,16 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
   castShapes: [],
   castWalls: [],
   castViewers: [],
-  castShowFog: localStorage.getItem(SHOW_FOG_KEY) === 'true',
-  castShowPois: localStorage.getItem(SHOW_POIS_KEY) === 'true',
+  // Fog is switched on per cast (castMap), not remembered: a map that was cast
+  // with fog off last night must not come up fully lit tonight.
+  castShowFog: false,
+  // Never restored as on: the toggle is a safety, and a new session should not
+  // inherit last night's "show everything". castMap also resets it per cast.
+  castShowPois: false,
+  wallRevision: {},
 
   setCastShowFog: (castShowFog) => {
     set({ castShowFog })
-    try { localStorage.setItem(SHOW_FOG_KEY, String(castShowFog)) } catch { /* private mode */ }
     resendScene(get)
   },
 
@@ -612,14 +624,20 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
 
   setCastShowPois: (castShowPois) => {
     set({ castShowPois })
-    try { localStorage.setItem(SHOW_POIS_KEY, String(castShowPois)) } catch { /* private mode */ }
     resendScene(get)
+  },
+
+  bumpWalls: (mapId) => {
+    const next = (get().wallRevision[mapId] ?? 0) + 1
+    set(s => ({ wallRevision: { ...s.wallRevision, [mapId]: next } }))
+    return next
   },
 
   castMap: async (map, visible) => {
     if (!map.image_path) return
     const url = await window.api.getImagePath(map.image_path)
     const natural = await measureImage(url)
+    const animationUrl = map.animation_path ? await window.api.getImagePath(map.animation_path) : undefined
     const grid = parseMapGrid(map.grid)
     // Snapshot, not a live view: what the players see stays put while the DM
     // carries on toggling layers to plan the next scene.
@@ -630,10 +648,17 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
     // Viewers are cleared on a new cast: last scene's party position is
     // meaningless on a different map, and stale fog is worse than none.
     const castViewers: { x: number; y: number }[] = []
+    // Every new cast starts with points & regions hidden from the players, so a
+    // forgotten toggle can never leak a secret onto the table.
+    // Fog starts on whenever the map has walls to fog with, so the table is
+    // black until the party is placed. A wall-less map has nothing to hide
+    // behind, and a black table with no way to light it would just be broken.
     set({
+      castShowPois: false,
+      castShowFog: castWalls.length > 0,
       castMapId: map.id,
       castMapName: map.name,
-      castImage: { url, natural },
+      castImage: { url, animationUrl, natural },
       castGrid: grid,
       castViewport: { panX: 0, panY: 0 },
       castPois,
@@ -646,7 +671,7 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
     sendCast(calibrationMessage(get().tableCalibration))
     sendCast(viewportMessage({ panX: 0, panY: 0 }))
     sendCast(sceneMessage({
-      mapId: map.id, imageUrl: url, natural, grid,
+      mapId: map.id, imageUrl: url, ...(animationUrl ? { animationUrl } : {}), natural, grid,
       pois: get().castShowPois ? castPois : [],
       shapes: get().castShowPois ? castShapes : [],
       fog: get().castShowFog ? projectFog(castWalls, castViewers) : null,

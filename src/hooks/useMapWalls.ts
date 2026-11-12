@@ -5,19 +5,40 @@
 // Walls usually arrive by the hundred from a VTT import, so edits are applied
 // optimistically: waiting on a round trip per dragged endpoint would make the
 // editor feel like treacle.
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useStore } from '../store/store'
 import type { CreateMapWallInput, MapWall, MapWallKind } from '../types'
 
 export function useMapWalls(mapId: number | null) {
   const [walls, setWalls] = useState<MapWall[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
+  // The map row owns its walls, so an article's map and every session running
+  // it share one set. Another mounted view (a split pane, a second tab) edits
+  // the same rows; its bump tells this one to refetch. Our own bumps are
+  // remembered so an edit never triggers a reload of itself.
+  const revision = useStore(s => (mapId != null ? s.wallRevision[mapId] ?? 0 : 0))
+  const bumpWalls = useStore(s => s.bumpWalls)
+  const seenRevision = useRef(revision)
+  const touch = useCallback(() => {
+    if (mapId != null) seenRevision.current = bumpWalls(mapId)
+  }, [mapId, bumpWalls])
+
   useEffect(() => {
+    seenRevision.current = useStore.getState().wallRevision[mapId ?? -1] ?? 0
     if (mapId == null) { setWalls([]); setSelectedId(null); return }
     let cancelled = false
     window.api.getWalls(mapId).then(ws => { if (!cancelled) setWalls(ws) })
     return () => { cancelled = true }
   }, [mapId])
+
+  useEffect(() => {
+    if (mapId == null || revision === seenRevision.current) return
+    seenRevision.current = revision
+    let cancelled = false
+    window.api.getWalls(mapId).then(ws => { if (!cancelled) setWalls(ws) })
+    return () => { cancelled = true }
+  }, [revision, mapId])
 
   const createWall = useCallback(async (
     seg: { x1: number; y1: number; x2: number; y2: number },
@@ -27,13 +48,15 @@ export function useMapWalls(mapId: number | null) {
     const input: CreateMapWallInput = { map_id: mapId, ...seg, kind }
     const wall = await window.api.createWall(input)
     setWalls(prev => [...prev, wall])
+    touch()
     return wall
-  }, [mapId])
+  }, [mapId, touch])
 
   const patchWall = useCallback(async (id: number, data: Partial<MapWall>) => {
     setWalls(prev => prev.map(w => w.id === id ? { ...w, ...data } : w))
     await window.api.updateWall(id, data)
-  }, [])
+    touch()
+  }, [touch])
 
   /**
    * Local-only move, for dragging an endpoint. The write happens once when
@@ -48,7 +71,8 @@ export function useMapWalls(mapId: number | null) {
     setWalls(prev => prev.filter(w => w.id !== id))
     setSelectedId(prev => prev === id ? null : prev)
     await window.api.deleteWall(id)
-  }, [])
+    touch()
+  }, [touch])
 
   /** Wall → door → window → wall. One key cycles a mis-imported segment. */
   const cycleKind = useCallback((wall: MapWall) => {
@@ -66,13 +90,15 @@ export function useMapWalls(mapId: number | null) {
     setWalls([])
     setSelectedId(null)
     await window.api.clearWalls(mapId)
-  }, [mapId])
+    touch()
+  }, [mapId, touch])
 
   /** After an import, which adds rows the renderer has not seen. */
   const reload = useCallback(async () => {
     if (mapId == null) return
     setWalls(await window.api.getWalls(mapId))
-  }, [mapId])
+    touch()
+  }, [mapId, touch])
 
   return {
     walls, selectedId, setSelectedId,

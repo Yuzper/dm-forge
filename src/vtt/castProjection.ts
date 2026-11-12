@@ -92,15 +92,21 @@ export function projectShapes(shapes: MapShape[], layers: MapShapeLayer[]): Cast
 /**
  * Work out what is lit, from the walls and wherever the party is standing.
  *
- * Returns null when there is nothing to compute from — no walls, or nobody
- * placed — because a fog layer with no viewers would black out the whole map,
- * which is never what the DM meant by switching fog on.
+ * Walls but nobody placed gives an empty set of lit regions: the table is fully
+ * dark until the DM puts the party down (or switches fog off). That is the point
+ * of fog -- a newly cast map must not show the players the dungeon.
+ *
+ * Returns null when there are no walls: with nothing to block sight, every
+ * viewer sees everything, so the plain map is shown rather than a black table.
  */
 export function projectFog(
   walls: MapWall[],
   viewers: { x: number; y: number }[],
 ): CastFog | null {
-  if (walls.length === 0 || viewers.length === 0) return null
+  // No walls first: with nothing to block sight there is nothing to fog, even
+  // if fog is switched on and nobody is placed -- the plain map is shown.
+  if (walls.length === 0) return null
+  if (viewers.length === 0) return { polygons: [] }
   const segments = blockingSegments(walls)
   return { polygons: viewers.map(v => visibilityPolygon(v, segments)) }
 }
@@ -121,10 +127,12 @@ export function projectScene(
   pois: CastPOI[] = [],
   shapes: CastShape[] = [],
   fog: CastFog | null = null,
+  animationUrl?: string,
 ): CastScene {
   return {
     mapId: map.id,
     imageUrl,
+    ...(animationUrl ? { animationUrl } : {}),
     natural: { w: natural.w, h: natural.h },
     grid: parseMapGrid(map.grid),
     pois,

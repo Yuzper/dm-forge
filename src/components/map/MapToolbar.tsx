@@ -5,7 +5,9 @@
 //
 // Which tools appear is up to the host: measuring needs a calibrated scale, so
 // only surfaces that support it pass it in.
-import { MousePointer2, MapPin, Pentagon, Square, Triangle, Circle, Ruler, BrickWall } from 'lucide-react'
+import { MousePointer2, MapPin, Pentagon, Square, Triangle, Circle, Ruler, BrickWall, DoorClosed, PanelTop } from 'lucide-react'
+import type { MapWallKind } from '../../types'
+import { WALL_COLORS } from './MapWallLayer'
 import type { MapTool } from '../../types'
 
 interface ToolDef {
@@ -106,4 +108,48 @@ export function toolHint(tool: MapTool, isDrawing: boolean): string {
       + ' · drag an end to move it · K cycles wall/door/window · O opens or shuts a door · Delete removes it'
   }
   return MAP_TOOLS[tool].hint + (tool === 'pin' || tool === 'measure' ? '' : ' · Esc cancels')
+}
+
+// ── What the wall tool places ─────────────────────────────────────────────────
+
+const WALL_KINDS: { kind: MapWallKind; label: string; icon: typeof BrickWall; hint: string }[] = [
+  { kind: 'wall',   label: 'Wall',   icon: BrickWall,  hint: 'Blocks sight' },
+  { kind: 'door',   label: 'Door',   icon: DoorClosed, hint: 'Blocks sight until opened (O, or click it on the table preview)' },
+  { kind: 'window', label: 'Window', icon: PanelTop,   hint: 'Never blocks sight: a window, railing or low wall' },
+]
+
+/**
+ * Shown beside the toolbar while the wall tool is up. Each drag places whichever
+ * kind is picked here; K still cycles the kind of a segment already placed.
+ */
+export function WallKindPicker({ kind, onPick }: { kind: MapWallKind; onPick: (k: MapWallKind) => void }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 2,
+      background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)',
+      border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: 3,
+    }}>
+      {WALL_KINDS.map(k => {
+        const on = k.kind === kind
+        const Icon = k.icon
+        return (
+          <button
+            key={k.kind}
+            onClick={() => onPick(k.kind)}
+            title={`${k.label}: ${k.hint}`}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: on ? 'rgba(255,255,255,0.12)' : 'transparent',
+              border: `1px solid ${on ? WALL_COLORS[k.kind] : 'transparent'}`,
+              color: on ? '#fff' : 'rgba(255,255,255,0.6)',
+              borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer',
+              transition: 'all var(--transition)', whiteSpace: 'nowrap',
+            }}
+          >
+            <Icon size={13} style={{ color: WALL_COLORS[k.kind] }} /> {k.label}
+          </button>
+        )
+      })}
+    </div>
+  )
 }

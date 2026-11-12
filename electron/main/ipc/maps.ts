@@ -1,11 +1,13 @@
 // path: electron/main/ipc/maps.ts
-import { app, dialog, ipcMain } from 'electron'
+import { app, dialog, ipcMain, nativeImage } from 'electron'
 import path from 'path'
+import fs from 'fs'
 import { db } from '../db'
 import { getMainWindow } from '../window'
 import { processAndSaveImage, extractInlineImagePaths, safeUnlink, safeUnlinkRelative } from '../helpers'
 
 export function registerMapIPC(imagesPath: string) {
+  const ANIMATION_EXTS = ['gif', 'mp4', 'webm', 'm4v']
 
   // Opens the native file explorer (defaulting to the app's images folder) so the
   // user can either import a fresh image or simply re-pick one that was already
@@ -14,18 +16,39 @@ export function registerMapIPC(imagesPath: string) {
   async function pickMapImage(
     title: string,
     baseNamePrefix: string,
-  ): Promise<{ path: string; name: string } | null> {
+    // Only the import buttons accept an animated file; "replace image" needs a real still.
+    allowAnimated = false,
+  ): Promise<{ path: string; name: string; animation_path?: string } | null> {
     const mainWindow = getMainWindow()
     if (!mainWindow) return null
     const result = await dialog.showOpenDialog(mainWindow, {
       title,
       defaultPath: imagesPath,
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      filters: allowAnimated
+        ? [
+            { name: 'Maps (images, GIF, MP4, WebM)', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'm4v'] },
+            { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] },
+            { name: 'Animated', extensions: ['gif', 'mp4', 'webm', 'm4v'] },
+          ]
+        : [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
       properties: ['openFile'],
     })
     if (result.canceled || !result.filePaths.length) return null
     const srcPath = result.filePaths[0]
     const name = path.basename(srcPath, path.extname(srcPath))
+    // An animated file is kept untouched. Its still is made afterwards: a GIF
+    // is cheap to read here, but a video can only be decoded in the renderer,
+    // so path comes back empty and the page fills it in (finishAnimatedPick).
+    if (allowAnimated && ANIMATION_EXTS.includes(path.extname(srcPath).slice(1).toLowerCase())) {
+      const animName = `anim_${baseNamePrefix}_${Date.now()}${path.extname(srcPath).toLowerCase()}`
+      try { fs.copyFileSync(srcPath, path.join(imagesPath, animName)) } catch { return null }
+      let still = ''
+      if (path.extname(srcPath).toLowerCase() === '.gif') {
+        const img = nativeImage.createFromPath(srcPath)
+        if (!img.isEmpty()) still = `images/${processAndSaveImage(srcPath, imagesPath, `${baseNamePrefix}_${Date.now()}`, 4000, 85)}`
+      }
+      return { path: still, name, animation_path: `images/${animName}` }
+    }
     if (path.resolve(path.dirname(srcPath)) === path.resolve(imagesPath)) {
       // Already an imported image — reuse in place.
       return { path: `images/${path.basename(srcPath)}`, name }
@@ -133,8 +156,8 @@ export function registerMapIPC(imagesPath: string) {
            WHERE session_id IS @session_id AND article_id IS @article_id AND campaign_id IS @campaign_id`
         ).get(full) as { m: number }).m
     const result = db.prepare(
-      'INSERT INTO maps (session_id, article_id, campaign_id, name, image_path, sort_order) VALUES (@session_id, @article_id, @campaign_id, @name, @image_path, @sort_order)'
-    ).run({ ...full, sort_order: base + 1 })
+      'INSERT INTO maps (session_id, article_id, campaign_id, name, image_path, animation_path, sort_order) VALUES (@session_id, @article_id, @campaign_id, @name, @image_path, @animation_path, @sort_order)'
+    ).run({ animation_path: null, ...full, sort_order: base + 1 })
     return db.prepare('SELECT * FROM maps WHERE id = ?').get(result.lastInsertRowid)
   })
 
@@ -160,6 +183,47 @@ export function registerMapIPC(imagesPath: string) {
     return db.prepare('SELECT * FROM maps WHERE id = ?').get(id)
   })
 
+  // ── Animated background ─────────────────────────────────────────────────────
+  // Copied as-is: resizing or re-encoding would flatten a GIF to one frame and
+  // there is no video encoder in the main process. The still (image_path) is
+  // what carries the map's coordinates, so this file only has to look the same.
+
+  function dropAnimationFile(rel: string | null | undefined, exceptMapId: number) {
+    if (!rel) return
+    const { c } = db.prepare('SELECT COUNT(*) AS c FROM maps WHERE animation_path = ? AND id != ?').get(rel, exceptMapId) as { c: number }
+    if (c === 0) safeUnlinkRelative(rel, app.getPath('userData'))
+  }
+
+  ipcMain.handle('maps:set-animation', async (_e, mapId: number) => {
+    const mainWindow = getMainWindow()
+    if (!mainWindow) return null
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select animated map (GIF, MP4 or WebM)',
+      filters: [{ name: 'Animated map', extensions: ANIMATION_EXTS }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    const src = result.filePaths[0]
+    const ext = path.extname(src).toLowerCase()
+    const outName = `anim_${mapId}_${Date.now()}${ext}`
+    try {
+      fs.copyFileSync(src, path.join(imagesPath, outName))
+    } catch (e) {
+      return { error: `Could not copy that file: ${String(e)}` }
+    }
+    const old = db.prepare('SELECT animation_path FROM maps WHERE id = ?').get(mapId) as { animation_path: string | null } | undefined
+    db.prepare('UPDATE maps SET animation_path = ? WHERE id = ?').run(`images/${outName}`, mapId)
+    dropAnimationFile(old?.animation_path, mapId)
+    return { map: db.prepare('SELECT * FROM maps WHERE id = ?').get(mapId) }
+  })
+
+  ipcMain.handle('maps:clear-animation', (_e, mapId: number) => {
+    const old = db.prepare('SELECT animation_path FROM maps WHERE id = ?').get(mapId) as { animation_path: string | null } | undefined
+    db.prepare('UPDATE maps SET animation_path = NULL WHERE id = ?').run(mapId)
+    dropAnimationFile(old?.animation_path, mapId)
+    return db.prepare('SELECT * FROM maps WHERE id = ?').get(mapId)
+  })
+
   ipcMain.handle('maps:reorder', (_e, orders: { id: number; sort_order: number }[]) => {
     const stmt = db.prepare('UPDATE maps SET sort_order = @sort_order WHERE id = @id')
     db.transaction((list: { id: number; sort_order: number }[]) => {
@@ -169,12 +233,13 @@ export function registerMapIPC(imagesPath: string) {
 
   ipcMain.handle('maps:delete', (_e, id: number) => {
     const userDataPath = app.getPath('userData')
-    const map = db.prepare('SELECT image_path, content FROM maps WHERE id = ?').get(id) as { image_path: string; content?: string } | undefined
+    const map = db.prepare('SELECT image_path, animation_path, content FROM maps WHERE id = ?').get(id) as { image_path: string; animation_path?: string | null; content?: string } | undefined
     const pois = db.prepare('SELECT content FROM pois WHERE map_id = ?').all(id) as { content: string }[]
     db.prepare('DELETE FROM maps WHERE id = ?').run(id)
     for (const p of pois) extractInlineImagePaths(p.content, userDataPath).forEach(safeUnlink)
     // Scene bodies can hold inline images too — clean those up.
     if (map?.content) extractInlineImagePaths(map.content, userDataPath).forEach(safeUnlink)
+    dropAnimationFile(map?.animation_path, id)
     if (map?.image_path) {
       // The image may be shared with another map (picker reuse) — ref-count first.
       const { c } = db.prepare('SELECT COUNT(*) AS c FROM maps WHERE image_path = ?').get(map.image_path) as { c: number }
@@ -183,7 +248,7 @@ export function registerMapIPC(imagesPath: string) {
   })
 
   ipcMain.handle('maps:import-image', (_e, sessionId: number) =>
-    pickMapImage('Select Map Image', `map_${sessionId}`))
+    pickMapImage('Select Map Image or Animation', `map_${sessionId}`, true))
 
   ipcMain.handle('maps:replace-image', async (_e, mapId: number) => {
     const result = await pickMapImage('Select Replacement Map Image', `map_${mapId}_replace`)
@@ -191,7 +256,23 @@ export function registerMapIPC(imagesPath: string) {
   })
 
   ipcMain.handle('maps:import-for-article', (_e, articleId: number) =>
-    pickMapImage('Select Map Image', `map_article_${articleId}`))
+    pickMapImage('Select Map Image or Animation', `map_article_${articleId}`, true))
+
+  // The still for an animated map, captured by the page from one of the first
+  // frames. Arrives as a JPEG data URL; saved beside the other map images.
+  ipcMain.handle('maps:save-still', (_e, dataUrl: string, baseName: string) => {
+    const m = /^data:image\/jpeg;base64,(.+)$/.exec(dataUrl)
+    if (!m) return null
+    const safe = baseName.replace(/[^\w-]+/g, '_').slice(0, 40) || 'map'
+    const out = `${safe}_still_${Date.now()}.jpg`
+    fs.writeFileSync(path.join(imagesPath, out), Buffer.from(m[1], 'base64'))
+    return `images/${out}`
+  })
+
+  // An animation that could not be turned into a map (unplayable codec): drop the copy.
+  ipcMain.handle('maps:discard-upload', (_e, rel: string) => {
+    if (typeof rel === 'string' && rel.startsWith('images/') && !rel.includes('..')) safeUnlinkRelative(rel, app.getPath('userData'))
+  })
 
   ipcMain.handle('maps:get-by-campaign', (_e, campaignId: number) => {
     return db.prepare(`
@@ -205,7 +286,7 @@ export function registerMapIPC(imagesPath: string) {
   })
 
   ipcMain.handle('maps:import-for-campaign', (_e, campaignId: number) =>
-    pickMapImage('Select Map Image', `map_campaign_${campaignId}`))
+    pickMapImage('Select Map Image or Animation', `map_campaign_${campaignId}`, true))
 
   // ── Visit layers & session attachments ───────────────────────────────────────
 

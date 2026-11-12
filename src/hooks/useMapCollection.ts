@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { reorder } from './useDragReorder'
 import type { GameMap } from '../types'
+import { finishAnimatedPick, importVTTWithFrame } from '../utils/mapAnimation'
 
 export type MapOwner =
   | { kind: 'campaign'; id: number }
@@ -51,10 +52,10 @@ export function useMapCollection({
       ? window.api.getMapsForCampaign(o.id)
       : window.api.getMapsForArticle(o.id), [])
 
-  const pickImage = useCallback((o: MapOwner) =>
-    o.kind === 'campaign'
+  const pickImage = useCallback(async (o: MapOwner) =>
+    finishAnimatedPick(await (o.kind === 'campaign'
       ? window.api.importMapForCampaign(o.id)
-      : window.api.importMapForArticle(o.id), [])
+      : window.api.importMapForArticle(o.id))), [])
 
   const ownerColumns = useCallback((o: MapOwner) =>
     o.kind === 'campaign' ? { campaign_id: o.id } : { article_id: o.id }, [])
@@ -68,7 +69,7 @@ export function useMapCollection({
     if (!owner) return null
     setImporting(true)
     try {
-      const res = await window.api.importVTTMap(owner)
+      const res = await importVTTWithFrame(owner)
       if (res.success) {
         const fetched = await listMaps(owner)
         setMaps(fetched)
@@ -115,6 +116,7 @@ export function useMapCollection({
       if (!picked) return null
       const map = await window.api.createMap({
         ...ownerColumns(owner), name: picked.name, image_path: picked.path,
+        animation_path: picked.animation_path ?? null,
       })
       const next = [...maps, map]
       setMaps(next)

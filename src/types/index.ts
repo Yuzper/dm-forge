@@ -45,6 +45,7 @@ export interface GameMap {
   article_id: number | null   // null when owned by a session
   name: string
   image_path: string          // '' for a mapless scene (a plain rich-text page)
+  animation_path?: string | null  // GIF/MP4/WebM played over the still; null = still map
   content?: string            // scene body (TipTap JSON); unused for image maps
   sort_order: number
   created_at: string
@@ -207,6 +208,11 @@ export interface VTTImportResult {
   doors?: number
   /** Grid square in stored-image pixels, written to maps.grid. */
   gridSquare?: number
+  /**
+   * Set instead of a result when the scene came with a video and no still. The
+   * page captures a frame and calls importVTTMap again -- see importVTTWithFrame.
+   */
+  needsFrame?: { scenePath: string; animationSrc: string }
 }
 
 export interface POI {
@@ -615,6 +621,18 @@ export interface CreateMapInput {
   article_id?: number | null
   name: string
   image_path: string
+  animation_path?: string | null
+}
+
+/**
+ * What the import picker hands back. An animated file arrives with its
+ * animation_path set and, for a video, an empty path -- the still is captured
+ * by the page (see finishAnimatedPick) before a map row is made.
+ */
+export interface PickedMap {
+  path: string
+  name: string
+  animation_path?: string
 }
 
 export interface CreatePOIInput {
@@ -749,10 +767,10 @@ export interface ElectronAPI {
   reorderMaps:        (orders: { id: number; sort_order: number }[]) => Promise<void>
   reorderSessionTabs: (sessionId: number, items: { map_id: number; attached: boolean; sort_order: number }[]) => Promise<void>
   deleteMap:          (id: number)                 => Promise<void>
-  importMapImage:     (sessionId: number)          => Promise<{ path: string; name: string } | null>
-  importMapForArticle:(articleId: number)          => Promise<{ path: string; name: string } | null>
+  importMapImage:     (sessionId: number)          => Promise<PickedMap | null>
+  importMapForArticle:(articleId: number)          => Promise<PickedMap | null>
   getMapsForCampaign:   (campaignId: number) => Promise<GameMap[]>
-  importMapForCampaign: (campaignId: number) => Promise<{ path: string; name: string } | null>
+  importMapForCampaign: (campaignId: number) => Promise<PickedMap | null>
 
   getAttachableMaps:    (campaignId: number) => Promise<AttachableMap[]>
   getMapLayers:         (mapId: number)      => Promise<MapLayer[]>
@@ -877,6 +895,10 @@ export interface ElectronAPI {
 
   // Maps
   replaceMapImage: (mapId: number) => Promise<{ path: string } | null>
+  saveMapStill: (dataUrl: string, baseName: string) => Promise<string | null>
+  discardUpload: (relativePath: string) => Promise<void>
+  setMapAnimation: (mapId: number) => Promise<{ map: GameMap } | { error: string } | null>
+  clearMapAnimation: (mapId: number) => Promise<GameMap>
 
   // Sound Boards
   getSoundBoards:   (campaignId: number)        => Promise<SoundBoard[]>
@@ -938,7 +960,8 @@ export interface ElectronAPI {
   vttReportSize:         (size: { w: number; h: number }) => Promise<boolean>
 
   // VTT scene import and sight-blocking walls.
-  importVTTMap:          (owner: { kind: 'article' | 'session' | 'campaign'; id: number }) => Promise<VTTImportResult>
+  importVTTMap:          (owner: { kind: 'article' | 'session' | 'campaign'; id: number },
+                          resume?: { scenePath: string; animationSrc: string; stillDataUrl: string }) => Promise<VTTImportResult>
   getWalls:              (mapId: number) => Promise<MapWall[]>
   createWall:            (data: CreateMapWallInput) => Promise<MapWall>
   updateWall:            (id: number, data: Partial<Omit<MapWall, 'id' | 'map_id'>>) => Promise<MapWall>

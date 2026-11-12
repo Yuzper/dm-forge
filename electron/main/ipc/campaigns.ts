@@ -46,11 +46,11 @@ export function registerCampaignIPC() {
     const campaign = db.prepare('SELECT cover_image FROM campaigns WHERE id = ?')
       .get(id) as { cover_image: string | null } | undefined
     const maps = db.prepare(`
-      SELECT DISTINCT m.image_path FROM maps m
+      SELECT DISTINCT m.image_path, m.animation_path FROM maps m
       LEFT JOIN sessions s ON s.id = m.session_id
       LEFT JOIN articles a ON a.id = m.article_id
       WHERE s.campaign_id = ? OR a.campaign_id = ? OR m.campaign_id = ?
-    `).all(id, id, id) as { image_path: string }[]
+    `).all(id, id, id) as { image_path: string; animation_path: string | null }[]
     const pois = db.prepare(`
       SELECT p.content FROM pois p
       JOIN maps m ON m.id = p.map_id
@@ -76,8 +76,10 @@ export function registerCampaignIPC() {
     // Map images and copied sound files can be shared (the pickers reuse
     // already-imported files), so only unlink what nothing references any more.
     const mapRefs = db.prepare('SELECT COUNT(*) AS c FROM maps WHERE image_path = ?')
+    const animRefs = db.prepare('SELECT COUNT(*) AS c FROM maps WHERE animation_path = ?')
     for (const m of maps) {
       if ((mapRefs.get(m.image_path) as { c: number }).c === 0) safeUnlinkRelative(m.image_path, userDataPath)
+      if (m.animation_path && (animRefs.get(m.animation_path) as { c: number }).c === 0) safeUnlinkRelative(m.animation_path, userDataPath)
     }
     const soundRefs = db.prepare('SELECT COUNT(*) AS c FROM sounds WHERE file_path = ?')
     for (const s of soundFiles) {

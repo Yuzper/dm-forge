@@ -18,6 +18,7 @@ import type { PaneStoreApi } from './paneRegistry'
 import { newTabId, locationView, samePlace, type Location } from './location'
 import { loadWorkspace } from './workspacePersist'
 import { paneIdOf, getPane, type PaneId } from './paneRegistry'
+import { finishAnimatedPick, importVTTWithFrame } from '../utils/mapAnimation'
 
 export type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables' | 'relations' | 'timeline' | 'soundboard'
 
@@ -583,9 +584,12 @@ export function createPaneStore() {
     },
 
     importMap: async (sessionId) => {
-      const result = await window.api.importMapImage(sessionId)
+      const result = await finishAnimatedPick(await window.api.importMapImage(sessionId))
       if (!result) return
-      const map = await window.api.createMap({ session_id: sessionId, name: result.name, image_path: result.path })
+      const map = await window.api.createMap({
+        session_id: sessionId, name: result.name, image_path: result.path,
+        animation_path: result.animation_path ?? null,
+      })
       set(s => ({ maps: [...s.maps, map] }))
       get().selectMap(map)
       const { currentCampaign, loadSessions } = sharedStore.getState()
@@ -598,7 +602,7 @@ export function createPaneStore() {
      * appending the way importMap does.
      */
     importVTTMap: async (sessionId) => {
-      const res = await window.api.importVTTMap({ kind: 'session', id: sessionId })
+      const res = await importVTTWithFrame({ kind: 'session', id: sessionId })
       if (!res.success) return res
       await get().loadMaps(sessionId)
       const map = get().maps.find(m => m.id === res.mapId)
