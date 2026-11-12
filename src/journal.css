@@ -1,0 +1,482 @@
+/*path: src/journal.css*/
+/* ─── Journal design ──────────────────────────────────────────────────────────
+   Classic-WoW / adventurer's-journal chrome: double gold-trimmed frames, beveled
+   panels, slab buttons, folder tabs, ornamental rules, parchment pages.
+
+   Active when Settings → Appearance → Design is Journal (applyAppearance sets
+   <html data-skin="journal">). It is *structure only*: every colour is derived
+   from the vars the rest of Appearance sets — base surfaces, accent ramp, text
+   palette, type faces — so any base/accent/text combination gets the Journal
+   frame in its own colours, light (Paper) included. The Tome base is just one
+   palette that suits it. The user's Backdrop texture shows through untouched.
+
+   Where real art would beat CSS it is marked "SPRITE:". */
+
+/* ═══ Derived palette ════════════════════════════════════════════════════════ */
+[data-skin="journal"] {
+  /* The near-black hairline that frames everything. */
+  --j-ink:      color-mix(in srgb, var(--bg-base) 40%, #000);
+  /* Bright engraved gold for headings, and the dark bevel line. */
+  --j-gold-hi:  color-mix(in srgb, var(--gold) 72%, #fff);
+  --j-gold-lo:  color-mix(in srgb, var(--gold) 42%, var(--bg-base));
+  --j-trim:     color-mix(in srgb, var(--gold) 34%, transparent);
+  --j-sheen:    rgba(255,255,255,0.06);
+  --j-shade:    rgba(0,0,0,0.35);
+  --j-engrave:  0 1px 0 var(--j-ink);
+  /* Slab buttons: the WoW red, mixed into the base so it sits with any palette.
+     Lettering stays light gold on it in both modes. */
+  --j-slab:      color-mix(in srgb, var(--crimson) 62%, var(--bg-elevated));
+  --j-slab-text: color-mix(in srgb, var(--gold) 55%, #fff3c8);
+  /* Grain, as a data-URI — light flecks on dark bases. */
+  --j-grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.05 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  --j-mottle: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='420' height='420'><filter id='b'><feTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='3' seed='4'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.22 0'/></filter><rect width='100%' height='100%' filter='url(%23b)'/></svg>");
+  /* Ink for the parchment page; leans toward the accent so a red accent
+     gives red-brown headings, a blue one blue-black. */
+  --j-page-ink:    #2e1f0e;
+  --j-page-accent: color-mix(in srgb, var(--gold) 48%, #3a2408);
+
+  --j-frame: 0 0 0 1px var(--j-ink), inset 0 0 0 1px var(--j-gold-lo), inset 0 0 0 2px var(--j-ink), inset 0 0 0 3px var(--j-trim);
+  --j-bevel: inset 0 0 0 1px var(--j-trim), inset 0 1px 0 1px var(--j-sheen);
+
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius:    3px;
+}
+/* Light bases: the ink is a dark warm brown, not black; highlights go white. */
+[data-skin="journal"][data-mode="light"] {
+  --j-ink:      color-mix(in srgb, var(--border-light) 45%, #2a1d0e);
+  --j-gold-hi:  var(--gold-dim);
+  --j-gold-lo:  color-mix(in srgb, var(--gold) 55%, var(--bg-surface));
+  --j-trim:     color-mix(in srgb, var(--gold) 45%, transparent);
+  --j-sheen:    rgba(255,255,255,0.55);
+  --j-shade:    rgba(74,58,32,0.18);
+  --j-engrave:  0 1px 0 rgba(255,255,255,0.6);
+  --j-grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0 0.1  0 0 0 0.07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  --j-mottle: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='420' height='420'><filter id='b'><feTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='3' seed='4'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.3  0 0 0 0 0.12  0 0 0 0.12 0'/></filter><rect width='100%' height='100%' filter='url(%23b)'/></svg>");
+}
+
+/* ═══ Frame of the app ═══════════════════════════════════════════════════════ */
+
+/* Over the panes: only a vignette and mottling. No background colour, so the
+   Backdrop the user picked (stone, wood, parchment…) shows through. */
+[data-skin="journal"] .app-main {
+  background-image:
+    radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--gold) 7%, transparent), transparent 60%),
+    radial-gradient(ellipse at 50% 110%, var(--j-shade), transparent 70%),
+    var(--j-mottle), var(--j-grain);
+}
+
+/* Sidebar: a lacquered frame with a gold inner edge. */
+[data-skin="journal"] .app-sidebar {
+  background-image:
+    linear-gradient(90deg, var(--j-shade), transparent 14px),
+    var(--j-grain),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 70%, var(--bg-surface)), var(--bg-surface) 55%, color-mix(in srgb, var(--bg-surface) 60%, var(--bg-base))) !important;
+  border-right: 1px solid var(--j-ink) !important;
+  box-shadow: inset -1px 0 0 var(--j-gold-lo), inset -3px 0 0 var(--j-ink), 3px 0 14px var(--j-shade);
+}
+[data-skin="journal"] [data-nav-active] {
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--gold) 12%, transparent), transparent) !important;
+  box-shadow: inset 0 0 0 1px var(--j-ink), inset 0 0 0 2px var(--j-trim);
+  text-shadow: var(--j-engrave);
+}
+
+/* Tab strip: tabs are bound folder tabs; the active one is lit. */
+[data-skin="journal"] .tab-strip {
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 70%, #000), var(--bg-base)) !important;
+  border-bottom: 1px solid var(--j-ink) !important;
+  box-shadow: inset 0 -2px 0 var(--j-gold-lo), inset 0 -3px 0 var(--j-ink);
+  padding-top: 6px !important;
+}
+[data-skin="journal"][data-mode="light"] .tab-strip {
+  background-image: linear-gradient(180deg, var(--bg-active), var(--bg-hover)) !important;
+}
+[data-skin="journal"] .tab {
+  border-radius: 3px 3px 0 0 !important;
+  font-family: var(--font-display) !important; letter-spacing: 0.04em; font-size: 11.5px !important;
+  border: 1px solid var(--j-ink) !important; border-bottom: 0 !important;
+  background: linear-gradient(180deg, var(--bg-hover), var(--bg-surface)) !important;
+  box-shadow: inset 0 0 0 1px var(--j-sheen) !important;
+  margin-bottom: 0 !important; padding-bottom: 7px !important;
+}
+[data-skin="journal"] .tab:hover { background: linear-gradient(180deg, var(--bg-active), var(--bg-hover)) !important; color: var(--j-gold-hi) !important; }
+[data-skin="journal"] .tab.tab-active {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gold) 22%, var(--bg-active)), var(--bg-elevated)) !important;
+  box-shadow: inset 0 0 0 1px var(--gold-dim), inset 0 2px 0 var(--gold) !important;
+  text-shadow: var(--j-engrave);
+}
+
+/* ═══ Type ═══════════════════════════════════════════════════════════════════ */
+[data-skin="journal"] h1,
+[data-skin="journal"] .modal-title {
+  color: var(--j-gold-hi);
+  text-shadow: var(--j-engrave), 0 0 12px color-mix(in srgb, var(--gold) 25%, transparent);
+  letter-spacing: 0.06em;
+}
+[data-skin="journal"] h2,
+[data-skin="journal"] h3 { text-shadow: var(--j-engrave); }
+[data-skin="journal"] h3,
+[data-skin="journal"] h4 { color: color-mix(in srgb, var(--gold) 80%, var(--text-primary)); }
+[data-skin="journal"] ::selection { background: color-mix(in srgb, var(--gold) 38%, transparent); }
+
+/* ═══ Panels ═════════════════════════════════════════════════════════════════ */
+[data-skin="journal"] .card,
+[data-skin="journal"] .modal {
+  background-image: var(--j-grain), linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 92%, #fff), var(--bg-surface));
+  border: 1px solid var(--j-ink);
+  box-shadow: var(--j-frame), var(--shadow-md);
+}
+[data-skin="journal"][data-mode="light"] .card,
+[data-skin="journal"][data-mode="light"] .modal {
+  background-image: var(--j-grain), linear-gradient(180deg, var(--bg-elevated), var(--bg-surface));
+}
+[data-skin="journal"] .card:hover { border-color: var(--j-ink); box-shadow: var(--j-frame), var(--shadow-md); }
+[data-skin="journal"] .card-clickable:hover {
+  box-shadow: 0 0 0 1px var(--j-ink), inset 0 0 0 1px var(--gold), inset 0 0 0 2px var(--j-ink), 0 0 18px var(--gold-glow);
+  transform: none;
+}
+[data-skin="journal"] .modal { position: relative; }
+/* SPRITE: ornate corner pieces would replace these plain gold brackets. */
+[data-skin="journal"] .modal::before {
+  content: ''; position: absolute; inset: 5px; pointer-events: none;
+  --nub: linear-gradient(var(--gold), var(--gold));
+  background:
+    var(--nub) top left / 14px 2px no-repeat,    var(--nub) top left / 2px 14px no-repeat,
+    var(--nub) top right / 14px 2px no-repeat,   var(--nub) top right / 2px 14px no-repeat,
+    var(--nub) bottom left / 14px 2px no-repeat, var(--nub) bottom left / 2px 14px no-repeat,
+    var(--nub) bottom right / 14px 2px no-repeat,var(--nub) bottom right / 2px 14px no-repeat;
+  opacity: 0.75;
+}
+[data-skin="journal"] .modal-title {
+  text-align: center; font-size: 22px; padding-bottom: 14px;
+  background: linear-gradient(90deg, transparent, var(--gold-dim) 20%, var(--gold) 50%, var(--gold-dim) 80%, transparent) bottom / 100% 1px no-repeat;
+}
+
+/* ═══ Controls ═══════════════════════════════════════════════════════════════ */
+[data-skin="journal"] .btn {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--j-slab) 80%, #fff) 0%, var(--j-slab) 48%,
+    color-mix(in srgb, var(--j-slab) 75%, #000) 52%, var(--j-slab) 100%);
+  border: 1px solid var(--j-ink);
+  color: var(--j-slab-text);
+  font-family: var(--font-display);
+  /* The display face is wider than the UI face; tight tracking keeps a narrow
+     split pane's header from squeezing its neighbours. */
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 1px #000;
+  box-shadow: inset 0 0 0 1px var(--j-gold-lo), inset 0 1px 0 1px rgba(255,220,160,0.16), 0 1px 3px var(--j-shade);
+}
+[data-skin="journal"] .btn:hover {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--j-slab) 65%, #fff) 0%, color-mix(in srgb, var(--j-slab) 85%, #fff) 48%,
+    var(--j-slab) 52%, color-mix(in srgb, var(--j-slab) 85%, #fff) 100%);
+  border-color: var(--j-ink);
+  color: #fff6d8;
+  box-shadow: inset 0 0 0 1px var(--gold), 0 0 10px var(--gold-glow);
+}
+[data-skin="journal"] .btn:active {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--j-slab) 70%, #000), var(--j-slab));
+  box-shadow: inset 0 0 0 1px var(--gold-dim), inset 0 2px 4px rgba(0,0,0,0.6);
+}
+[data-skin="journal"] .btn:disabled { filter: grayscale(0.6) brightness(0.8); cursor: default; }
+[data-skin="journal"] .btn-primary {
+  background: linear-gradient(180deg, var(--gold-hover) 0%, var(--gold) 48%, var(--gold-dim) 52%, var(--gold) 100%);
+  color: var(--text-inverse);
+  text-shadow: 0 1px 0 color-mix(in srgb, var(--gold) 40%, #fff);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 60%, #fff), inset 0 1px 0 1px rgba(255,255,255,0.35), 0 1px 3px var(--j-shade);
+}
+[data-skin="journal"] .btn-primary:hover {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gold-hover) 70%, #fff) 0%, var(--gold-hover) 48%, var(--gold) 52%, var(--gold-hover) 100%);
+  color: var(--text-inverse);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 40%, #fff), 0 0 14px var(--gold-glow);
+}
+/* Light bases: a raised vellum button, not the red slab. Several toolbar
+   toggles set their own inline text colour (the dark accent on a light base),
+   which can't be read on a dark slab; on vellum it can. */
+[data-skin="journal"][data-mode="light"] .btn {
+  background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-surface) 48%, var(--bg-hover) 52%, var(--bg-surface) 100%);
+  color: var(--text-primary);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.7);
+  box-shadow: inset 0 0 0 1px var(--j-trim), inset 0 1px 0 1px rgba(255,255,255,0.6), 0 1px 2px var(--j-shade);
+}
+[data-skin="journal"][data-mode="light"] .btn:hover {
+  background: linear-gradient(180deg, #fff 0%, var(--bg-elevated) 48%, var(--bg-surface) 52%, var(--bg-elevated) 100%);
+  color: var(--gold-dim);
+  box-shadow: inset 0 0 0 1px var(--gold), 0 0 8px var(--gold-glow);
+}
+[data-skin="journal"][data-mode="light"] .btn:active {
+  background: linear-gradient(180deg, var(--bg-hover), var(--bg-surface));
+  box-shadow: inset 0 0 0 1px var(--gold-dim), inset 0 2px 4px var(--j-shade);
+}
+[data-skin="journal"] .btn-danger { color: color-mix(in srgb, var(--danger) 55%, #fff); }
+[data-skin="journal"][data-mode="light"] .btn-danger { color: var(--danger); }
+[data-skin="journal"] .btn-ghost { background: transparent; box-shadow: none; border-color: transparent; text-shadow: none; color: var(--text-secondary); }
+[data-skin="journal"] .btn-ghost:hover { background: color-mix(in srgb, var(--gold) 8%, transparent); box-shadow: inset 0 0 0 1px var(--border-light); color: var(--j-gold-hi); }
+[data-skin="journal"] .btn-icon, [data-skin="journal"] .btn-sm { font-family: var(--font-ui); }
+
+[data-skin="journal"] .input {
+  background-image: linear-gradient(180deg, var(--j-shade), transparent);
+  border: 1px solid var(--j-ink);
+  box-shadow: inset 0 0 0 1px var(--border-light), inset 0 2px 5px var(--j-shade), 0 1px 0 var(--j-sheen);
+}
+/* select.input draws its arrow as a background image; keep it on top of the
+   sunken gradient or the dropdown loses its chevron. */
+[data-skin="journal"] select.input {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a08a5c' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, var(--j-shade), transparent);
+  background-repeat: no-repeat, no-repeat;
+  background-position: right 10px center, 0 0;
+}
+[data-skin="journal"] .input:focus {
+  border-color: var(--j-ink);
+  box-shadow: inset 0 0 0 1px var(--gold), inset 0 2px 5px var(--j-shade), 0 0 10px var(--gold-glow);
+}
+[data-skin="journal"] .input-label { font-family: var(--font-display); color: var(--gold-dim); letter-spacing: 0.1em; }
+
+[data-skin="journal"] .divider { height: 9px; margin: 14px 0; position: relative; background: none; }
+[data-skin="journal"] .divider::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 4px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold-dim) 18%, var(--gold-dim) 82%, transparent);
+}
+[data-skin="journal"] .divider::after {
+  content: ''; position: absolute; left: 50%; top: 0; width: 7px; height: 7px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--gold); box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 3px var(--gold-dim);
+}
+
+[data-skin="journal"] .badge { border-radius: 2px; font-family: var(--font-display); letter-spacing: 0.08em; }
+[data-skin="journal"] .menu-item:hover { background: linear-gradient(90deg, color-mix(in srgb, var(--gold) 14%, transparent), transparent); color: var(--j-gold-hi); }
+
+[data-skin="journal"] ::-webkit-scrollbar { width: 12px; height: 12px; }
+[data-skin="journal"] ::-webkit-scrollbar-track { background: var(--j-shade); box-shadow: inset 0 0 0 1px var(--j-ink); }
+[data-skin="journal"] ::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, var(--border-light), var(--bg-active));
+  border: 1px solid var(--j-ink); border-radius: 1px;
+  box-shadow: inset 0 0 0 1px var(--gold-dim);
+}
+[data-skin="journal"] ::-webkit-scrollbar-thumb:hover { background: linear-gradient(90deg, var(--gold-dim), var(--border-light)); }
+[data-skin="journal"] ::-webkit-scrollbar-corner { background: transparent; }
+
+/* ═══ Inline-styled screens ══════════════════════════════════════════════════
+   Most of the app is styled inline, which a stylesheet can only override with
+   !important. Rather than edit hundreds of components, these rules key off the
+   *serialised inline style* (the browser keeps `border: 1px solid
+   var(--border-light)` verbatim when it contains a var()). If a component's
+   inline style changes, it quietly falls back to the Classic look.
+
+   Each rule skips anything that already paints its own picture — an inline
+   url() (portraits, map thumbnails) or gradient — and circles (avatars, dots),
+   so the Journal never paints over content. */
+
+/* Grain on panel surfaces. */
+/* Never on form controls: any background-image on a native <select> makes
+   Chromium drop its dropdown arrow. */
+[data-skin="journal"] :is([style*="background: var(--bg-surface)"], [style*="background: var(--bg-elevated)"], [style*="background: var(--bg-base)"]):not([style*="url("]):not([style*="gradient"]):not(select):not(input):not(textarea) {
+  background-image: var(--j-grain) !important;
+}
+
+/* Bordered boxes (cards, rows, popovers, stat blocks): dark edge, gold bevel —
+   the item-tooltip frame. Full `border:` shorthand only; a lone border-right is
+   a divider, not a box. Pills (radius 99) stay light; circles are skipped. */
+[data-skin="journal"] [style*="border: 1px solid var(--border"]:not([style*="box-shadow"]):not([style*="border-radius: 99"]):not([style*="border-radius: 999"]):not([style*="border-radius: 50%"]):not([style*="url("]):not(.input):not(.btn):not(.tab):not(input):not(select):not(textarea):not(button) {
+  border-color: var(--j-ink) !important;
+  box-shadow: var(--j-bevel);
+}
+
+/* Header rules and panel dividers: a gold hairline that fades at both ends. */
+[data-skin="journal"] [style*="border-bottom: 1px solid var(--border)"]:not(.tab-strip):not(.tab):not([style*="url("]):not([style*="gradient"]) {
+  border-bottom-color: transparent !important;
+  background-image:
+    linear-gradient(90deg, transparent, var(--gold-dim) 12%, var(--gold-dim) 88%, transparent),
+    var(--j-grain) !important;
+  background-size: 100% 1px, auto !important;
+  background-position: bottom, 0 0 !important;
+  background-repeat: no-repeat, repeat !important;
+}
+[data-skin="journal"] [style*="border-right: 1px solid var(--border)"]:not(.app-sidebar):not(button) {
+  border-right-color: var(--j-ink) !important;
+  box-shadow: 1px 0 0 var(--j-gold-lo);
+}
+
+/* Bare fields that draw a box. Borderless ones (titles) are meant as text. */
+[data-skin="journal"] :is(input, textarea, select)[style*="border: 1px solid"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.ghost-input):not(.input) {
+  border-color: var(--j-ink) !important;
+  box-shadow: inset 0 0 0 1px var(--border-light), inset 0 2px 4px var(--j-shade);
+}
+[data-skin="journal"] :is(input, textarea, select)[style*="border: 1px solid"]:focus:not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+  box-shadow: inset 0 0 0 1px var(--gold), inset 0 2px 4px var(--j-shade), 0 0 8px var(--gold-glow);
+}
+
+/* Bare bordered <button>s (toolbar buttons, chips, toggles): raised. */
+[data-skin="journal"] button[style*="border: 1px solid var(--border"]:not(.btn):not(.tab):not([style*="border-radius: 50%"]):not([style*="url("]) {
+  background-image: linear-gradient(180deg, var(--j-sheen), var(--j-shade)) !important;
+  border-color: var(--j-ink) !important;
+  box-shadow: inset 0 0 0 1px var(--border-light), 0 1px 2px var(--j-shade);
+}
+[data-skin="journal"] button[style*="border: 1px solid var(--border"]:not(.btn):not(.tab):not([style*="border-radius: 50%"]):not([style*="url("]):hover {
+  box-shadow: inset 0 0 0 1px var(--gold-dim), 0 0 8px var(--gold-glow);
+}
+
+/* SVG-heavy views (timeline, webs, maps) keep their canvas and fonts: their
+   layouts measure label widths, and another face would overflow them. Their
+   zoom controls are React Flow's stock white buttons, unstyled in every design;
+   the Journal frames them like the rest of its controls. */
+[data-skin="journal"] .react-flow__controls {
+  box-shadow: 0 0 0 1px var(--j-ink), 0 0 0 2px var(--j-gold-lo), var(--shadow-md);
+  border-radius: 2px; overflow: hidden;
+}
+[data-skin="journal"] .react-flow__controls-button {
+  background: linear-gradient(180deg, var(--bg-hover), var(--bg-surface));
+  border-bottom: 1px solid var(--j-ink);
+  color: var(--j-gold-hi); fill: var(--j-gold-hi);
+}
+[data-skin="journal"] .react-flow__controls-button svg { fill: currentColor; }
+[data-skin="journal"] .react-flow__controls-button:hover { background: linear-gradient(180deg, var(--bg-active), var(--bg-hover)); color: #fff6d8; }
+[data-skin="journal"] .react-flow__attribution { background: transparent; opacity: 0.4; }
+
+/* ═══ Editor ═════════════════════════════════════════════════════════════════
+   Journal flourishes in every editor: ornamental heading rule, drop cap. */
+[data-skin="journal"] .ProseMirror h1 {
+  border-bottom: 0; padding-bottom: 0.3em; color: var(--j-gold-hi);
+  background: linear-gradient(90deg, var(--gold), var(--gold-dim) 40%, transparent) bottom / 100% 1px no-repeat;
+}
+[data-skin="journal"] .ProseMirror h2 { color: var(--gold); }
+[data-skin="journal"] .ProseMirror blockquote {
+  border-left: 0; padding: 0.6em 1em; background: color-mix(in srgb, var(--gold) 5%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border-light), inset 3px 0 0 var(--gold-dim);
+}
+/* Only when the entry opens with a paragraph: an entry that opens with a
+   heading or a list has no initial to illuminate. */
+/* Drop cap. On or off per editor (data-dropcap, worked out in RichEditor from
+   Settings and the page's own override). Sized in lines with initial-letter,
+   so it sits exactly N lines tall and aligns with the text in any type face —
+   a font-size guess drifted between fonts. It goes on the first paragraph of
+   text, so a page that opens with a heading or image still gets one. */
+[data-skin="journal"] [data-dropcap="on"] .ProseMirror > p:first-of-type:not(.is-editor-empty)::first-letter {
+  initial-letter: var(--dropcap-lines, 3);
+  font-family: var(--font-display); font-weight: 400;
+  margin-right: 0.12em;
+  color: var(--j-gold-hi); text-shadow: var(--j-engrave);
+}
+/* A first paragraph shorter than the letter must not let the next block wrap
+   around it: the paragraph encloses its letter, and whatever follows clears it. */
+[data-skin="journal"] [data-dropcap="on"] .ProseMirror > p:first-of-type:not(.is-editor-empty) { display: flow-root; }
+[data-skin="journal"] [data-dropcap="on"] .ProseMirror > p:first-of-type:not(.is-editor-empty) + * { clear: both; }
+[data-skin="journal"] .ProseMirror hr {
+  border: 0; height: 1px; margin: 1.6em 0;
+  background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+}
+[data-skin="journal"] .ProseMirror img { border: 2px solid var(--j-ink); box-shadow: 0 0 0 1px var(--gold-dim), var(--shadow-md); }
+[data-skin="journal"] .ProseMirror th { background: linear-gradient(180deg, var(--bg-active), var(--bg-elevated)); color: var(--gold); font-family: var(--font-display); }
+
+/* ═══ Parchment pages ════════════════════════════════════════════════════════
+   With "Parchment pages" on, the writing surface is a sheet of vellum with brown
+   ink — the quest-log page. The text and accent vars are redefined *on the page*
+   so every rule that reads them inks itself for paper; hardcoded link colours
+   in index.css are re-inked one by one. Headings take the accent, darkened to
+   ink. SPRITE: a parchment scan with burnt edges would replace the gradient. */
+[data-skin="journal"][data-pages="parchment"] .ProseMirror {
+  --text-primary:   var(--j-page-ink);
+  --text-secondary: #5c4228;
+  --text-muted:     #94795a;
+  --gold:           var(--j-page-accent);
+  --gold-dim:       color-mix(in srgb, var(--j-page-accent) 70%, #c9b48a);
+  --j-gold-hi:      var(--j-page-accent);
+  --j-ink:          #5c4228;
+  --j-engrave:      1px 1px 0 rgba(255,240,200,0.6);
+  --border:         #c9b48a;
+  --border-light:   #b39a6c;
+  --bg-active:      #e3d2a8;
+  --bg-elevated:    #ecdcb4;
+  --bg-surface:     #e8d8b0;
+  padding: 30px 40px 40px;
+  color: var(--text-primary);
+  background:
+    radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(120,80,30,0.28) 100%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='0.04' numOctaves='4' seed='7'/><feColorMatrix values='0 0 0 0 0.55  0 0 0 0 0.38  0 0 0 0 0.16  0 0 0 0.13 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>"),
+    linear-gradient(180deg, #f1e3bf, #e9d6a8);
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(90,60,20,0.35), inset 0 0 40px rgba(110,70,20,0.18), 0 0 0 1px color-mix(in srgb, var(--bg-base) 40%, #000), 0 6px 22px rgba(0,0,0,0.45);
+}
+[data-skin="journal"][data-pages="parchment"] .ProseMirror ::selection { background: rgba(160,110,30,0.3); color: inherit; }
+/* Illuminated initial: manuscript red, which carries on paper. */
+[data-skin="journal"][data-pages="parchment"] [data-dropcap="on"] .ProseMirror > p:first-of-type:not(.is-editor-empty)::first-letter { color: #8a2410; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror blockquote { background: rgba(140,100,40,0.08); box-shadow: inset 3px 0 0 #9c7a3c; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror img { box-shadow: 0 2px 8px rgba(60,40,10,0.35); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror th { background: rgba(140,100,40,0.16); color: #5c4228; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror :is(th, td) { border-color: #b39a6c; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror code,
+[data-skin="journal"][data-pages="parchment"] .ProseMirror pre { background: rgba(140,100,40,0.12); color: #5c3a10; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror mark { background: rgba(230,180,60,0.45); color: inherit; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .selectedCell::after { background: rgba(160,110,30,0.15); }
+
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .wiki-link            { color: var(--j-page-accent); border-bottom-color: color-mix(in srgb, var(--j-page-accent) 50%, transparent); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .wiki-link:hover      { color: color-mix(in srgb, var(--j-page-accent) 70%, #c07010); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .wiki-mention-suggest { border-bottom-color: color-mix(in srgb, var(--j-page-accent) 50%, transparent); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .wiki-mention-suggest:hover { background: rgba(160,110,30,0.12); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .session-link         { color: #1f4f8f; border-bottom-color: rgba(31,79,143,0.45); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .session-link:hover   { color: #2c6bbd; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .spell-link           { color: #5b2f9e; border-bottom-color: rgba(91,47,158,0.45); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .spell-link:hover     { color: #7440be; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .web-link             { color: #0f6470; border-bottom-color: rgba(15,100,112,0.45); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .web-link:hover       { color: #17849c; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror :is(.wiki-link-broken, .session-link-broken, .spell-link-broken) { color: #a0261c !important; border-bottom-color: #a0261c !important; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .sound-link           { --sound-color: #9a5a06; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .sound-link[data-sound-category="ambience"] { --sound-color: #1f4f8f; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .sound-link[data-sound-category="music"]    { --sound-color: #19704a; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .dm-only { background: rgba(180,40,30,0.12); border-bottom-color: rgba(160,38,28,0.6); }
+
+/* ═══ Matte finish ═══════════════════════════════════════════════════════════
+   Settings → Appearance → Design → Glossy highlights off (<html data-gloss="off">).
+   Keeps the frames, trim and colours; drops the shine: the split highlight on
+   buttons, the lighter top on cards, the sheen lines, and the gold glows on
+   hover and focus. Last in the file so it wins ties with the glossy rules. */
+[data-skin="journal"][data-gloss="off"] { --j-sheen: transparent; }
+
+[data-skin="journal"][data-gloss="off"] .app-main {
+  background-image: radial-gradient(ellipse at 50% 110%, var(--j-shade), transparent 70%), var(--j-mottle), var(--j-grain);
+}
+[data-skin="journal"][data-gloss="off"] h1,
+[data-skin="journal"][data-gloss="off"] .modal-title { text-shadow: var(--j-engrave); }
+
+[data-skin="journal"][data-gloss="off"] .card,
+[data-skin="journal"][data-gloss="off"] .modal { background-image: var(--j-grain); }
+[data-skin="journal"][data-gloss="off"] .card-clickable:hover {
+  box-shadow: 0 0 0 1px var(--j-ink), inset 0 0 0 1px var(--gold), inset 0 0 0 2px var(--j-ink);
+}
+
+/* Buttons: a flat slab. Ghost buttons keep their own transparent look. */
+[data-skin="journal"][data-gloss="off"] .btn:not(.btn-ghost) {
+  background: var(--j-slab); text-shadow: none;
+  box-shadow: inset 0 0 0 1px var(--j-gold-lo);
+}
+[data-skin="journal"][data-gloss="off"] .btn:not(.btn-ghost):hover {
+  background: color-mix(in srgb, var(--j-slab) 85%, #fff);
+  box-shadow: inset 0 0 0 1px var(--gold);
+}
+[data-skin="journal"][data-gloss="off"] .btn:not(.btn-ghost):active {
+  background: color-mix(in srgb, var(--j-slab) 80%, #000);
+  box-shadow: inset 0 0 0 1px var(--gold-dim);
+}
+[data-skin="journal"][data-gloss="off"] .btn.btn-primary { background: var(--gold); box-shadow: inset 0 0 0 1px var(--gold-dim); }
+[data-skin="journal"][data-gloss="off"] .btn.btn-primary:hover { background: var(--gold-hover); box-shadow: inset 0 0 0 1px var(--gold-dim); }
+[data-skin="journal"][data-gloss="off"][data-mode="light"] .btn:not(.btn-ghost) {
+  background: var(--bg-elevated); box-shadow: inset 0 0 0 1px var(--j-trim);
+}
+[data-skin="journal"][data-gloss="off"][data-mode="light"] .btn:not(.btn-ghost):hover {
+  background: var(--bg-hover); box-shadow: inset 0 0 0 1px var(--gold);
+}
+[data-skin="journal"][data-gloss="off"][data-mode="light"] .btn:not(.btn-ghost):active {
+  background: var(--bg-active); box-shadow: inset 0 0 0 1px var(--gold-dim);
+}
+
+/* Toolbar buttons, chips and fields: no glow on hover or focus. */
+[data-skin="journal"][data-gloss="off"] button[style*="border: 1px solid var(--border"]:not(.btn):not(.tab):not([style*="border-radius: 50%"]):not([style*="url("]):hover {
+  box-shadow: inset 0 0 0 1px var(--gold-dim);
+}
+[data-skin="journal"][data-gloss="off"] .input:focus { box-shadow: inset 0 0 0 1px var(--gold), inset 0 2px 5px var(--j-shade); }
+[data-skin="journal"][data-gloss="off"] :is(input, textarea, select)[style*="border: 1px solid"]:focus:not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+  box-shadow: inset 0 0 0 1px var(--gold), inset 0 2px 4px var(--j-shade);
+}

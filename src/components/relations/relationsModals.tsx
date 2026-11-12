@@ -5,7 +5,7 @@ import {
   Plus, Trash2, X, Search, Network,
 } from 'lucide-react'
 import {
-  type WebTemplate, WEB_TEMPLATES, TEMPLATE_CONFIG, RANK_PRESETS,
+  type WebTemplate, WEB_TEMPLATES, TEMPLATE_CONFIG, RANK_PRESETS, WEB_TAG_STYLE,
   buildRanksFromPreset, type RelationWeb, type DBRelationNode, type DBRelationEdge,
   ALL_ARTICLE_TYPES, ARTICLE_TYPE_LABELS, findFreePosition,
 } from './relationsShared'
@@ -123,7 +123,7 @@ export function NewWebModal({ onClose, onCreated, lockedArticle }: {
           {/* Feature badges for selected template */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {cfg.unionNodes && (
-              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: '#EEEDFE', color: '#3C3489', border: '0.5px solid #AFA9EC' }}>Union nodes</span>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, ...WEB_TAG_STYLE }}>Union nodes</span>
             )}
             {cfg.dagreDir ? (
               <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '0.5px solid var(--border)' }}>
@@ -133,7 +133,7 @@ export function NewWebModal({ onClose, onCreated, lockedArticle }: {
               <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '0.5px solid var(--border)' }}>Free canvas</span>
             )}
             {cfg.ranked && (
-              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: '#EEEDFE', color: '#3C3489', border: '0.5px solid #AFA9EC' }}>Rank tiers</span>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, ...WEB_TAG_STYLE }}>Rank tiers</span>
             )}
           </div>
           {cfg.ranked && (
@@ -576,9 +576,7 @@ function LabelChips({ options, value, onPick }: { options: string[]; value: stri
         return (
           <button key={s} type="button" onClick={() => onPick(s)}
             style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, cursor: 'pointer',
-              background: on ? '#EEEDFE' : 'var(--bg-elevated)',
-              border: on ? '1px solid #AFA9EC' : '1px solid var(--border)',
-              color: on ? '#3C3489' : 'var(--text-secondary)' }}>
+              ...(on ? WEB_TAG_STYLE : { background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }) }}>
             {s}
           </button>
         )

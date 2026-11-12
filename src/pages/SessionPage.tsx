@@ -356,6 +356,7 @@ function SceneView({ map, readMode }: { map: GameMap; readMode: boolean }) {
           onChange={onChange}
           readOnly={readMode}
           placeholder="Describe this scene — read-aloud text, an encounter, a handout…"
+          dropCapId={`scene:${map.id}`}
         />
       </div>
     </div>
@@ -572,6 +573,7 @@ function SessionNotesPanel({ session, onClose }: { session: Session; onClose: ()
           content={notes}
           onChange={handleChange}
           placeholder="Jot down notes as the session unfolds… player decisions, unexpected events, NPC names, plot twists…"
+          dropCapId={`session:${session.id}`}
         />
       </div>
     </div>

@@ -11,6 +11,7 @@ import RichEditor from '../RichEditor'
 import type { Article, ArticleSummary, ArticleType, MasterLootTable, LootItem } from '../../types'
 import StatBlockEditor from '../StatBlockEditor'
 import { crToXp, CR_OPTIONS } from '../../utils/encounterBudget'
+import { formatDate } from '../../utils/dates'
 import { parseStatBlock, parseItemStatBlock, itemBlockHasData } from '../../types'
 import StatBlockView from '../StatBlockView'
 import ItemStatBlockEditor from '../ItemStatBlockEditor'
@@ -41,6 +42,7 @@ import {
   ARTICLE_BACKED_TRACKS, articleTypeLabel,
 } from './wikiConstants'
 import { ARTICLE_TYPE_COLORS } from '../../constants/articleTypes'
+import { PreviewCropEditor } from './PreviewCropEditor'
 import { ArticleRelationsPanel, RelationWebsSection, MemberCountSection, AffiliationsSection, GeographySection } from './ArticleRelationsPanel'
 import { ClocksSection } from '../clocks/ClocksSection'
 
@@ -134,7 +136,7 @@ function TrackRow({ trackKey, name, options, value, onChange, optionGroups, visC
           )}
         </div>
       ) : (
-        <select className="input" style={{ height: 28, fontSize: 12, flex: 1 }} value={value}
+        <select className="input" style={{ height: 28, paddingTop: 0, paddingBottom: 0, fontSize: 12, flex: 1 }} value={value}
           onChange={e => { if (e.target.value === '__custom__') { setCustomMode(true); onChange('') } else onChange(e.target.value) }}>
           <option value="">— none —</option>
           {optionGroups
@@ -242,7 +244,7 @@ function MultiTrackRow({ name, value, onChange, optionGroups, visControl }: {
             </button>
           </div>
         ) : (
-          <select className="input" style={{ height: 28, fontSize: 12 }} value=""
+          <select className="input" style={{ height: 28, paddingTop: 0, paddingBottom: 0, fontSize: 12 }} value=""
             onChange={e => { const v = e.target.value; if (!v) return; if (v === '__custom__') setCustomMode(true); else add(v) }}>
             <option value="">+ Add {formatTrackName(name).toLowerCase()}…</option>
             <GroupedOptions groups={groups} />
@@ -683,6 +685,8 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const [tagInput, setTagInput]       = useState('')
   const [coverImage, setCoverImage]   = useState<string | null>(article.cover_image || null)
   const [portraitImage, setPortraitImage] = useState<string | null>(article.portrait_image || null)
+  // Hover-card framing of the preview picture (portrait, else banner); '' = default.
+  const [previewCrop, setPreviewCrop] = useState<string>(article.preview_crop || '')
   const [backlinks, setBacklinks]     = useState<ArticleSummary[]>([])
   const [relationWebs, setRelationWebs] = useState<any[]>([])
   const [relationWebsLoaded, setRelationWebsLoaded] = useState(false)
@@ -713,8 +717,8 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
   const hasMap       = articleType === 'location'
   const hasQuest     = articleType === 'quest'
 
-  const pendingRef = useRef({ title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, reward })
-  pendingRef.current = { title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, dirty, id: article.id, substeps, reward }
+  const pendingRef = useRef({ title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, previewCrop, dirty, id: article.id, substeps, reward })
+  pendingRef.current = { title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, previewCrop, dirty, id: article.id, substeps, reward }
 
   useEffect(() => {
     return () => {
@@ -725,7 +729,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
         statblock: p.articleType === 'creature' ? JSON.stringify(p.variants) : JSON.stringify(p.statblock),
         item_block: JSON.stringify(p.itemBlock),
         loot_table: p.lootTableJson, loot_table_id: p.lootTableId,
-        tags: JSON.stringify(p.tags), cover_image: p.coverImage, portrait_image: p.portraitImage,
+        tags: JSON.stringify(p.tags), cover_image: p.coverImage, portrait_image: p.portraitImage, preview_crop: p.previewCrop,
         substeps: JSON.stringify(p.substeps),
         rewards:  JSON.stringify(p.reward),
       })
@@ -742,6 +746,7 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
     setItemBlock(parseItemStatBlock(article.item_block))
     setTags(parseTags(article.tags))
     setCoverImage(article.cover_image || null); setPortraitImage(article.portrait_image || null)
+    setPreviewCrop(article.preview_crop || '')
     setLootTableJson(article.loot_table || '{"name":"Loot","items":[]}')
     setLootTableId(article.loot_table_id ?? null)
     setSubsteps(parseSubsteps((article as any).substeps))
@@ -837,18 +842,18 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
       tracks: JSON.stringify(tracks), statblock: statblockJson,
       item_block: JSON.stringify(itemBlock),
       loot_table: lootTableJson, loot_table_id: lootTableId,
-      tags: JSON.stringify(tags), cover_image: coverImage, portrait_image: portraitImage,
+      tags: JSON.stringify(tags), cover_image: coverImage, portrait_image: portraitImage, preview_crop: previewCrop,
       substeps: JSON.stringify(substeps),
       rewards:  JSON.stringify(reward),
     })
     setDirty(false); setSaving(false); setSavedTick(t => t + 1)
-  }, [article.id, dirty, title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, substeps, reward, updateArticle])
+  }, [article.id, dirty, title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, previewCrop, substeps, reward, updateArticle])
 
   useEffect(() => {
     if (!dirty) return
     const t = setTimeout(save, 1500)
     return () => clearTimeout(t)
-  }, [dirty, title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage])
+  }, [dirty, title, content, articleType, tracks, statblock, variants, itemBlock, lootTableJson, lootTableId, tags, coverImage, portraitImage, previewCrop])
 
   const pickImage = async (setter: (v: string | null) => void) => {
     const path = await window.api.selectImageFile()
@@ -973,8 +978,9 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
             {/* Editor */}
             <div style={{ padding: '0 8px' }}>
               <RichEditor key={article.id} content={content} onChange={v => { setContent(v); setDirty(true) }}
-                placeholder="Start writing… Use [[ to link wiki articles, @@ for spells, \\ for sessions."
-                onWikiLinkClick={navigateToArticleByTitle} expandable readOnly={readMode} excludeTitle={title} />
+                placeholder="Start writing… Use [[ to link wiki articles, @@ for spells, \\ for sessions, %% for sounds."
+                onWikiLinkClick={navigateToArticleByTitle} expandable readOnly={readMode} excludeTitle={title}
+                dropCapId={`article:${article.id}`} dropCapKind="article" />
             </div>
 
             {/* Stat block — non-creature types */}
@@ -1160,22 +1166,36 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
             <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
               <div style={sidebarSectionLabel}>{article.title}</div>
               {portraitImage ? (
-                <div style={{ position: 'relative', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-                  <img src={`file://${portraitImage}`} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', display: 'block' }} />
-                  {!readMode && (
-                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: 0, transition: 'all 200ms ease' }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.5)' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '0'; (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0)' }}>
-                      <button onClick={() => pickImage(setPortraitImage)} style={imgBtnStyle}><ImageIcon size={11} /> Change</button>
-                      <button onClick={() => { setPortraitImage(null); setDirty(true) }} style={{ ...imgBtnStyle, color: '#e05555', borderColor: 'rgba(224,85,85,0.4)' }}><X size={11} /> Remove</button>
+                readMode ? (
+                  <div style={{ position: 'relative', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                    <img src={`file://${portraitImage}`} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', display: 'block' }} />
+                  </div>
+                ) : (
+                  // Edit mode shows the whole portrait, with the box marking the
+                  // hover card's picture; the buttons move below so nothing
+                  // covers the box.
+                  <>
+                    <PreviewCropEditor path={portraitImage} value={previewCrop} onChange={v => { setPreviewCrop(v); setDirty(true) }} />
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      <button onClick={() => pickImage(setPortraitImage)} style={{ ...imgBtnStyle, background: 'var(--bg-elevated)', flex: 1, justifyContent: 'center' }}><ImageIcon size={11} /> Change</button>
+                      <button onClick={() => { setPortraitImage(null); setDirty(true) }} style={{ ...imgBtnStyle, background: 'var(--bg-elevated)', flex: 1, justifyContent: 'center', color: '#e05555', borderColor: 'rgba(224,85,85,0.4)' }}><X size={11} /> Remove</button>
+                    </div>
+                  </>
+                )
+              ) : !readMode ? (
+                <>
+                  <button onClick={() => pickImage(setPortraitImage)} style={{ width: '100%', aspectRatio: '3/4', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--bg-elevated)', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, transition: 'all 120ms ease' }}
+                    className="hover-gold-border-strong">
+                    <ImageIcon size={22} strokeWidth={1} /> Add portrait
+                  </button>
+                  {/* No portrait: hover cards use the banner, so frame that. */}
+                  {coverImage && (
+                    <div style={{ marginTop: 14 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Hover preview · banner</div>
+                      <PreviewCropEditor path={coverImage} value={previewCrop} onChange={v => { setPreviewCrop(v); setDirty(true) }} />
                     </div>
                   )}
-                </div>
-              ) : !readMode ? (
-                <button onClick={() => pickImage(setPortraitImage)} style={{ width: '100%', aspectRatio: '3/4', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--bg-elevated)', border: '1px dashed var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, transition: 'all 120ms ease' }}
-                  className="hover-gold-border-strong">
-                  <ImageIcon size={22} strokeWidth={1} /> Add portrait
-                </button>
+                </>
               ) : null}
             </div>
 
@@ -1433,8 +1453,8 @@ export function ArticleEditor({ article, onBack, backLabel = 'Back to Wiki' }: {
             )}
 
             <div style={{ padding: 16, fontSize: 11, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span>Created {new Date(article.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-              <span>Updated {new Date(article.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              <span>Created {formatDate(article.created_at)}</span>
+              <span>Updated {formatDate(article.updated_at)}</span>
             </div>
           </div>
         </div>

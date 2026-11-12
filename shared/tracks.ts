@@ -24,7 +24,7 @@ export const NON_TAG_TRACKS = new Set([
 // Tracks that hold several entries instead of one. Stored as a JSON array of
 // strings in the same `tracks[key]` slot; a legacy plain string reads as a
 // single-element list (see trackValues).
-export const MULTI_TRACKS = new Set(['Allies', 'Rivals', 'Sacred_Sites', 'Domains'])
+export const MULTI_TRACKS = new Set(['Allies', 'Rivals', 'Sacred_Sites', 'Domains', 'Faction'])
 
 // Tracks that default to DM-only on the player site. `Status` says whether a
 // quest failed, an order disbanded or an artefact was destroyed — knowledge the

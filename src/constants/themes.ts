@@ -99,7 +99,7 @@ export function contrastRatio(a: string, b: string): number {
 
 // ── Bases ─────────────────────────────────────────────────────────────────────
 
-export type BaseKey = 'parchment' | 'charcoal' | 'midnight' | 'paper'
+export type BaseKey = 'parchment' | 'charcoal' | 'midnight' | 'paper' | 'tome'
 
 // Backdrop-texture inks, shared by every base of the same mode. These are the
 // alphas the textures were designed at — the wood grain in particular is a
@@ -217,6 +217,37 @@ export const BASES: Record<BaseKey, BaseTheme> = {
       'relations':   '#a98cff',
       'timeline':    '#f2a154',
       'soundboard':  '#4ad6e8',
+    },
+  },
+
+  // The adventurer's-journal skin. Colours here are the warm dark-leather and
+  // aged-vellum family; the structural look (double gold trim, beveled panels,
+  // paper pages, ornaments) is the Journal design in journal.css, which works on any base.
+  tome: {
+    label: 'Tome',
+    mode: 'dark',
+    preview: '#2b1d12',
+    text: 'sepia',
+    vars: {
+      '--bg-base':      '#120c07',
+      '--bg-surface':   '#1f1610',
+      '--bg-elevated':  '#2b1d12',
+      '--bg-hover':     '#3a2918',
+      '--bg-active':    '#4a3420',
+      '--border':       '#3d2a17',
+      '--border-light': '#6b4c28',
+      '--shadow-sm':    '0 2px 6px rgba(0,0,0,0.55)',
+      '--shadow-md':    '0 4px 18px rgba(0,0,0,0.7)',
+      '--shadow-lg':    '0 10px 44px rgba(0,0,0,0.88)',
+      ...DARK_TEXTURE,
+    },
+    sections: {
+      'wiki':        '#6fb1f0',
+      'dm-notes':    '#f26f5e',
+      'loot-tables': '#6fcf8a',
+      'relations':   '#b88cf0',
+      'timeline':    '#f0a040',
+      'soundboard':  '#56cfd8',
     },
   },
 
@@ -423,15 +454,18 @@ export const FONTS: Record<'display' | 'body' | 'ui', FontOption[]> = {
     { key: 'marcellus', label: 'Marcellus', stack: `'Marcellus', serif`,          family: 'Marcellus' },
     { key: 'cormorant', label: 'Cormorant', stack: `'Cormorant Garamond', serif`, family: 'Cormorant+Garamond:wght@400;500;600;700' },
     { key: 'uncial',    label: 'Uncial',    stack: `'Uncial Antiqua', serif`,     family: 'Uncial+Antiqua' },
+    { key: 'fell',      label: 'IM Fell',   stack: `'IM Fell English SC', serif`, family: 'IM+Fell+English+SC' },
     { key: 'system',    label: 'System',    stack: `Georgia, 'Times New Roman', serif`, family: null },
   ],
   body: [
     { key: 'garamond',  label: 'Garamond',  stack: `'EB Garamond', Georgia, serif`, family: 'EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500' },
     { key: 'lora',      label: 'Lora',      stack: `'Lora', Georgia, serif`,        family: 'Lora:ital,wght@0,400;0,500;0,600;1,400' },
     { key: 'crimson',   label: 'Crimson',   stack: `'Crimson Text', Georgia, serif`, family: 'Crimson+Text:ital,wght@0,400;0,600;1,400' },
+    { key: 'fellbody',  label: 'IM Fell',   stack: `'IM Fell English', Georgia, serif`, family: 'IM+Fell+English:ital' },
     { key: 'system',    label: 'System',    stack: `Georgia, 'Times New Roman', serif`, family: null },
   ],
   ui: [
+    { key: 'marcellus', label: 'Marcellus', stack: `'Marcellus', Georgia, serif`,       family: 'Marcellus' },
     { key: 'raleway',   label: 'Raleway',   stack: `'Raleway', system-ui, sans-serif`,   family: 'Raleway:wght@300;400;500;600' },
     { key: 'inter',     label: 'Inter',     stack: `'Inter', system-ui, sans-serif`,     family: 'Inter:wght@300;400;500;600' },
     { key: 'worksans',  label: 'Work Sans', stack: `'Work Sans', system-ui, sans-serif`, family: 'Work+Sans:wght@300;400;500;600' },
@@ -470,6 +504,8 @@ export interface Look {
   accent: string
   text: TextThemeKey
   tint: boolean
+  /** Optional type faces — a look whose character is mostly in its lettering. */
+  fonts?: FontChoice
 }
 
 export const LOOKS: Look[] = [
@@ -479,11 +515,39 @@ export const LOOKS: Look[] = [
   { key: 'frost',  label: 'Frost',  base: 'midnight',  accent: '#4bc4ff', text: 'cool',      tint: true },
   { key: 'grove',  label: 'Grove',  base: 'charcoal',  accent: '#49c185', text: 'mint',      tint: true },
   { key: 'ink',    label: 'Ink',    base: 'paper',     accent: '#8a6d2f', text: 'ink',       tint: false },
+  { key: 'journal', label: 'Journal', base: 'tome',    accent: '#e0b22a', text: 'sepia',     tint: false,
+    fonts: { display: 'cinzel', body: 'fellbody', ui: 'marcellus' } },
 ]
 
 // ── Applying ──────────────────────────────────────────────────────────────────
 
+/**
+ * The structural design, independent of colour. Classic is the original flat
+ * look; Journal adds the adventurer's-journal chrome (beveled gold-trimmed
+ * frames, slab buttons, folder tabs, ornamental rules) in src/journal.css, drawn
+ * from whatever base, accent, text and type faces are chosen.
+ */
+export type Design = 'classic' | 'journal'
+
+/** Drop-cap size range, in lines of text; the Settings slider steps by half a line. */
+export const DROP_CAP_LINES = { min: 2, max: 5, step: 0.5, default: 3 } as const
+export function clampDropCapLines(n: unknown): number {
+  const v = typeof n === 'number' && isFinite(n) ? n : DROP_CAP_LINES.default
+  return Math.min(DROP_CAP_LINES.max, Math.max(DROP_CAP_LINES.min, Math.round(v * 2) / 2))
+}
+
 export interface Appearance {
+  design: Design
+  /** Journal only: editors become a sheet of parchment with brown ink. */
+  parchment: boolean
+  /** Journal only: glossy highlights and gold glows on cards, buttons, tabs. Off = matte. */
+  gloss: boolean
+  /** Journal only: the first letter of a page's text set large (a drop cap). */
+  dropCap: boolean
+  /** Drop-cap height in lines of text (DROP_CAP_LINES range). */
+  dropCapLines: number
+  /** Drop caps in notes too (DM notes, session notes, scenes, map pins, combat), not only wiki articles. */
+  dropCapNotes: boolean
   base: BaseKey
   accent: string
   tint: boolean
@@ -540,6 +604,12 @@ export function applyAppearance(a: Appearance): void {
   }
   // Lets CSS (and any component that asks) branch on light vs dark.
   root.dataset.mode = base.mode
+  // Lets a base carry structural styling (borders, ornaments), not just colour.
+  root.dataset.base = a.base in BASES ? a.base : 'parchment'
+  root.dataset.skin = a.design === 'classic' ? 'classic' : 'journal'
+  root.dataset.pages = a.design !== 'classic' && a.parchment ? 'parchment' : 'theme'
+  root.dataset.gloss = a.gloss ? 'on' : 'off'
+  root.style.setProperty('--dropcap-lines', String(clampDropCapLines(a.dropCapLines)))
 }
 
 // ── Storage ───────────────────────────────────────────────────────────────────
@@ -550,7 +620,14 @@ export function applyAppearance(a: Appearance): void {
 const KEY = 'dmforge:appearance:v2'
 const campaignKey = (id: number) => `${KEY}:campaign:${id}`
 
+// Journal is the default design on this branch: a saved appearance from before
+// the toggle existed has no `design`, so it opens in Journal and Classic is one
+// click away in Settings → Appearance → Design.
+export const DEFAULT_DESIGN: Design = 'journal'
+
 export const DEFAULT_APPEARANCE: Appearance = {
+  design: DEFAULT_DESIGN, parchment: true, gloss: true,
+  dropCap: true, dropCapLines: DROP_CAP_LINES.default, dropCapNotes: false,
   base: 'parchment', accent: DEFAULT_ACCENT, tint: false, text: 'parchment',
   fonts: { ...DEFAULT_FONTS }, sections: {},
 }
@@ -570,6 +647,12 @@ function parse(raw: string | null): Appearance | null {
   try {
     const p = JSON.parse(raw)
     return {
+      design: p?.design === 'classic' || p?.design === 'journal' ? p.design : DEFAULT_DESIGN,
+      parchment: p?.parchment !== false,
+      gloss: p?.gloss !== false,
+      dropCap: p?.dropCap !== false,
+      dropCapLines: clampDropCapLines(p?.dropCapLines),
+      dropCapNotes: !!p?.dropCapNotes,
       base: BASES[p?.base as BaseKey] ? p.base : DEFAULT_APPEARANCE.base,
       accent: normalizeHex(p?.accent) ?? DEFAULT_ACCENT,
       tint: !!p?.tint,
@@ -597,6 +680,8 @@ export function loadAppearance(campaignId?: number | null): Appearance {
     const legacyText = localStorage.getItem('dmforge:text-theme') as TextThemeKey | null
     if (legacy) {
       return {
+        design: DEFAULT_DESIGN, parchment: true, gloss: true,
+        dropCap: true, dropCapLines: DROP_CAP_LINES.default, dropCapNotes: false,
         ...legacy,
         text: legacyText && TEXT_THEMES[legacyText] ? legacyText : BASES[legacy.base].text,
         fonts: { ...DEFAULT_FONTS },

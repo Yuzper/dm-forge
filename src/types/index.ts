@@ -222,6 +222,8 @@ export interface Article extends ArticleSummary {
   substeps: string
   rewards: string
   track_visibility: string
+  /** Hover-card framing of the preview image; '' = default. See utils/previewCrop. */
+  preview_crop?: string
 }
 
 // Per-track / per-milestone player visibility (companion to `tracks`).
@@ -619,6 +621,7 @@ export interface CreateArticleInput {
   loot_table_id?: number | null
   cover_image?: string | null
   portrait_image?: string | null
+  preview_crop?: string
   substeps?: string
   rewards?: string
   track_visibility?: string

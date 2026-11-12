@@ -1,6 +1,7 @@
 // path: electron/main/relationsSync.ts
 import { db } from './db'
 import { genderOf, parentRole, childRole, siblingRole } from '../../shared/kinship'
+import { trackValues, stringifyMulti } from '../../shared/tracks'
 
 // ── Family tree relation derivation ───────────────────────────────────────────
 
@@ -131,6 +132,53 @@ export function syncHierarchyForWeb(webId: number) {
     tracks.Leader = leaderStr
     db.prepare('UPDATE articles SET tracks = ? WHERE id = ?').run(JSON.stringify(tracks), web.article_id)
   }
+}
+
+// ── Faction membership sync ───────────────────────────────────────────────────
+// A character/PC's Faction field can be filled by hand, but a node placed in a
+// web that's already linked to a Faction article should get that faction added
+// for free. This is additive only — never removes a chip — so a DM who takes
+// someone out of a faction by hand isn't fought on the next sync, and a web that
+// isn't linked to an article yet (see the guard below) simply contributes
+// nothing until it is.
+
+function addFactionToCharacter(characterArticleId: number, factionArticleId: number) {
+  const char = db.prepare('SELECT article_type, tracks FROM articles WHERE id = ?').get(characterArticleId) as any
+  if (!char || (char.article_type !== 'character' && char.article_type !== 'playerCharacter')) return
+  const faction = db.prepare('SELECT title, article_type FROM articles WHERE id = ?').get(factionArticleId) as any
+  if (!faction || faction.article_type !== 'faction') return
+
+  let tracks: Record<string, any> = {}
+  try { tracks = JSON.parse(char.tracks || '{}') } catch {}
+  const current = trackValues(tracks.Faction)
+  if (current.includes(faction.title)) return
+  tracks.Faction = stringifyMulti([...current, faction.title])
+  db.prepare('UPDATE articles SET tracks = ? WHERE id = ?').run(JSON.stringify(tracks), characterArticleId)
+}
+
+// Call after a node is created, or after its article_id changes: if the node
+// now points at a character/PC and its web is already linked to a Faction
+// article, that faction joins the character's Faction field.
+export function syncFactionForNode(nodeId: number) {
+  const row = db.prepare(`
+    SELECT n.article_id, w.article_id AS web_article_id
+    FROM relation_nodes n JOIN relation_webs w ON w.id = n.web_id
+    WHERE n.id = ?
+  `).get(nodeId) as any
+  if (!row?.article_id || !row.web_article_id) return
+  addFactionToCharacter(row.article_id, row.web_article_id)
+}
+
+// Call right after a web is linked to an article: every character/PC already
+// in the web gets that faction added, so linking a Faction article to a web
+// backfills its existing members instead of only catching new ones.
+export function syncFactionForWeb(webId: number) {
+  const web = db.prepare('SELECT article_id FROM relation_webs WHERE id = ?').get(webId) as any
+  if (!web?.article_id) return
+  const members = db.prepare(`
+    SELECT article_id FROM relation_nodes WHERE web_id = ? AND article_id IS NOT NULL
+  `).all(webId) as { article_id: number }[]
+  for (const m of members) addFactionToCharacter(m.article_id, web.article_id)
 }
 
 // Auto-generate & maintain the campaign's single "Territory" web from location

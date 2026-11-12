@@ -67,7 +67,7 @@ export default function PlayerSitePreview({ onClose }: { onClose: () => void }) 
     <Modal title="Preview as player" onClose={onClose} style={{ width: 1000, maxWidth: '95vw' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <Eye size={13} style={{ color: 'var(--gold)' }} />
-        <select className="input" value={playerId ?? ''} style={{ height: 30, fontSize: 12, width: 200 }}
+        <select className="input" value={playerId ?? ''} style={{ height: 30, paddingTop: 0, paddingBottom: 0, fontSize: 12, width: 200 }}
           onChange={e => setPlayerId(e.target.value ? Number(e.target.value) : null)}>
           {players.length === 0 && <option value="">No players yet</option>}
           {players.map(p => <option key={p.id} value={p.id}>{p.display_name || p.username}</option>)}

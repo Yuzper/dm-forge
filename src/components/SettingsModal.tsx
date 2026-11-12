@@ -9,14 +9,14 @@ import { Fragment, useEffect, useState } from 'react'
 import type React from 'react'
 import {
   Palette, Database, Lightbulb, Download, Upload, AlertCircle, Layers,
-  Droplet, RotateCcw, Check,
+  Droplet, RotateCcw, Check, ScrollText, Sparkles, CaseUpper, NotebookPen,
 } from 'lucide-react'
 import { useStore } from '../store/store'
 import Modal from './Modal'
 import SwatchPicker from './SwatchPicker'
 import {
   BASES, TEXT_THEMES, LOOKS, FONTS, textThemesFor, resolveTextTheme, resolveSections,
-  contrastRatio, DEFAULT_APPEARANCE, DEFAULT_ACCENT, DEFAULT_FONTS,
+  contrastRatio, DEFAULT_APPEARANCE, DEFAULT_ACCENT, DEFAULT_FONTS, DROP_CAP_LINES,
 } from '../constants/themes'
 import type { BaseKey, Look } from '../constants/themes'
 import { SECTION_VIEWS, SECTION_LABELS, SECTION_ICONS, type SectionView } from '../constants/sections'
@@ -216,8 +216,91 @@ function AppearanceTab() {
     appearance.base === l.base && appearance.accent === l.accent &&
     appearance.text === l.text && appearance.tint === l.tint
 
+  const journal = appearance.design !== 'classic'
+
   return (
     <div>
+      <Group title="Design">
+        <div style={ROW}>
+          {([
+            { key: 'classic' as const, label: 'Classic' },
+            { key: 'journal' as const, label: 'Journal' },
+          ]).map(d => {
+            const active = appearance.design === d.key
+            return (
+              <Tile key={d.key} active={active} width={92} onClick={() => setAppearance({ design: d.key })}>
+                {/* A tiny drawing of each design's frame, in the current colours. */}
+                <div style={{
+                  width: '100%', height: 30, position: 'relative', overflow: 'hidden',
+                  background: 'var(--bg-surface)',
+                  ...(d.key === 'classic'
+                    ? { border: '1px solid var(--border-light)', borderRadius: 5 }
+                    : { outline: '1px solid #000', borderRadius: 1,
+                        boxShadow: 'inset 0 0 0 1px var(--gold-dim), inset 0 0 0 2px #000, inset 0 0 0 3px var(--border-gold)' }),
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <span style={{
+                    width: 34, height: 9,
+                    ...(d.key === 'classic'
+                      ? { background: 'var(--gold)', borderRadius: 3 }
+                      : { background: 'linear-gradient(180deg, var(--gold-hover), var(--gold) 50%, var(--gold-dim) 52%, var(--gold))',
+                          borderRadius: 1, boxShadow: '0 0 0 1px #000' }),
+                  }} />
+                </div>
+                <TileLabel active={active}>{d.label}</TileLabel>
+              </Tile>
+            )
+          })}
+        </div>
+        {journal && (
+          <div style={{ marginTop: 9, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <ToggleRow
+              icon={<ScrollText size={13} />} label="Parchment pages" value={appearance.parchment}
+              on="On" off="Off"
+              onClick={() => setAppearance({ parchment: !appearance.parchment })}
+              hint="Writing areas become a sheet of parchment with brown ink. Off, they use your base and text colours."
+            />
+            <ToggleRow
+              icon={<Sparkles size={13} />} label="Glossy highlights" value={appearance.gloss}
+              on="On" off="Off"
+              onClick={() => setAppearance({ gloss: !appearance.gloss })}
+              hint="The shine on buttons, cards and tabs, and the gold glow on hover. Off gives a flat, matte finish."
+            />
+            <ToggleRow
+              icon={<CaseUpper size={13} />} label="Drop caps" value={appearance.dropCap}
+              on="On" off="Off"
+              onClick={() => setAppearance({ dropCap: !appearance.dropCap })}
+              hint="The first letter of an article's text is set large, a few lines tall. Any page can override this from the drop-cap button in its toolbar."
+            />
+            {appearance.dropCap && (
+              <>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 10px', fontSize: 12, color: 'var(--text-secondary)' }}>
+                  <span style={{ width: 34 }}>Size</span>
+                  <input type="range" min={DROP_CAP_LINES.min} max={DROP_CAP_LINES.max} step={DROP_CAP_LINES.step}
+                    value={appearance.dropCapLines}
+                    onChange={e => setAppearance({ dropCapLines: Number(e.target.value) })}
+                    title="Drop-cap height in lines of text"
+                    style={{ width: 140, accentColor: 'var(--gold)' }} />
+                  <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)', fontSize: 11 }}>
+                    {appearance.dropCapLines} lines
+                  </span>
+                </label>
+                <ToggleRow
+                  icon={<NotebookPen size={13} />} label="Drop caps in notes too" value={appearance.dropCapNotes}
+                  on="On" off="Articles only"
+                  onClick={() => setAppearance({ dropCapNotes: !appearance.dropCapNotes })}
+                  hint="Also DM notes, session notes, scenes, map pins and combat notes."
+                />
+              </>
+            )}
+          </div>
+        )}
+        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 7, lineHeight: 1.5 }}>
+          The design is the frame; everything below — base, accent, text, type faces,
+          backdrop — still applies inside it.
+        </div>
+      </Group>
+
       <Group title="Starting points">
         <div style={ROW}>
           {LOOKS.map(l => {
@@ -226,7 +309,7 @@ function AppearanceTab() {
               <Tile
                 key={l.key} active={active} width={92}
                 title={`${BASES[l.base].label} base, ${l.accent}${l.tint ? ', tinted' : ''}`}
-                onClick={() => setAppearance({ base: l.base, accent: l.accent, text: l.text, tint: l.tint })}
+                onClick={() => setAppearance({ base: l.base, accent: l.accent, text: l.text, tint: l.tint, ...(l.fonts ? { fonts: l.fonts } : {}) })}
               >
                 <div style={{
                   width: '100%', height: 30, borderRadius: 3, position: 'relative',

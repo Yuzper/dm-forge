@@ -73,6 +73,7 @@ export const HINTS: Record<string, Hint> = {
       <>Type <Kbd>[[</Kbd> to link a wiki article</>,
       <>Type <Kbd>@@</Kbd> to link a spell</>,
       <>Type <Kbd>\\</Kbd> to link a session</>,
+      <>Type <Kbd>%%</Kbd> to link a sound — clicking it plays it on the soundboard</>,
       <>Or just write: start a <strong>capitalised</strong> name and a dropdown suggests matching articles — <Kbd>Tab</Kbd> or <Kbd>Enter</Kbd> to link. Names already written that match an article get a dotted underline; click it (or press <Kbd>Ctrl+Shift+L</Kbd>) to link.</>,
       <>
         The sections under the article text depend on its type:
@@ -147,7 +148,7 @@ export const HINTS: Record<string, Hint> = {
     title: 'Organise your notes',
     items: [
       <>Drag pages to reorder them, or drop them into a folder.</>,
-      <>Notes support the same <Kbd>[[</Kbd> <Kbd>@@</Kbd> <Kbd>\\</Kbd> links as articles — plus the autolink dropdown (type a capitalised name) and click-to-link underlines.</>,
+      <>Notes support the same <Kbd>[[</Kbd> <Kbd>@@</Kbd> <Kbd>\\</Kbd> links as articles (and <Kbd>%%</Kbd> for a clickable sound) — plus the autolink dropdown (type a capitalised name) and click-to-link underlines.</>,
       <>Press <Kbd>Ctrl+F</Kbd> to highlight a word in the open note; <Kbd>Ctrl+S</Kbd> searches all notes, articles, and sessions at once.</>,
     ],
   },

@@ -96,6 +96,7 @@ export default function TabStrip({ paneId }: { paneId: PaneId }) {
       onContextMenu={e => showMenu(e, [
         { label: 'New tab', accelerator: 'Ctrl+T', click: () => void openTab({ type: 'campaign', subView: 'hub' }) },
       ], { target: null })}
+      className="tab-strip"
       style={{
         display: 'flex', alignItems: 'stretch', gap: 2,
         padding: '5px 8px 0', flexShrink: 0,
@@ -171,7 +172,7 @@ export default function TabStrip({ paneId }: { paneId: PaneId }) {
                 ? 'inset 2px 0 0 var(--gold)' : 'none',
               transition: 'background 120ms, color 120ms',
             }}
-            className={isActive ? '' : 'hover-bg'}
+            className={isActive ? 'tab tab-active' : 'tab hover-bg'}
           >
             <span style={{ flexShrink: 0, opacity: dead ? 0.5 : 0.8, display: 'flex' }}>
               {dead ? <HelpCircle size={12} /> : locationIcon(tab.location)}

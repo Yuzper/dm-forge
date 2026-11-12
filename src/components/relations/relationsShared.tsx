@@ -38,6 +38,15 @@ export const WEB_TEMPLATES: { id: WebTemplate; label: string; desc: string }[] =
   { id: 'flow',           label: 'Flow',             desc: 'Quest steps, cause & effect' },
 ]
 
+// Tag-chip colours for webs: tinted from the Webs section colour (a live CSS
+// var set by applyAppearance), so they follow the theme, light or dark, and
+// any section-colour override, instead of a fixed light lavender.
+export const WEB_TAG_STYLE = {
+  background: 'color-mix(in srgb, var(--section-relations) 16%, transparent)',
+  border: '1px solid color-mix(in srgb, var(--section-relations) 45%, transparent)',
+  color: 'var(--section-relations)',
+} as const
+
 export const TEMPLATE_CONFIG: Record<WebTemplate, TemplateConfig> = {
   family_tree:    { label: 'Family tree',      unionNodes: true,  dagreDir: 'TB', defaultEdgeLabels: ['husband of', 'wife of', 'partner of'] },
   org_hierarchy:  { label: 'Hierarchy',        unionNodes: false, dagreDir: null, defaultEdgeLabels: [], ranked: true },

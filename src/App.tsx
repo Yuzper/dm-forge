@@ -61,7 +61,7 @@ export default function App() {
       <FindBar />
       <SettingsModal />
       {currentCampaign && playersManagerOpen && <PlayersManager />}
-      <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' }}>
+      <main className="app-main" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' }}>
         {paneIds.map((id, i) => (
           <Fragment key={id}>
             {i > 0 && <PaneSplitter />}

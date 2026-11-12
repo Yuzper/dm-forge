@@ -1,7 +1,7 @@
 // path: electron/main/ipc/relations.ts
 import { ipcMain } from 'electron'
 import { db } from '../db'
-import { deriveRelationsForNode, deriveHierarchyForNode, syncHierarchyForWeb } from '../relationsSync'
+import { deriveRelationsForNode, deriveHierarchyForNode, syncHierarchyForWeb, syncFactionForNode, syncFactionForWeb } from '../relationsSync'
 
 export function registerRelationIPC() {
 
@@ -91,6 +91,9 @@ export function registerRelationIPC() {
     `).run({ article_id: null, node_type: 'person', rank_id: '', frame: '', pos_x: 100, pos_y: 100, ...data })
 
     db.prepare(`UPDATE relation_webs SET updated_at = datetime('now') WHERE id = ?`).run(data.web_id)
+    // A character dropped straight into a web already linked to a faction
+    // picks up that faction for free.
+    if (data.article_id) syncFactionForNode(result.lastInsertRowid as number)
 
     const node = db.prepare(`
       SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.frame, n.pos_x, n.pos_y,
@@ -115,6 +118,9 @@ export function registerRelationIPC() {
     if (Object.keys(clean).length === 0) return null
     const fields = Object.keys(clean).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE relation_nodes SET ${fields} WHERE id = @id`).run({ ...clean, id })
+    // Re-pointing a node at a character counts as joining the web from here —
+    // same free-faction treatment as a brand new node.
+    if ('article_id' in clean) syncFactionForNode(id)
 
     const node = db.prepare(`
       SELECT n.id, n.web_id, n.article_id, n.label, n.node_type, n.rank_id, n.frame, n.pos_x, n.pos_y,
@@ -476,6 +482,9 @@ export function registerRelationIPC() {
   // Set the one linked article, replacing any previous link.
   ipcMain.handle('relation-webs:link-article', (_e, webId: number, articleId: number) => {
     db.prepare(`UPDATE relation_webs SET article_id = ? WHERE id = ?`).run(articleId, webId)
+    // A web that was sitting unlinked now knows which faction it is — every
+    // member it already has picks that faction up at once.
+    syncFactionForWeb(webId)
   })
 
   // Remove the linked article.

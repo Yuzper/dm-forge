@@ -24,6 +24,7 @@ export default function SoundboardWidget() {
     view, currentCampaign, currentSession, soundboardMinimized,
     setSoundboardMinimized, setSoundboardOpen,
     soundBoards: boards, loadSoundBoards, soundsVersion, bumpSoundsVersion,
+    soundLinkRequest, clearSoundLinkRequest,
   } = useStore()
   const showMenu = useContextMenu()
 
@@ -36,6 +37,11 @@ export default function SoundboardWidget() {
 
   const [activeBoardId, setActiveBoardId] = useState<number>(LIBRARY_BOARD_ID)
   const [sounds, setSounds]             = useState<Sound[]>([])
+  // Which board `sounds`/`soundUrls` actually belong to — they lag a board switch
+  // by one async load, and a link must not be resolved against the old board.
+  const [loadedBoardId, setLoadedBoardId] = useState<number | null>(null)
+  // A clicked sound link waiting for its board to load
+  const [pendingLink, setPendingLink]   = useState<{ id: number; filePath: string } | null>(null)
   const [soundUrls, setSoundUrls]       = useState<Map<number, string>>(new Map())
   const [boardOpen, setBoardOpen]       = useState(false)
   const [mixer, setMixer]               = useState(false)   // per-sound volume view
@@ -154,6 +160,7 @@ export default function SoundboardWidget() {
       )
       if (cancelled) return
       setSoundUrls(new Map(urls))
+      setLoadedBoardId(activeBoardId)
 
       const live = new Set(loaded.map(s => s.id))
       audioRefs.current.forEach((a, id) => {
@@ -381,6 +388,39 @@ export default function SoundboardWidget() {
   // Keep ref current so the listener always calls the latest toggleSound
   // without needing to re-register on every playback state change
   useEffect(() => { toggleSoundRef.current = toggleSound })
+
+  // ── Sound links ───────────────────────────────────────────────────────────────
+
+  // A link in a note names a library sound. Take the request off the store at
+  // once (the widget may have only just mounted for it), then look the entry up.
+  useEffect(() => {
+    if (!soundLinkRequest) return
+    const { soundId } = soundLinkRequest
+    clearSoundLinkRequest()
+    window.api.getSoundLibrary().then(lib => {
+      const entry = lib.find(e => e.id === soundId)
+      if (entry) setPendingLink({ id: entry.id, filePath: entry.file_path })
+    }).catch(() => {})
+  }, [soundLinkRequest, clearSoundLinkRequest])
+
+  // Play the pending link once the active board has loaded. Boards hold copies
+  // of library sounds, so a board already carrying the file plays it in place —
+  // keeping its crossfade and the other things playing on that board. Otherwise
+  // the library board is the only place the sound lives, so switch to it.
+  useEffect(() => {
+    if (!pendingLink || loadedBoardId !== activeBoardId) return
+    const target = activeBoardId === LIBRARY_BOARD_ID
+      ? sounds.find(s => s.id === pendingLink.id)
+      : sounds.find(s => s.file_path === pendingLink.filePath)
+    if (target) {
+      setPendingLink(null)
+      toggleSoundRef.current(target)
+    } else if (activeBoardId !== LIBRARY_BOARD_ID) {
+      setActiveBoardId(LIBRARY_BOARD_ID)
+    } else {
+      setPendingLink(null)   // deleted from the library since the note was written
+    }
+  }, [pendingLink, loadedBoardId, activeBoardId, sounds])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

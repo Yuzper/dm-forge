@@ -15,7 +15,7 @@
 // picked day is the slice.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, LocateFixed, Search, Skull, Tags, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, LocateFixed, Search, Skull, SlidersHorizontal, Tags, X } from 'lucide-react'
 import type { Arc } from '../types'
 import { ARTICLE_TYPES } from './wiki/wikiConstants'
 import { richTextToPlain } from '../utils/richText'
@@ -37,16 +37,19 @@ const GUTTER_COMPACT = 44  // …in the picker
 const SPINE_ZONE = 64      // spine + session badges
 const SIDE_PAD = 20
 const LANE_ICON = 38
-const LANE_LABEL = 178
+// Vertical text is a fixed thin column (its length runs along the bar, not
+// across lanes) — unlike horizontal labels, a lane only needs the badge plus
+// a little clearance for that column, not room for the longest name.
+const LANE_LABEL_GAP = 32
 const CULL_PX = 500        // render this far past the viewport edges
 const MINIMAP_W = 16
-const DEFAULT_ZOOM = 7
-const DEFAULT_PICKER_ZOOM = 10
+const DEFAULT_ZOOM = 9
+const DEFAULT_PICKER_ZOOM = 12
 const PLATE_H = 46         // era title plate
 const PLATE_MIN_W = 150
 const PLATE_MAX_W = 320    // longer era names are cut with an ellipsis
 
-const FILTER_KEY = { event: 'events', death: 'deaths', quest: 'quests', article: 'articles' } as const
+const KIND_FILTER_KEY = { event: 'events', death: 'deaths', quest: 'quests' } as const
 
 const TYPE_META = Object.fromEntries(ARTICLE_TYPES.map(t => [t.value, t]))
 
@@ -54,6 +57,9 @@ const zoomKey = (campaignId: number) => `timeline-chronicle-zoom-${campaignId}`
 const pickerZoomKey = (campaignId: number) => `timeline-picker-zoom-${campaignId}`
 const LABELS_KEY = 'timeline-chronicle-labels'
 const DIRECTION_KEY = 'timeline-chronicle-bottom-up'
+const SIZE_KEY = 'timeline-chronicle-size'
+const SIZE_MIN = 0.6
+const SIZE_MAX = 1.8
 
 function readNumber(key: string, fallback: number): number {
   try { const v = localStorage.getItem(key); return v == null ? fallback : Number(v) } catch { return fallback }
@@ -93,16 +99,17 @@ type Hover =
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
-/** The shield every dated moment wears. */
-function Shield({ color, icon, flagged, count }: { color: string; icon: ReactNode; flagged?: boolean; count?: number }) {
+/** The shield every dated moment wears. Sized off the user's icon-scale slider. */
+function Shield({ color, icon, flagged, count, scale = 1 }: { color: string; icon: ReactNode; flagged?: boolean; count?: number; scale?: number }) {
+  const w = 25 * scale, h = 28 * scale
   return (
-    <span style={{ position: 'relative', display: 'block', width: 30, height: 34 }}>
-      <svg width={30} height={34} viewBox="0 0 30 34" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
+    <span style={{ position: 'relative', display: 'block', width: w, height: h }}>
+      <svg width={w} height={h} viewBox="0 0 30 34" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
         <path d="M15 1.5 L27.5 6 V16.5 C27.5 24 22 29.5 15 32.5 C8 29.5 2.5 24 2.5 16.5 V6 Z"
           fill={`color-mix(in srgb, ${color} 20%, var(--bg-base))`}
           stroke={flagged ? 'var(--danger)' : color} strokeWidth={flagged ? 2.5 : 2} strokeLinejoin="round" />
       </svg>
-      <span style={{ position: 'absolute', inset: '0 0 3px', display: 'flex', alignItems: 'center', justifyContent: 'center', color }}>
+      <span style={{ position: 'absolute', inset: `0 0 ${3 * scale}px`, display: 'flex', alignItems: 'center', justifyContent: 'center', color }}>
         {icon}
       </span>
       {count != null && count > 1 && (
@@ -116,7 +123,7 @@ function Shield({ color, icon, flagged, count }: { color: string; icon: ReactNod
   )
 }
 
-function typeIcon(type: string, size = 14) {
+function typeIcon(type: string, size = 12) {
   const Icon = TYPE_META[type]?.icon
   return Icon ? <Icon size={size} strokeWidth={2.2} /> : null
 }
@@ -164,6 +171,10 @@ export function TimelineChronicle({
     compact ? readNumber(pickerZoomKey(campaignId), DEFAULT_PICKER_ZOOM) : readNumber(zoomKey(campaignId), DEFAULT_ZOOM))))
   const [labelsPref, setLabelsState] = useState(() => readNumber(LABELS_KEY, 0) === 1)
   const labels = !compact && labelsPref
+  // Track lines, shields and dots all scale off this one slider.
+  const [sizePref, setSizeState] = useState(() => Math.min(SIZE_MAX, Math.max(SIZE_MIN, readNumber(SIZE_KEY, 1))))
+  const sizeScale = compact ? 1 : sizePref
+  const badgeHalf = BADGE_HALF * sizeScale
   // Bottom-up puts the oldest date at the bottom and time flows up the page.
   const [reversed, setReversedState] = useState(() => readNumber(DIRECTION_KEY, 0) === 1)
   const [view, setView] = useState({ top: 0, w: 800, h: 600 })
@@ -200,6 +211,11 @@ export function TimelineChronicle({
     setLabelsState(on)
     try { localStorage.setItem(LABELS_KEY, on ? '1' : '0') } catch {}
   }
+  const setSize = (v: number) => {
+    const next = Math.min(SIZE_MAX, Math.max(SIZE_MIN, v))
+    setSizeState(next)
+    try { localStorage.setItem(SIZE_KEY, String(next)) } catch {}
+  }
 
   // ── Data ────────────────────────────────────────────────────────────────────
 
@@ -208,7 +224,17 @@ export function TimelineChronicle({
   const presentDay = useMemo(() => campaignPresentDay(sessions), [sessions])
 
   const tracks = useMemo(() => {
-    const visible = items.filter(i => filters[FILTER_KEY[i.kind]])
+    const visible = items.filter(i => {
+      // Events/deaths/quests each have their own row; everything else (a
+      // character, a place, a faction…) is gated by its article type instead —
+      // turning a type off hides every mark belonging to that kind of article,
+      // deaths included.
+      const kindKey = i.kind === 'article' ? null : KIND_FILTER_KEY[i.kind]
+      if (kindKey && !filters[kindKey]) return false
+      if (filters.types[i.article_type as keyof typeof filters.types] === false) return false
+      if (filters.tags.length > 0 && !i.tags.some(t => filters.tags.includes(t))) return false
+      return true
+    })
     return buildTracks(visible, lifespans, articles, bounds, standing, presentDay)
   }, [items, lifespans, articles, filters, bounds, standing, presentDay])
 
@@ -245,12 +271,12 @@ export function TimelineChronicle({
     ...(compact ? pickerWindow(anchorDay, pxPerDay, view.h) : []),
   ], pxPerDay, reversed), [tracks, spine, eraRanges, pxPerDay, reversed, compact, anchorDay, view.h])
 
-  const laneW = labels ? LANE_LABEL : LANE_ICON
+  const laneW = labels ? badgeHalf * 2 + LANE_LABEL_GAP : LANE_ICON
 
   const layout = useMemo(() => {
     const ext = tracks.map(t => {
       const [top, bottom] = screenSpan(scale, t.startDay, t.endDay)
-      return { key: t.key, side: t.side, y0: top - BADGE_HALF - 2, y1: bottom + BADGE_HALF + 2 }
+      return { key: t.key, side: t.side, y0: top - badgeHalf - 2, y1: bottom + badgeHalf + 2 }
     })
     const left = packLanes(ext.filter(e => e.side === 'left'))
     const right = packLanes(ext.filter(e => e.side === 'right'))
@@ -295,7 +321,7 @@ export function TimelineChronicle({
 
   /** Badge centre for a lane. With labels on, the badge sits at the spine-side edge. */
   const laneX = (side: 'left' | 'right', lane: number) => {
-    const inner = corridor + lane * laneW + (labels ? BADGE_HALF + 4 : laneW / 2)
+    const inner = corridor + lane * laneW + (labels ? badgeHalf + 4 : laneW / 2)
     return side === 'right' ? spineX + inner : spineX - inner
   }
 
@@ -656,6 +682,12 @@ export function TimelineChronicle({
         )}
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }} title="Size of the lines, shields and dots">
+            <SlidersHorizontal size={12} style={{ color: 'var(--text-muted)' }} />
+            <input type="range" min={SIZE_MIN} max={SIZE_MAX} step={0.1} value={sizeScale}
+              onChange={e => setSize(Number(e.target.value))}
+              style={{ width: 70, accentColor: 'var(--gold)' }} />
+          </span>
           <button className="btn btn-sm" onClick={() => setLabels(!labels)} title={labels ? 'Icons only' : 'Show names beside each entry'}
             style={labels ? { color: 'var(--gold)', borderColor: 'var(--border-gold)' } : undefined}>
             <Tags size={12} /> Names
@@ -797,12 +829,12 @@ export function TimelineChronicle({
               {/* Article tracks */}
               {tracks.map(t => {
                 const [y0, y1] = screenSpan(scale, t.startDay, t.endDay)
-                if (y1 + BADGE_HALF < fromY || y0 - BADGE_HALF > toY) return null
+                if (y1 + badgeHalf < fromY || y0 - badgeHalf > toY) return null
                 const lane = (t.side === 'left' ? layout.left : layout.right).get(t.key) ?? 0
                 const x = laneX(t.side, lane)
                 const faded = dimmed(t.key)
                 // Too short to show both ends apart: one shield carrying the count.
-                const short = y1 - y0 < BADGE_HALF * 2 + 4
+                const short = y1 - y0 < badgeHalf * 2 + 4
                 // A track still around has no closing shield: its later dates are dots
                 // on the bar, and an arrow at the present says it carries on.
                 const ends = short || t.openEnd || t.marks.length === 1 ? [t.marks[0]] : [t.marks[0], t.marks[t.marks.length - 1]]
@@ -816,7 +848,7 @@ export function TimelineChronicle({
                 return (
                   <div key={t.key} style={{ opacity: faded ? 0.22 : 1, transition: 'opacity 120ms' }}>
                     {!short && (
-                      <TrackBar x={x} y0={y0} y1={y1} color={t.color} solid={t.solid} gaps={scale.gaps}
+                      <TrackBar x={x} y0={y0} y1={y1} color={t.color} solid={t.solid} gaps={scale.gaps} scale={sizeScale}
                         {...common}
                         onMouseEnter={e => setHover({ kind: 'track', track: t, rect: hoverRect(e) })} />
                     )}
@@ -826,7 +858,7 @@ export function TimelineChronicle({
                         onMouseEnter={e => setHover({ kind: 'track', track: t, mark: m, rect: hoverRect(e) })}
                         style={{
                           position: 'absolute', left: x, top: scale.y(m.day), transform: 'translate(-50%, -50%)', zIndex: 1,
-                          width: 11, height: 11, padding: 0, borderRadius: '50%', cursor: 'pointer',
+                          width: 9 * sizeScale, height: 9 * sizeScale, padding: 0, borderRadius: '50%', cursor: 'pointer',
                           background: 'var(--bg-base)', border: `2px solid ${flags.has(`a${t.articleId}@${m.day}`) ? 'var(--danger)' : t.color}`,
                         }} />
                     ))}
@@ -838,8 +870,8 @@ export function TimelineChronicle({
                           position: 'absolute', left: x, top: scale.y(m.day), transform: 'translate(-50%, -50%)', zIndex: 2,
                           padding: 0, background: 'none', border: 'none', cursor: 'pointer', display: 'block',
                         }}>
-                        <Shield color={t.color}
-                          icon={m.kind === 'death' ? <Skull size={14} strokeWidth={2.2} /> : typeIcon(t.articleType)}
+                        <Shield color={t.color} scale={sizeScale}
+                          icon={m.kind === 'death' ? <Skull size={12 * sizeScale} strokeWidth={2.2} /> : typeIcon(t.articleType, 12 * sizeScale)}
                           flagged={short ? t.marks.some(mm => flags.has(`a${t.articleId}@${mm.day}`)) : flags.has(`a${t.articleId}@${m.day}`)}
                           count={short ? t.marks.length : undefined} />
                       </button>
@@ -857,9 +889,11 @@ export function TimelineChronicle({
                         onMouseEnter={e => setHover({ kind: 'track', track: t, rect: hoverRect(e) })}
                         onMouseLeave={common.onMouseLeave}
                         style={{
-                          position: 'absolute', top: scale.y(t.startDay), transform: 'translateY(-50%)', zIndex: 2,
-                          width: laneW - BADGE_HALF * 2 - 14, cursor: 'pointer',
-                          ...(t.side === 'right' ? { left: x + BADGE_HALF + 6 } : { left: x - BADGE_HALF - 6 - (laneW - BADGE_HALF * 2 - 14), textAlign: 'right' }),
+                          position: 'absolute', top: (y0 + y1) / 2, height: Math.max(y1 - y0, 32), zIndex: 2, cursor: 'pointer',
+                          writingMode: 'vertical-rl', textOrientation: 'mixed',
+                          ...(t.side === 'right'
+                            ? { left: x + badgeHalf + 8, transform: 'translateY(-50%)' }
+                            : { left: x - badgeHalf - 8, transform: 'translate(-100%, -50%)' }),
                           fontSize: 11.5, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                           textShadow: '0 1px 3px var(--bg-base), 0 0 6px var(--bg-base)',
                         }}>
@@ -911,7 +945,7 @@ export function TimelineChronicle({
                     {sliceEntries.map(entry => {
                       const t = entry.track
                       const [y0, y1] = screenSpan(scale, t.startDay, t.endDay)
-                      if (y < y0 - BADGE_HALF || y > y1 + BADGE_HALF) return null
+                      if (y < y0 - badgeHalf || y > y1 + badgeHalf) return null
                       const lane = (t.side === 'left' ? layout.left : layout.right).get(t.key) ?? 0
                       return (
                         <span key={`c${t.key}`} style={{
@@ -1055,9 +1089,11 @@ function FlagLine({ text }: { text: string }) {
  * The bar between a track's first and last date. Where it crosses a collapsed
  * gap it turns dotted, so a 900-year lifespan doesn't read as a short one.
  */
-function TrackBar({ x, y0, y1, color, solid, gaps, onClick, onContextMenu, onMouseEnter, onMouseLeave }: {
+function TrackBar({ x, y0, y1, color, solid, gaps, scale = 1, onClick, onContextMenu, onMouseEnter, onMouseLeave }: {
   x: number; y0: number; y1: number; color: string; solid: boolean
   gaps: { y0: number; y1: number }[]
+  /** The user's icon/line-size slider. */
+  scale?: number
   onClick: (e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent) => void
   onMouseEnter: (e: React.MouseEvent) => void
@@ -1074,16 +1110,17 @@ function TrackBar({ x, y0, y1, color, solid, gaps, onClick, onContextMenu, onMou
   if (cur < y1) pieces.push({ a: cur, b: y1, dotted: false })
 
   const fill = solid ? color : `repeating-linear-gradient(to bottom, ${color} 0 7px, transparent 7px 12px)`
+  const hitW = 10 * scale, lineW = (solid ? 4 : 2) * scale
   return (
     <>
       {pieces.map((p, i) => (
         <div key={i} onClick={onClick} onContextMenu={onContextMenu} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}
           style={{
-            position: 'absolute', left: x - 6, width: 12, top: p.a, height: p.b - p.a, cursor: 'pointer',
+            position: 'absolute', left: x - hitW / 2, width: hitW, top: p.a, height: p.b - p.a, cursor: 'pointer',
             display: 'flex', justifyContent: 'center',
           }}>
           <div style={{
-            width: solid ? 5 : 3, height: '100%', borderRadius: 2, opacity: 0.9,
+            width: lineW, height: '100%', borderRadius: 2, opacity: 0.9,
             background: p.dotted ? `repeating-linear-gradient(to bottom, ${color} 0 3px, transparent 3px 8px)` : fill,
           }} />
         </div>

@@ -404,6 +404,12 @@ export function initDatabase() {
   if (!articleCols.some(c => c.name === 'track_visibility')) {
     db.exec(`ALTER TABLE articles ADD COLUMN track_visibility TEXT NOT NULL DEFAULT '{}'`)
   }
+  // Which part of the portrait (or banner) the hover preview card shows. JSON
+  // { src, x, y, w, h } as fractions of the image; '' = the default framing.
+  // See src/utils/previewCrop.ts.
+  if (!articleCols.some(c => c.name === 'preview_crop')) {
+    db.exec(`ALTER TABLE articles ADD COLUMN preview_crop TEXT NOT NULL DEFAULT ''`)
+  }
 
 
   // Mapless "scenes" are map rows with an empty image_path; this column holds

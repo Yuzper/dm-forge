@@ -346,6 +346,27 @@ svg g[data-menu-target] > circle {
 .ProseMirror strong { color: var(--text-primary); font-weight: 600; }
 .ProseMirror em { color: var(--text-secondary); }
 .ProseMirror mark { background: rgba(200,168,75,0.2); color: var(--gold); border-radius: 2px; padding: 0 2px; }
+/* Hover-card article previews (RichPreview): the editor's typography, scaled
+   to a card — same faces and heading colours, smaller steps, tighter spacing. */
+.rich-preview { font-family: var(--font-body); font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
+.rich-preview > :first-child { margin-top: 0; }
+/* The app-wide p/li/blockquote rule sets 16px text; the card keeps its own size. */
+.rich-preview :is(p, li, blockquote) { font-size: inherit; line-height: inherit; color: inherit; }
+.rich-preview p { margin: 0 0 0.5em; }
+.rich-preview .rp-h { font-family: var(--font-display); letter-spacing: 0.03em; line-height: 1.25; }
+.rich-preview .rp-h1 { font-size: 15px; color: var(--gold); margin: 0.7em 0 0.35em; padding-bottom: 2px; border-bottom: 1px solid var(--border-gold); }
+.rich-preview .rp-h2 { font-size: 14px; color: color-mix(in srgb, var(--gold) 78%, var(--text-secondary)); margin: 0.6em 0 0.25em; }
+.rich-preview .rp-h3 { font-size: 13px; color: var(--gold-dim); margin: 0.5em 0 0.2em; }
+.rich-preview ul, .rich-preview ol { padding-left: 1.3em; margin: 0 0 0.5em; }
+.rich-preview li { margin-bottom: 0.15em; }
+.rich-preview li p { margin: 0; }
+.rich-preview blockquote { border-left: 2px solid var(--gold-dim); padding-left: 0.7em; margin: 0 0 0.5em; font-style: italic; }
+.rich-preview hr { border: none; border-top: 1px solid var(--border-light); margin: 0.6em 0; }
+.rich-preview mark { background: rgba(200,168,75,0.2); color: var(--gold); border-radius: 2px; padding: 0 2px; }
+.rich-preview code, .rich-preview pre { font-size: 0.9em; background: var(--bg-active); border-radius: 3px; padding: 0 4px; white-space: pre-wrap; }
+.rich-preview .rp-link { color: var(--gold); }
+.rich-preview .rp-dm { background: rgba(224,85,85,0.15); border-radius: 2px; }
+
 /* DM-only spans: tinted so the DM sees what will be stripped from the player export. */
 .dm-only { background: rgba(224,85,85,0.15); border-bottom: 1px dashed rgba(224,85,85,0.55); border-radius: 2px; }
 /* Leaf blocks (images, rules) carry DM-only as a node attribute, not a mark.
@@ -450,6 +471,23 @@ svg g[data-menu-target] > circle {
   border-bottom-color: #e05555 !important;
   opacity: 0.85;
 }
+
+/* Sound links inside editor — a soundboard shortcut, coloured by the same
+   category colours the soundboard uses. */
+.sound-link {
+  --sound-color: #f59e0b;
+  color: var(--sound-color);
+  border: 1px solid color-mix(in srgb, var(--sound-color) 45%, transparent);
+  background: color-mix(in srgb, var(--sound-color) 10%, transparent);
+  border-radius: 4px;
+  padding: 0 5px;
+  cursor: pointer;
+  transition: opacity var(--transition), background var(--transition);
+}
+.sound-link[data-sound-category="ambience"] { --sound-color: #3b82f6; }
+.sound-link[data-sound-category="music"]    { --sound-color: #10b981; }
+.sound-link::before { content: '♪ '; font-size: 0.85em; opacity: 0.8; }
+.sound-link:hover { background: color-mix(in srgb, var(--sound-color) 22%, transparent); }
 
 /* Web links inside editor — the only link type that leaves the app, so it is
    the only one drawn in the classic underlined-link way. */

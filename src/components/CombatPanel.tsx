@@ -536,6 +536,7 @@ export default function CombatPanel({ readMode }: { readMode?: boolean }) {
             onChange={v => { setContent(v); setDirty(true) }}
             placeholder="Describe the combat scenario… location details, ambush conditions, terrain…"
             readOnly={readMode}
+            dropCapId={`poi:${selectedPOI.id}`}
           />
         </div>
       )}

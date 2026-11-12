@@ -1,5 +1,5 @@
 // path: src/pages/WikiPage.tsx
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { useStore } from '../store/store'
 import {
   BookOpen, Plus, Tag, X, Calendar, Network, AlertTriangle, ArrowDownUp, History,
@@ -18,7 +18,7 @@ import { useLocalPref } from '../hooks/useLocalPref'
 import { InfoHint } from '../components/InfoHint'
 import Modal from '../components/Modal'
 import { useArticleContextMenu, useMenuCtx } from '../hooks/useContextMenu'
-import { timeAgo } from '../utils/dates'
+import { timeAgo, formatDate } from '../utils/dates'
 
 // ─── Wiki health ───────────────────────────────────────────────────────────────
 
@@ -169,21 +169,37 @@ function GhostCard({ entry, onOpen }: { entry: AttentionEntry; onOpen: () => voi
   )
 }
 
-function ArticleCard({ article, onOpen, reason, colorBar = true }: {
-  article: ArticleSummary; onOpen: () => void; reason?: string
+type ArticleCardProps = {
+  article: ArticleSummary
+  /** Must be stable across renders (see useStableOpen), or the memo is defeated. */
+  onOpen: (a: ArticleSummary) => void
+  reason?: string
   /** The type-coloured strip along the top of the card. */
   colorBar?: boolean
-}) {
+  /** Show the tag chips (the wiki's "search tags" field toggle). */
+  showTags: boolean
+}
+
+// Every list fetch returns fresh objects for the same articles, and the page
+// re-renders as each piece of data lands (list, full list, health). Comparing
+// only what the card actually shows lets those passes skip all 147 cards.
+function sameCard(a: ArticleCardProps, b: ArticleCardProps): boolean {
+  const x = a.article, y = b.article
+  return x.id === y.id && x.title === y.title && x.article_type === y.article_type
+    && x.tags === y.tags && x.cover_image === y.cover_image && x.updated_at === y.updated_at
+    && a.onOpen === b.onOpen && a.reason === b.reason && a.colorBar === b.colorBar && a.showTags === b.showTags
+}
+
+const ArticleCard = memo(function ArticleCard({ article, onOpen, reason, colorBar = true, showTags }: ArticleCardProps) {
   const typeInfo = ARTICLE_TYPES.find(t => t.value === article.article_type) || ARTICLE_TYPES[ARTICLE_TYPES.length - 1]
   const Icon = typeInfo.icon
   const tags = parseTags(article.tags)
-  const { wikiSearchFields } = useStore()
   const deleteArticle = useStore(s => s.deleteArticle)
   const articleMenu = useArticleContextMenu()
   const menuCtx = useMenuCtx()
 
   return (
-    <div className="card card-clickable" style={{ padding: 0, cursor: 'pointer', overflow: 'hidden' }} onClick={onOpen}
+    <div className="card card-clickable" style={{ padding: 0, cursor: 'pointer', overflow: 'hidden' }} onClick={() => onOpen(article)}
       // Middle-click opens in a background tab, exactly like a browser link.
       onAuxClick={e => { if (e.button === 1) { e.preventDefault(); menuCtx.goTab({ type: 'article', articleId: article.id }, true) } }}
       onContextMenu={articleMenu(article, { onDelete: () => void deleteArticle(article.id) })}>
@@ -208,7 +224,7 @@ function ArticleCard({ article, onOpen, reason, colorBar = true }: {
         <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--text-primary)', marginBottom: 8, letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {article.title}
         </h3>
-        {tags.length > 0 && wikiSearchFields.tags && (
+        {tags.length > 0 && showTags && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
             {tags.slice(0, 3).map(tag => (
               <span key={tag} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 99, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', color: 'var(--text-muted)' }}>
@@ -220,15 +236,26 @@ function ArticleCard({ article, onOpen, reason, colorBar = true }: {
         )}
         <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
           <Calendar size={10} />
-          Updated {new Date(article.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+          Updated {formatDate(article.updated_at)}
         </div>
       </div>
     </div>
   )
-}
+}, sameCard)
 // ─── Article List View ─────────────────────────────────────────────────────────
 
-function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSummary) => void; onSwitchToGraph: () => void }) {
+/** Cards rendered per batch in the wiki grid. */
+const CARD_PAGE = 50
+
+function ArticleListView({ onOpen: onOpenProp, onSwitchToGraph }: { onOpen: (a: ArticleSummary) => void; onSwitchToGraph: () => void }) {
+  // The parent passes a fresh closure each render; cards need a stable one to
+  // stay memoised, so route calls through a ref to whatever is current.
+  const onOpenRef = useRef(onOpenProp)
+  onOpenRef.current = onOpenProp
+  const onOpen = useCallback((a: ArticleSummary) => onOpenRef.current(a), [])
+  // The grid's own scroll box; the "load more" sentinel is watched against it.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const sentinelRef = useRef<HTMLDivElement>(null)
   const {
     articles, allArticles, currentCampaign, wikiFilter, wikiSearch, wikiTagFilter, wikiSearchFields, wikiShowTags, setWikiShowTags,
     loadArticles, loadAllArticles, setWikiFilter, setWikiSearch, setWikiTagFilter, setWikiSearchFields,
@@ -268,6 +295,33 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
     }
     return kept
   }, [articles, excluded, sort])
+
+  // Render the grid in pages of CARD_PAGE: the first batch on open, the next
+  // whenever the bottom comes into view. A different list (filter, search,
+  // tag, sort, hidden types, campaign) starts again at one page; a refetch of
+  // the same list keeps what is already shown.
+  const listKey = [currentCampaign?.id, wikiFilter, wikiSearch, wikiTagFilter, sort, [...excluded].sort().join(',')].join('|')
+  const [cardLimit, setCardLimit] = useState(CARD_PAGE)
+  const [limitKey, setLimitKey] = useState(listKey)
+  if (limitKey !== listKey) { setLimitKey(listKey); setCardLimit(CARD_PAGE) }
+  // A new list starts at the top — left scrolled down, its sentinel would be
+  // in view at once and pull in the second page straight away.
+  useLayoutEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0 }, [listKey])
+  const shownArticles = useMemo(() => visibleArticles.slice(0, cardLimit), [visibleArticles, cardLimit])
+  const hasMore = visibleArticles.length > cardLimit
+
+  // Re-created after every page so the initial callback re-checks: on a tall
+  // window the sentinel can still be in view after a page lands, and an
+  // observer only fires on changes.
+  useEffect(() => {
+    const root = scrollRef.current, target = sentinelRef.current
+    if (!hasMore || !root || !target) return
+    const io = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) setCardLimit(n => n + CARD_PAGE)
+    }, { root, rootMargin: '0px 0px 300px 0px' })
+    io.observe(target)
+    return () => io.disconnect()
+  }, [hasMore, cardLimit, attention])
 
   // Counts describe the whole wiki, not the filtered slice — a pill reading
   // "Quest 9" must keep saying 9 once you click it.
@@ -418,13 +472,13 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
         )}
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
+      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
         {attention ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14, alignContent: 'start' }}>
             {shownEntries.map(e => {
               const article = byId.get(e.openId)
               if (e.ghost || !article) return <GhostCard key={e.key} entry={e} onOpen={() => onOpen({ id: e.openId } as ArticleSummary)} />
-              return <ArticleCard key={e.key} article={article} reason={e.reason} colorBar={showCardBar} onOpen={() => onOpen(article)} />
+              return <ArticleCard key={e.key} article={article} reason={e.reason} colorBar={showCardBar} showTags={wikiSearchFields.tags} onOpen={onOpen} />
             })}
           </div>
         ) : visibleArticles.length === 0 ? (
@@ -466,8 +520,13 @@ function ArticleListView({ onOpen, onSwitchToGraph }: { onOpen: (a: ArticleSumma
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14, alignContent: 'start' }}>
-              {visibleArticles.map(a => <ArticleCard key={a.id} article={a} colorBar={showCardBar} onOpen={() => onOpen(a)} />)}
+              {shownArticles.map(a => <ArticleCard key={a.id} article={a} colorBar={showCardBar} showTags={wikiSearchFields.tags} onOpen={onOpen} />)}
             </div>
+            {hasMore && (
+              <div ref={sentinelRef} style={{ padding: '18px 0 4px', textAlign: 'center', fontSize: 11, color: 'var(--text-muted)' }}>
+                Showing {shownArticles.length} of {visibleArticles.length} — scroll for more
+              </div>
+            )}
           </>
         )}
       </div>

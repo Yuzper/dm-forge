@@ -8,6 +8,7 @@ import { parseInWorldDate } from '../utils/inWorldDate'
 import { buildArticleTimeline, isStillStanding, type Lifespan } from '../constants/timelineDates'
 import type { Era, TimelineEventItem } from '../utils/timelineGeometry'
 import type { AuditArticle } from '../utils/chronologyAudit'
+import { parseTags } from '../components/wiki/wikiConstants'
 
 /** An article's start- and end-role dates, either of which may be missing. */
 export interface TimelineBounds { start?: number; end?: number }
@@ -48,18 +49,19 @@ export function useTimelineData(campaignId: number | undefined) {
     for (const a of list as any[]) {
       try {
         const t = JSON.parse(a.tracks ?? '{}')
+        const tags = parseTags(a.tags)
         if (a.article_type === 'event') {
           const d = parseInWorldDate(t.In_World_Date)
-          if (d) items.push({ id: a.id, title: a.title, day: d.day, year: d.year, kind: 'event', article_type: a.article_type, color: '#e05555' })
+          if (d) items.push({ id: a.id, title: a.title, day: d.day, year: d.year, kind: 'event', article_type: a.article_type, color: '#e05555', tags })
           else undatedEvents.push({ id: a.id, title: a.title })
         }
         if (a.article_type === 'character' || a.article_type === 'playerCharacter') {
           const d = parseInWorldDate(t.Death_Date)
-          if (d) items.push({ id: a.id, title: a.title, day: d.day, year: d.year, kind: 'death', article_type: a.article_type, color: '#9b7de8', articleId: a.id })
+          if (d) items.push({ id: a.id, title: a.title, day: d.day, year: d.year, kind: 'death', article_type: a.article_type, color: '#9b7de8', articleId: a.id, tags })
         }
         // Semantic dates (founded/destroyed/born…), freeform milestones, and any
         // legacy Timeline_Date → point markers + an optional lifespan.
-        const built = buildArticleTimeline(a, t, parseInWorldDate)
+        const built = buildArticleTimeline(a, t, parseInWorldDate, tags)
         items.push(...built.markers)
         if (built.lifespan) lifespans.push(built.lifespan)
         if (built.startDay != null || built.endDay != null) bounds[a.id] = { start: built.startDay, end: built.endDay }

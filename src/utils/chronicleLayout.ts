@@ -242,8 +242,8 @@ export function sliceValue(e: SliceEntry, L: number): { short: string; long: str
 
 // ── Scale ─────────────────────────────────────────────────────────────────────
 
-/** Pixels per year at each zoom step. The top step is ~45px per day on a 365-day year. */
-export const ZOOM_PX_PER_YEAR = [0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+/** Pixels per year at each zoom step. The top step is ~180px per day on a 365-day year. */
+export const ZOOM_PX_PER_YEAR = [0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
 
 export const MAX_GAP_PX = 180
 export const GAP_PX = 64
@@ -359,7 +359,7 @@ export function gapLabel(days: number, cal: CampaignCalendar): string {
 
 // ── Lanes ─────────────────────────────────────────────────────────────────────
 
-export const BADGE_HALF = 15
+export const BADGE_HALF = 13
 
 /**
  * First-fit interval packing in *pixel* space (what collides depends on zoom).
