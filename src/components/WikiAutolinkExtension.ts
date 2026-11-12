@@ -43,9 +43,9 @@ export interface WikiAutolinkOptions {
 }
 
 // The bare word ending at the cursor, and the open-sentinel patterns for the
-// [[ / @@ / \\ popovers — the live dropdown must stay out of their way.
+// [[ / @@ / \\ / %% popovers — the live dropdown must stay out of their way.
 const WORD_AT_END = /(\p{L}[\p{L}\p{N}'’\-]*)$/u
-const OPEN_SENTINELS = [/\[\[[^\[\]]*$/, /@@[^@\s]*$/, /\\\\[^\\]*$/]
+const OPEN_SENTINELS = [/\[\[[^\[\]]*$/, /@@[^@\s]*$/, /\\\\[^\\]*$/, /%%[^%]*$/]
 
 // A capitalised title only matches capitalised text; a lowercase title matches
 // anything. (First-letter case is the signal — cheap and good enough.)

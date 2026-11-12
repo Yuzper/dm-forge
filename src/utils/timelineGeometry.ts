@@ -116,6 +116,8 @@ export interface TimelineEventItem {
   id: number; title: string; day: number; year: number
   kind: 'event' | 'death' | 'quest' | 'article'; article_type: string; color: string
   articleId?: number
+  /** The owning article's tags, for the tag filter. */
+  tags: string[]
 }
 
 export interface ClusterItem {

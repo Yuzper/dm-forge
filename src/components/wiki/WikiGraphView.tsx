@@ -22,6 +22,7 @@ import { useExcludedTypes, TypeVisibilityMenu } from './TypeVisibilityMenu'
 import { useMenuClose } from '../../hooks/useMenuClose'
 import { useContextMenu, useMenuCtx } from '../../hooks/useContextMenu'
 import { buildArticleMenu } from '../../utils/contextMenus'
+import { useArticleHoverCard } from '../../hooks/useArticleHoverCard'
 
 interface LayoutNode {
   id: number          // article id, or a negative synthetic id for ghosts
@@ -317,6 +318,9 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
   const [searchFields, setSearchFields] = useState<SearchFields>(loadSearchFields)
   useEffect(() => { localStorage.setItem(SEARCH_FIELDS_KEY, JSON.stringify(searchFields)) }, [searchFields])
   const [hoverId, setHoverId] = useState<number | null>(null)
+  // Article preview card on node hover, after a short pause so sweeping across
+  // nodes to trace links doesn't flash cards.
+  const articleHover = useArticleHoverCard({ openDelay: 350 })
   // Overlays: ghost nodes for broken links (on) and an orphan-only focus
   // toggle (transient).
   const [showGhosts, setShowGhosts] = useState(() => localStorage.getItem('wiki-graph-ghosts') !== 'off')
@@ -718,6 +722,7 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
             zoomOnDoubleClick={false}
             onInit={setRfInstance}
             onNodeClick={(_e: any, node: any) => {
+              articleHover.hide()
               // Defer the open briefly so a double-click (focus) can cancel it.
               if (clickTimer.current) clearTimeout(clickTimer.current)
               const id = Number(node.id)
@@ -734,9 +739,16 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
               setFocusDepth(1)
               setFocusId(prev => (prev === id ? null : id))   // double-click focus node again → clear
             }}
-            onNodeMouseEnter={(_e: any, node: any) => setHoverId(Number(node.id))}
-            onNodeMouseLeave={() => setHoverId(null)}
+            onNodeMouseEnter={(e: React.MouseEvent, node: any) => {
+              const id = Number(node.id)
+              setHoverId(id)
+              // Ghosts have no article behind them, so nothing to preview.
+              if (id >= 0) articleHover.showById(id, e.clientX, e.clientY)
+            }}
+            onNodeMouseLeave={() => { setHoverId(null); articleHover.scheduleClose() }}
+            onMoveStart={() => articleHover.hide()}
             onNodeContextMenu={(e: React.MouseEvent, node: any) => {
+              articleHover.hide()
               const id = Number(node.id)
               // A ghost is a link with no article behind it — the only thing to
               // offer is filling it in.
@@ -845,6 +857,7 @@ export default function WikiGraphView({ onSwitchToList, onCreateArticle, initial
           </div>
         )}
       </div>
+      {articleHover.card}
     </div>
   )
 }

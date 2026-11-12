@@ -677,9 +677,10 @@ function PageEditor({ page, onDeleted, onTitleChange }: {
           key={page.id}
           content={content}
           onChange={v => { setContent(v); setDirty(true) }}
-          placeholder="Start a DM note… Use [[ to link wiki articles, @@ for spells, \\ for sessions."
+          placeholder="Start a DM note… Use [[ to link wiki articles, @@ for spells, \\ for sessions, %% for sounds."
           onWikiLinkClick={navigateToArticleByTitle}
           expandable
+          dropCapId={`dmnote:${page.id}`}
         />
       </div>
     </div>

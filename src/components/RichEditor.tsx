@@ -17,11 +17,11 @@ import { WikiLink } from './WikiLinkExtension'
 import { WikiAutolink } from './WikiAutolinkExtension'
 import { SessionLink } from './SessionLinkExtension'
 import { SpellLink } from './SpellLinkExtension'
+import { SoundLink } from './SoundLinkExtension'
 import { WebLink, isUrlOnly, normalizeUrl } from './WebLinkExtension'
 import { DmOnly, DmOnlyBlock, DM_ONLY_NODE_TYPES } from './DmOnlyMark'
 import { SpellCard } from './SpellCard'
-import { ItemCard, type ItemCardData } from './ItemCard'
-import { parseItemStatBlock } from '../types'
+import { useArticleHoverCard } from '../hooks/useArticleHoverCard'
 import { useStore } from '../store/store'
 import spellsData from '../data/spells_2014.json'
 import {
@@ -31,19 +31,22 @@ import {
   AlignLeft, AlignCenter, AlignRight,
   Image as ImageIcon, Highlighter, Link2,
   Undo, Redo, Minus, Table2, Palette,
-  Paintbrush, RemoveFormatting, EyeOff,
+  Paintbrush, RemoveFormatting, EyeOff, CaseUpper,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { InfoHint } from './InfoHint'
-import { richTextToPlain } from '../utils/richText'
+import { formatDate } from '../utils/dates'
+import { useDropCapOverride, type DropCapKind } from '../utils/dropCapOverrides'
 import SwatchPicker from './SwatchPicker'
 import { useContextMenu, useMenuCtx } from '../hooks/useContextMenu'
 import { buildArticleMenu, truncate } from '../utils/contextMenus'
+import { soundCategoryColor, soundCategoryLabel } from '../constants/soundCategories'
+import type { SoundLibraryEntry } from '../types'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 // Marks treated as pure styling by "clear formatting" and the format painter.
-// Link marks (wikiLink, sessionLink, spellLink) are deliberately absent — they
+// Link marks (wikiLink, sessionLink, spellLink, soundLink) are deliberately absent — they
 // are content, and stripping them would silently break links.
 const FORMAT_MARKS = ['bold', 'italic', 'underline', 'strike', 'highlight', 'textStyle']
 
@@ -131,6 +134,7 @@ const LINK_MACROS_INFO = [
   '[[   link a wiki article',
   '@@   link a spell',
   '\\    link a session',
+  '%%   link a sound (click to play it)',
   '',
   'The link button to the left inserts an article link too.',
 ].join('\n')
@@ -138,7 +142,7 @@ const LINK_MACROS_INFO = [
 // ── Toolbar Components ─────────────────────────────────────────────────────────
 
 function ToolbarButton({ onClick, active, title, children }: {
-  onClick: () => void; active?: boolean; title: string; children: React.ReactNode
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; active?: boolean; title: string; children: React.ReactNode
 }) {
   return (
     <button
@@ -509,7 +513,7 @@ function SessionLinkPopover({ query, coords, onSelect, onClose }: {
                 Session {s.session_number}{s.session_sub ?? ''}: {s.name}
               </span>
               {s.date && (
-                <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{formatDate(s.date)}</span>
               )}
             </button>
           ))}
@@ -601,6 +605,98 @@ function SpellLinkPopover({ query, coords, onSelect, onClose }: {
   )
 }
 
+// ── Sound Link Popover ─────────────────────────────────────────────────────────
+
+function SoundLinkPopover({ query, coords, onSelect, onClose }: {
+  query: string
+  coords: { left: number; top: number; bottom: number }
+  onSelect: (sound: SoundLibraryEntry) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [library, setLibrary] = useState<SoundLibraryEntry[]>([])
+
+  useEffect(() => { window.api.getSoundLibrary().then(setLibrary).catch(() => {}) }, [])
+
+  // Every typed word must appear in the name, so "tav brawl" finds "Tavern Brawl"
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const filtered = library
+    .filter(s => { const n = s.name.toLowerCase(); return words.every(w => n.includes(w)) })
+    .sort((a, b) => {
+      const ap = words[0] && a.name.toLowerCase().startsWith(words[0]) ? 0 : 1
+      const bp = words[0] && b.name.toLowerCase().startsWith(words[0]) ? 0 : 1
+      return ap - bp || a.name.localeCompare(b.name)
+    })
+    .slice(0, 8)
+
+  useEffect(() => { setSelectedIndex(0) }, [query])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filtered.length - 1)) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
+      else if (e.key === 'Tab') { e.preventDefault(); setSelectedIndex(i => (i + 1) % filtered.length) }
+      else if (e.key === 'Enter' && filtered[selectedIndex]) {
+        e.preventDefault(); e.stopPropagation()
+        onSelect(filtered[selectedIndex])
+      } else if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [filtered, selectedIndex, onSelect, onClose])
+
+  if (filtered.length === 0 && query === '') return null
+
+  return (
+    <div ref={ref} style={{
+      position: 'fixed', left: coords.left, top: coords.bottom + 6,
+      width: 300, background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)',
+      boxShadow: 'var(--shadow-md)', zIndex: 1000, overflow: 'hidden',
+    }}>
+      {filtered.length === 0 ? (
+        <div style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-muted)' }}>
+          No sounds match "{query}"
+        </div>
+      ) : (
+        <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+          {filtered.map((s, i) => (
+            <button
+              key={s.id}
+              onMouseDown={e => { e.preventDefault(); onSelect(s) }}
+              onMouseEnter={() => setSelectedIndex(i)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 14px',
+                background: i === selectedIndex ? 'var(--bg-hover)' : 'none',
+                border: 'none',
+                color: i === selectedIndex ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontSize: 13, fontFamily: 'var(--font-ui)', cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {s.name}
+              </span>
+              <span style={{ fontSize: 10, color: soundCategoryColor(s.category), flexShrink: 0 }}>
+                {soundCategoryLabel(s.category)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Editor ────────────────────────────────────────────────────────────────
 
 interface RichEditorProps {
@@ -613,10 +709,21 @@ interface RichEditorProps {
   // Title of the article being edited — excluded from autolink suggestions so a
   // page is never suggested as a link to itself.
   excludeTitle?: string
+  /** Stable page id for a per-page drop-cap override, e.g. `article:12`. Without it there is no override button. */
+  dropCapId?: string
+  /** Wiki article bodies get drop caps by default; notes only when Settings says so. */
+  dropCapKind?: DropCapKind
 }
 
-export default function RichEditor({ content, onChange, placeholder, onWikiLinkClick, readOnly, expandable, excludeTitle }: RichEditorProps) {
-  const { navigateToArticleByTitle, navigateToSessionById } = useStore()
+export default function RichEditor({ content, onChange, placeholder, onWikiLinkClick, readOnly, expandable, excludeTitle, dropCapId, dropCapKind = 'note' }: RichEditorProps) {
+  const { navigateToArticleByTitle, navigateToSessionById, requestSoundLink } = useStore()
+  // Drop cap: Journal design only. Settings say where (articles, or notes too);
+  // this page's own override, if any, wins.
+  const appearance = useStore(s => s.appearance)
+  const [dropCapOverride, setDropCapOverride] = useDropCapOverride(dropCapId)
+  const journal = appearance.design === 'journal'
+  const dropCapDefault = appearance.dropCap && (dropCapKind === 'article' || appearance.dropCapNotes)
+  const dropCapOn = journal && (dropCapOverride ? dropCapOverride === 'on' : dropCapDefault)
   const editorRef = useRef<HTMLDivElement>(null)
   const showMenu = useContextMenu()
   const menuCtx = useMenuCtx()
@@ -632,6 +739,11 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
   } | null>(null)
 
   const [spellSearch, setSpellSearch] = useState<{
+    query: string; from: number; to: number
+    coords: { left: number; top: number; bottom: number }
+  } | null>(null)
+
+  const [soundSearch, setSoundSearch] = useState<{
     query: string; from: number; to: number
     coords: { left: number; top: number; bottom: number }
   } | null>(null)
@@ -652,59 +764,11 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
   const cancelSpellClose = () => { if (spellHoverTimer.current) clearTimeout(spellHoverTimer.current) }
   const scheduleSpellClose = () => { cancelSpellClose(); spellHoverTimer.current = setTimeout(() => setHoveredSpell(null), 150) }
 
-  // Item article links get the same hover-card treatment as spells: clicking
-  // still navigates to the article, but hovering an item-type wiki link shows
-  // a quick item card. Summary fields render instantly; the description is
-  // fetched lazily and filled in.
-  const [hoveredItem, setHoveredItem] = useState<(ItemCardData & { x: number; y: number }) | null>(null)
-  const itemHoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const cancelItemClose = () => { if (itemHoverTimer.current) clearTimeout(itemHoverTimer.current) }
-  const scheduleItemClose = () => { cancelItemClose(); itemHoverTimer.current = setTimeout(() => setHoveredItem(null), 150) }
-  const showItemCard = (title: string, x: number, y: number) => {
-    // Read live store state — this runs from a mouseover listener bound once,
-    // so closing over render-time `allArticles` would go stale.
-    const { allArticles: liveArticles, currentCampaign: liveCampaign } = useStore.getState()
-    const summary = liveArticles.find(a => a.title === title && a.article_type === 'item')
-    if (!summary) { scheduleItemClose(); return }
-    cancelItemClose()
-    let tracks: Record<string, string> = {}
-    try { tracks = JSON.parse(summary.tracks || '{}') } catch { /* ignore */ }
-    let tags: string[] = []
-    try { const t = JSON.parse(summary.tags || '[]'); if (Array.isArray(t)) tags = t.filter(Boolean) } catch { /* ignore */ }
-    setHoveredItem({
-      x, y,
-      name: summary.title,
-      rarity: tracks.Rarity || undefined,
-      status: tracks.Status || undefined,
-      location: tracks.Location || undefined,
-      tags,
-      coverImage: summary.cover_image ? `file://${summary.cover_image}` : null,
-      desc: undefined,
-    })
-    // Enrich from the full article (item stat block + lore) without blocking.
-    if (liveCampaign) {
-      window.api.getArticleByTitle(title, liveCampaign.id).then(full => {
-        if (!full) return
-        const ib = parseItemStatBlock((full as any).item_block || '')
-        const attunement = ib.requiresAttunement
-          ? (ib.attunementNote.trim() ? `requires attunement ${ib.attunementNote.trim()}` : 'requires attunement')
-          : undefined
-        const desc = (ib.description.trim() || richTextToPlain(full.content)).slice(0, 320)
-        // Prefer the item's portrait, fall back to its cover banner
-        const img = full.portrait_image
-          ? `file://${full.portrait_image}`
-          : full.cover_image ? `file://${full.cover_image}` : null
-        setHoveredItem(prev => prev && prev.name === title ? {
-          ...prev,
-          category: ib.category || prev.category,
-          rarity: ib.rarity || prev.rarity,
-          attunement,
-          desc: desc || undefined,
-          coverImage: img ?? prev.coverImage,
-        } : prev)
-      }).catch(() => { /* ignore */ })
-    }
-  }
+  // Wiki links show a hover preview of the article they point to (items get
+  // the item card). Shared with the wiki graph; see useArticleHoverCard.
+  const articleHover = useArticleHoverCard()
+  const showItemCard = articleHover.showByTitle
+  const scheduleItemClose = articleHover.scheduleClose
   const [showToolbarPopover, setShowToolbarPopover] = useState(false)
   const [showColorPalette, setShowColorPalette] = useState(false)
   // Marks held by the format painter between the copy click and the paint click.
@@ -739,6 +803,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       WikiAutolink.configure({ excludeTitle: excludeTitle ?? null }),
       SessionLink,
       SpellLink,
+      SoundLink,
       WebLink,
       DmOnly,
       DmOnlyBlock,
@@ -833,6 +898,15 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
         return
       }
 
+      // A sound link is a soundboard shortcut: it plays (or toggles) that sound.
+      const soundLink = target.closest('[data-sound-link]') as HTMLElement | null
+      if (soundLink) {
+        e.preventDefault(); e.stopPropagation()
+        const soundId = parseInt(soundLink.getAttribute('data-sound-link') || '0')
+        if (soundId) requestSoundLink(soundId)
+        return
+      }
+
       // A web link leaves the app entirely, so it goes to the system browser.
       // It opens on a plain click even while editing: these are pasted for
       // watching later, and DM Notes is never read-only, so gating it behind
@@ -851,7 +925,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     const el = editorRef.current
     el.addEventListener('click', handleClick, true)
     return () => el.removeEventListener('click', handleClick, true)
-  }, [onWikiLinkClick, navigateToArticleByTitle, navigateToSessionById, readOnly])
+  }, [onWikiLinkClick, navigateToArticleByTitle, navigateToSessionById, requestSoundLink, readOnly])
 
   // Right-click a wiki link — or an autolink suggestion — for the same article
   // menu the wiki list and the graph give. Everything else in the editor is left
@@ -945,6 +1019,14 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     }
     const onSpellClose = () => setSpellSearch(null)
 
+    const onSoundSearch = (e: Event) => {
+      const { query, from, to, coords } = (e as CustomEvent).detail
+      setSoundSearch({ query, from, to, coords })
+      setWikiSearch(null)
+      setSessionSearch(null)
+    }
+    const onSoundClose = () => setSoundSearch(null)
+
     const onWordSuggest = (e: Event) => {
       const { query, from, to, coords } = (e as CustomEvent).detail
       // Resolve the matches once here: filter (contains), prefix-first sort, cap 8.
@@ -992,6 +1074,8 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
     el.addEventListener('sessionlinkSearchClose', onSessionClose)
     el.addEventListener('spelllinkSearch', onSpellSearch)
     el.addEventListener('spelllinkSearchClose', onSpellClose)
+    el.addEventListener('soundlinkSearch', onSoundSearch)
+    el.addEventListener('soundlinkSearchClose', onSoundClose)
     el.addEventListener('wikiWordSuggest', onWordSuggest)
     el.addEventListener('wikiWordSuggestClose', onWordSuggestClose)
     el.addEventListener('mouseover', onMouseOver)
@@ -1003,6 +1087,8 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       el.removeEventListener('sessionlinkSearchClose', onSessionClose)
       el.removeEventListener('spelllinkSearch', onSpellSearch)
       el.removeEventListener('spelllinkSearchClose', onSpellClose)
+      el.removeEventListener('soundlinkSearch', onSoundSearch)
+      el.removeEventListener('soundlinkSearchClose', onSoundClose)
       el.removeEventListener('wikiWordSuggest', onWordSuggest)
       el.removeEventListener('wikiWordSuggestClose', onWordSuggestClose)
       el.removeEventListener('mouseover', onMouseOver)
@@ -1116,6 +1202,18 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       })
       .run()
     setSpellSearch(null)
+  }
+
+  const insertSoundLink = (sound: SoundLibraryEntry) => {
+    if (!editor || !soundSearch) return
+    editor.chain().focus()
+      .deleteRange({ from: soundSearch.from, to: soundSearch.to })
+      .insertContentAt(soundSearch.from, {
+        type: 'text', text: sound.name,
+        marks: [{ type: 'soundLink', attrs: { soundId: sound.id, name: sound.name, category: sound.category } }],
+      })
+      .run()
+    setSoundSearch(null)
   }
 
   if (!editor) return null
@@ -1246,6 +1344,21 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
             <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="Align left"><AlignLeft size={13} /></ToolbarButton>
             <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title="Align center"><AlignCenter size={13} /></ToolbarButton>
             <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title="Align right"><AlignRight size={13} /></ToolbarButton>
+            {journal && dropCapId && (
+              <ToolbarButton
+                active={!!dropCapOverride}
+                title={`Drop cap: ${dropCapOverride === 'on' ? 'always on this page' : dropCapOverride === 'off' ? 'never on this page' : `follows Settings (${dropCapDefault ? 'on' : 'off'} here)`}`}
+                onClick={e => {
+                  showMenu(e, [
+                    { label: `Follow Settings (${dropCapDefault ? 'on' : 'off'} here)`, type: 'checkbox', checked: !dropCapOverride, click: () => setDropCapOverride(null) },
+                    { label: 'Always on this page', type: 'checkbox', checked: dropCapOverride === 'on', click: () => setDropCapOverride('on') },
+                    { label: 'Never on this page', type: 'checkbox', checked: dropCapOverride === 'off', click: () => setDropCapOverride('off') },
+                  ])
+                }}
+              >
+                <CaseUpper size={14} />
+              </ToolbarButton>
+            )}
             <ToolbarDivider />
 
             {/* Table */}
@@ -1367,6 +1480,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
       {/* ── Editor content ── */}
       <div
         ref={editorRef}
+        data-dropcap={dropCapOn ? 'on' : 'off'}
         style={{
           flex: expandable ? undefined : 1,
           overflow: expandable ? 'visible' : 'auto',
@@ -1406,6 +1520,15 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
         />
       )}
 
+      {soundSearch && (
+        <SoundLinkPopover
+          query={soundSearch.query}
+          coords={soundSearch.coords}
+          onSelect={insertSoundLink}
+          onClose={() => setSoundSearch(null)}
+        />
+      )}
+
       {wordSuggest && !readOnly && (
         <WordSuggestPopover
           matches={wordSuggest.matches}
@@ -1425,15 +1548,7 @@ export default function RichEditor({ content, onChange, placeholder, onWikiLinkC
         />
       )}
 
-      {hoveredItem && (
-        <ItemCard
-          item={hoveredItem}
-          x={hoveredItem.x}
-          y={hoveredItem.y}
-          onMouseEnter={cancelItemClose}
-          onMouseLeave={() => setHoveredItem(null)}
-        />
-      )}
+      {articleHover.card}
     </div>
   )
 }

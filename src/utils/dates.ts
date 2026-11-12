@@ -11,6 +11,23 @@ export function todayISO(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+// toLocaleDateString(locale, options) builds a fresh Intl formatter on every
+// call (~0.2 ms each), which adds up fast in lists — 147 wiki cards cost ~33 ms
+// per render. These are built once and reused.
+const DAY_MONTH_YEAR = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+const DAY_MONTH = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
+
+function fmt(f: Intl.DateTimeFormat, value: string | number | Date): string {
+  const d = value instanceof Date ? value : new Date(value)
+  // Intl throws on an invalid date where toLocaleDateString returned this.
+  return isNaN(d.getTime()) ? 'Invalid Date' : f.format(d)
+}
+
+/** "25 Sept 2026" — same output as toLocaleDateString('en-GB', day/short month/year). */
+export function formatDate(value: string | number | Date): string {
+  return fmt(DAY_MONTH_YEAR, value)
+}
+
 // "12m ago", "Yesterday", "3 Aug" — a real timestamp read at a glance. Used by
 // the wiki's resume strip and the hub's party strip.
 export function timeAgo(dateStr: string): string {
@@ -22,5 +39,5 @@ export function timeAgo(dateStr: string): string {
   const days = Math.floor(hrs / 24)
   if (days === 1) return 'Yesterday'
   if (days < 7) return `${days}d ago`
-  return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return fmt(DAY_MONTH, dateStr)
 }

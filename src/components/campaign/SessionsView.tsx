@@ -10,7 +10,7 @@ import {
 import type { Session, Arc } from '../../types'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import { useMenuClose } from '../../hooks/useMenuClose'
-import { parseDay, todayISO } from '../../utils/dates'
+import { parseDay, todayISO, formatDate } from '../../utils/dates'
 import { richTextToPlain } from '../../utils/richText'
 import Modal from '../Modal'
 import EmptyState from '../EmptyState'
@@ -252,7 +252,7 @@ function SessionRow({ session, arc }: { session: Session; arc: Arc }) {
           {session.date && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2, color: 'var(--text-muted)', fontSize: 11 }}>
               <Calendar size={10} />
-              {new Date(session.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+              {formatDate(session.date)}
             </div>
           )}
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)' }}>

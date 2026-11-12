@@ -210,6 +210,11 @@ export interface SharedSlice {
   setSoundboardOpen: (v: boolean) => void
   soundboardMinimized: boolean
   setSoundboardMinimized: (v: boolean) => void
+  // A sound link in some note was clicked: the widget plays that library sound.
+  // Consumed (set back to null) by the widget, which may have to mount first.
+  soundLinkRequest: { soundId: number; nonce: number } | null
+  requestSoundLink: (soundId: number) => void
+  clearSoundLinkRequest: () => void
   soundBoards: SoundBoard[]
   soundsVersion: number
   bumpSoundsVersion: () => void
@@ -772,6 +777,16 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
   soundboardMinimized: false,
   setSoundboardMinimized: (soundboardMinimized) => set({ soundboardMinimized }),
 
+  soundLinkRequest: null,
+  // Opening the widget for a link comes up as the pill — the click is a
+  // shortcut, not a request to cover the notes with the full board.
+  requestSoundLink: (soundId) => set(s => ({
+    soundboardOpen: true,
+    soundboardMinimized: s.soundboardOpen ? s.soundboardMinimized : true,
+    soundLinkRequest: { soundId, nonce: Date.now() },
+  })),
+  clearSoundLinkRequest: () => set({ soundLinkRequest: null }),
+
   soundBoards: [],
   soundsVersion: 0,
   bumpSoundsVersion: () => set(s => ({ soundsVersion: s.soundsVersion + 1 })),
@@ -888,7 +903,10 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
   // colours, no backdrop texture. Covers everything the Appearance tab owns
   // except hints, which is a help preference rather than an appearance one.
   resetAppearance: () => {
-    const next = { ...DEFAULT_APPEARANCE }
+    // The design is a mode, not a colour choice: resetting colours keeps it.
+    // Design choices are modes, not colours, so a colour reset keeps them.
+    const { design, parchment, gloss, dropCap, dropCapLines, dropCapNotes } = get().appearance
+    const next = { ...DEFAULT_APPEARANCE, design, parchment, gloss, dropCap, dropCapLines, dropCapNotes }
     saveAppearance(next, get().appearanceScope === 'campaign' ? get().currentCampaign?.id : null)
     applyAppearance(next)
     applySectionAccents(resolveSections(next))

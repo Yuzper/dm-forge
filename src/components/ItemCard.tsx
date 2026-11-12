@@ -3,6 +3,9 @@
 // Mirrors SpellCard: header + meta grid + scrollable description, with the
 // rarity tinting the card's accent so value reads at a glance.
 import { RARITY_COLORS } from '../constants/loot'
+import { RichPreview, type PMNode } from './RichPreview'
+import { CroppedImage } from './CroppedImage'
+import { PREVIEW_HEIGHT, type CropRect } from '../utils/previewCrop'
 
 export type ItemCardData = {
   name: string
@@ -13,7 +16,12 @@ export type ItemCardData = {
   location?: string
   tags?: string[]
   coverImage?: string | null
+  /** The item article's chosen framing of that picture (null = default). */
+  coverCrop?: CropRect | null
+  /** Rules text from the item's stat block; blank lines separate paragraphs. */
   desc?: string
+  /** The article body, shown with its formatting when there is no stat-block text. */
+  body?: PMNode | null
 }
 
 const CARD_W = 320
@@ -49,7 +57,7 @@ export function ItemCard({ item, x, y, onMouseEnter, onMouseLeave }: {
       }}
     >
       {item.coverImage && (
-        <img src={item.coverImage} style={{ width: '100%', height: 96, objectFit: 'cover', display: 'block', borderBottom: `1px solid ${accent}` }} />
+        <CroppedImage src={item.coverImage} crop={item.coverCrop} height={PREVIEW_HEIGHT} style={{ borderBottom: `1px solid ${accent}` }} />
       )}
       <div style={{ padding: '10px 14px', background: 'var(--bg-surface)', borderBottom: `1px solid ${accent}` }}>
         <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, color: accent, letterSpacing: '0.04em', marginBottom: 2 }}>
@@ -71,13 +79,15 @@ export function ItemCard({ item, x, y, onMouseEnter, onMouseLeave }: {
           ))}
         </div>
       )}
-      {(item.desc || (item.tags && item.tags.length > 0)) && (
-        <div style={{ padding: '10px 14px', maxHeight: 160, overflowY: 'auto' }}>
-          {item.desc && (
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{item.desc}</div>
-          )}
+      {(item.desc || item.body || (item.tags && item.tags.length > 0)) && (
+        <div style={{ padding: '10px 14px', maxHeight: 240, overflowY: 'auto' }}>
+          {item.desc ? (
+            <div className="rich-preview">
+              {item.desc.split(/\n\s*\n/).map((para, i) => <p key={i} style={{ whiteSpace: 'pre-line' }}>{para.trim()}</p>)}
+            </div>
+          ) : item.body ? <RichPreview doc={item.body} /> : null}
           {item.tags && item.tags.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: item.desc ? 8 : 0 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: item.desc || item.body ? 8 : 0 }}>
               {item.tags.map(t => (
                 <span key={t} style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: 99, padding: '1px 7px' }}>{t}</span>
               ))}

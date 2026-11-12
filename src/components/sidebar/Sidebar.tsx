@@ -62,7 +62,7 @@ export default function Sidebar() {
   const showNav = inCampaignContext && currentCampaign
 
   return (
-    <aside style={{
+    <aside className="app-sidebar" style={{
       width: 'var(--sidebar-width)',
       background: 'var(--bg-surface)',
       borderRight: '1px solid var(--border)',

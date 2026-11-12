@@ -247,6 +247,7 @@ export default function POIPanel({ readMode }: { readMode?: boolean }) {
             placeholder="Describe this location… what do the players see? hear? smell?"
             readOnly={readMode}
             expandable
+            dropCapId={`poi:${selectedPOI.id}`}
           />
         </div>
 

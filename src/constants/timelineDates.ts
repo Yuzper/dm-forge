@@ -169,6 +169,7 @@ export function buildArticleTimeline(
   a: { id: number; title: string; article_type: string },
   tracks: Record<string, string>,
   parse: ParseDate,
+  tags: string[] = [],
 ): { markers: TimelineEventItem[]; lifespan?: Lifespan; startDay?: number; endDay?: number } {
   const type = a.article_type as ArticleType
   const fields = TIMELINE_DATE_FIELDS[type] ?? []
@@ -186,18 +187,18 @@ export function buildArticleTimeline(
     if (f.role === 'start') startDay = d.day
     if (f.role === 'end') endDay = d.day
     if (DRAWN_ELSEWHERE.has(f.key)) continue
-    markers.push({ id: a.id, title: `${a.title} — ${f.label}`, day: d.day, year: d.year, kind, article_type: type, color, articleId: a.id })
+    markers.push({ id: a.id, title: `${a.title} — ${f.label}`, day: d.day, year: d.year, kind, article_type: type, color, articleId: a.id, tags })
   }
 
   for (const m of parseMilestones(tracks.Timeline_Milestones)) {
     const d = parse(m.date)
     if (!d) continue
-    markers.push({ id: a.id, title: m.label ? `${a.title} — ${m.label}` : a.title, day: d.day, year: d.year, kind, article_type: type, color, articleId: a.id })
+    markers.push({ id: a.id, title: m.label ? `${a.title} — ${m.label}` : a.title, day: d.day, year: d.year, kind, article_type: type, color, articleId: a.id, tags })
   }
 
   // Legacy single "appears on timeline" date
   const legacy = parse(tracks.Timeline_Date)
-  if (legacy) markers.push({ id: a.id, title: a.title, day: legacy.day, year: legacy.year, kind, article_type: type, color, articleId: a.id })
+  if (legacy) markers.push({ id: a.id, title: a.title, day: legacy.day, year: legacy.year, kind, article_type: type, color, articleId: a.id, tags })
 
   // Without its end, a moment-type start is just a moment: don't report it as an
   // open-ended start, or an event would read as ongoing at every later date.

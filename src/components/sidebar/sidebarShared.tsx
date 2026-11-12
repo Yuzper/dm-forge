@@ -90,6 +90,7 @@ export function NavRow({
       onClick={onClick}
       onContextMenu={onContextMenu}
       title={title}
+      data-nav-active={active || undefined}
       className={[className, active ? '' : 'hover-bg hover-text'].filter(Boolean).join(' ')}
       style={{
         position: 'relative',

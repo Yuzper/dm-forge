@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useStore } from '../store/store'
 import { ArrowDownUp, Network, Plus } from 'lucide-react'
 import {
-  type RelationWeb, TEMPLATE_CONFIG,
+  type RelationWeb, TEMPLATE_CONFIG, WEB_TAG_STYLE,
 } from '../components/relations/relationsShared'
 import RelationsCanvasView from '../components/relations/RelationsCanvasView'
 import { NewWebModal, EditWebModal } from '../components/relations/relationsModals'
@@ -14,6 +14,7 @@ import { toolbarPillStyle } from '../components/wiki/WikiToolbar'
 import SectionHeader from '../components/SectionHeader'
 import { SECTION_ACCENTS } from '../constants/sections'
 import { buildLocationMenu, truncate } from '../utils/contextMenus'
+import { formatDate } from '../utils/dates'
 
 // ── Hub View ───────────────────────────────────────────────────────────────────
 
@@ -121,9 +122,9 @@ function RelationsHubView({ onOpenWeb }: { onOpenWeb: (web: RelationWeb) => void
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)', padding: '2px 8px', background: 'var(--bg-elevated)', borderRadius: 99 }}>{web.node_count} node{web.node_count !== 1 ? 's' : ''}</span>
                   {TEMPLATE_CONFIG[web.template] && (
-                    <span style={{ fontSize: 11, color: '#3C3489', padding: '2px 8px', background: '#EEEDFE', borderRadius: 99 }}>{TEMPLATE_CONFIG[web.template]?.label}</span>
+                    <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 99, ...WEB_TAG_STYLE }}>{TEMPLATE_CONFIG[web.template]?.label}</span>
                   )}
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(web.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span> 
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatDate(web.updated_at)}</span> 
                 </div>
               </div>
             ))}

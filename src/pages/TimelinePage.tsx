@@ -17,7 +17,7 @@ import { auditChronology, type ChronologyIssue } from '../utils/chronologyAudit'
 import { useTimelineData, parseEras } from '../hooks/useTimelineData'
 
 import { SECTION_ACCENTS } from '../constants/sections'
-import { TimelineFilterPanel as FilterPanel, DEFAULT_TIMELINE_FILTERS as DEFAULT_FILTERS, type TimelineFilters } from '../components/TimelineFilterPanel'
+import { TimelineFilterPanel as FilterPanel, DEFAULT_TIMELINE_FILTERS as DEFAULT_FILTERS, countActiveTimelineFilters, type TimelineFilters } from '../components/TimelineFilterPanel'
 import Modal from '../components/Modal'
 import SectionHeader from '../components/SectionHeader'
 import { ColorDotPicker } from '../components/SwatchPicker'
@@ -470,7 +470,12 @@ export default function TimelinePage() {
     if (article) setEmbeddedArticle(article)
   }, [handleOpenSession])
 
-  const activeFilterCount = Object.values(filters).filter(v => !v).length
+  const activeFilterCount = countActiveTimelineFilters(filters)
+  const availableTags = useMemo(() => {
+    const set = new Set<string>()
+    for (const i of items) for (const t of i.tags) set.add(t)
+    return [...set].sort()
+  }, [items])
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -508,7 +513,7 @@ export default function TimelinePage() {
                 <Filter size={13} /> Filter
                 {activeFilterCount > 0 && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', flexShrink: 0 }} />}
               </button>
-              {showFilter && <FilterPanel filters={filters} onChange={handleFiltersChange} onClose={() => setShowFilter(false)} />}
+              {showFilter && <FilterPanel filters={filters} onChange={handleFiltersChange} onClose={() => setShowFilter(false)} availableTags={availableTags} />}
             </div>
 
             <button onClick={() => setShowCreate(true)}
