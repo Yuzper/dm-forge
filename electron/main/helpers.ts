@@ -131,7 +131,19 @@ export function extractInlineImagePaths(contentJson: string, userDataPath: strin
   } catch { return [] }
 }
 
+// The standard monster pictures are copied into userData/images as creature_*
+// and every creature article points at them, so they are reference files, not
+// something a map, article or campaign owns. Every delete in the app funnels
+// through safeUnlink, so refusing here protects them from any path -- changing
+// a cover or portrait, deleting an article or campaign, trimming an inline
+// image -- instead of relying on each caller to remember a creature_ check.
+export function isProtectedImage(filePath: string): boolean {
+  const base = path.basename(filePath)
+  return /^creature_/i.test(base) && path.basename(path.dirname(filePath)).toLowerCase() === 'images'
+}
+
 export function safeUnlink(filePath: string) {
+  if (isProtectedImage(filePath)) return
   try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath) } catch {}
 }
 

@@ -34,22 +34,22 @@ function defaultCreaturesDir(): string | null {
   return candidates.find(p => fs.existsSync(p)) ?? null
 }
 
-/** Copy bundled creature images into userData/images/, once per file (tracked in
- *  creature_images_seeded). A file deleted by the user stays deleted; a creature
- *  portrait newly added to a later app version still gets copied in. */
+/** Make sure every bundled creature image exists in userData/images/ as creature_*.
+ *  Creature articles store the absolute path of that copy, so the copy has to be
+ *  there. Missing ones are restored on every launch -- a file lost to a manual
+ *  cleanup, a failed copy or an old delete comes back -- and existing ones are
+ *  left alone. (This used to skip anything already seeded once, so a deleted
+ *  portrait stayed deleted; the app itself can no longer delete them, see
+ *  isProtectedImage in helpers.ts.) */
 export function syncCreatureImages(imagesPath: string) {
   const src = defaultCreaturesDir()
   if (!src) return
-  const seeded = new Set(
-    (db.prepare('SELECT file FROM creature_images_seeded').all() as { file: string }[]).map(r => r.file)
-  )
   const mark = db.prepare('INSERT OR IGNORE INTO creature_images_seeded (file) VALUES (?)')
   for (const file of fs.readdirSync(src)) {
-    if (file === 'version' || seeded.has(file)) continue
-    const srcFile = path.join(src, file)
+    if (file === 'version') continue
     const destFile = path.join(imagesPath, `creature_${file}`)
     try {
-      fs.copyFileSync(srcFile, destFile)
+      if (!fs.existsSync(destFile)) fs.copyFileSync(path.join(src, file), destFile)
       mark.run(file)
     } catch {}
   }
