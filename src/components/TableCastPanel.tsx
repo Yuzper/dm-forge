@@ -34,6 +34,8 @@ import {
 import { POI_LABEL_SIZE_MAX, POI_LABEL_SIZE_MIN } from '../vtt/protocol'
 import { panToCentre, percentToImage, tableScale } from '../vtt/camera'
 import TableMinimap from './vtt/TableMinimap'
+import { castDefaults } from '../utils/castDefaults'
+import { useThrottledCommit } from '../hooks/useThrottledCommit'
 
 type Tab = 'play' | 'setup'
 
@@ -56,51 +58,6 @@ function loadSize(): PanelSize {
   } catch {
     return fallback
   }
-}
-
-/**
- * A control that streams values while it is being dragged (the colour picker,
- * a slider) without streaming them into the store.
- *
- * Every store update re-renders each component that reads the whole store -- the
- * app root and the open map canvas among them -- and also writes localStorage
- * and sends a message to the table window. The native colour picker fires an
- * input event on every pixel of a drag, so committing each one made the picker
- * stutter. The control follows the pointer through local state (instant, cheap)
- * and the store is only updated about every `ms`, plus once more at the end so
- * the final value is never lost.
- */
-function useThrottledCommit<T>(committed: T, commit: (v: T) => void, ms = 90) {
-  const [draft, setDraft] = useState<T>(committed)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pending = useRef<{ v: T } | null>(null)
-  const lastAt = useRef(0)
-  const commitRef = useRef(commit)
-  commitRef.current = commit
-
-  const flush = useCallback(() => {
-    if (timer.current) { clearTimeout(timer.current); timer.current = null }
-    if (pending.current) {
-      const { v } = pending.current
-      pending.current = null
-      lastAt.current = Date.now()
-      commitRef.current(v)
-    }
-  }, [])
-
-  // Follow outside changes (another surface, a reset) but never fight a drag.
-  useEffect(() => { if (!pending.current) setDraft(committed) }, [committed])
-  useEffect(() => flush, [flush])
-
-  const update = useCallback((v: T) => {
-    setDraft(v)
-    pending.current = { v }
-    const wait = ms - (Date.now() - lastAt.current)
-    if (wait <= 0) flush()
-    else if (!timer.current) timer.current = setTimeout(flush, wait)
-  }, [ms, flush])
-
-  return [draft, update, flush] as const
 }
 
 export default function TableCastPanel() {
@@ -151,7 +108,8 @@ export default function TableCastPanel() {
     void window.api.vttStatus().then(setTableStatus)
     void window.api.vttListDisplays().then(ds => {
       setDisplays(ds)
-      setPickedDisplay(prev => prev ?? ds.find(d => !d.primary)?.id ?? ds[0]?.id ?? null)
+      const wantsMain = castDefaults.get().tableDisplay === 'primary'
+      setPickedDisplay(prev => prev ?? (wantsMain ? ds.find(d => d.primary)?.id : ds.find(d => !d.primary)?.id) ?? ds[0]?.id ?? null)
     })
     return window.api.onVTTStatus(setTableStatus)
   }, [setTableStatus])
@@ -262,7 +220,21 @@ export default function TableCastPanel() {
     return () => window.removeEventListener('keydown', onKey)
   }, [placingParty])
 
-  const innerW = size.w - 20
+  // The minimap fills the body. Measured rather than derived from the panel width:
+  // a scrollbar takes room out of the body, and the Journal design's scrollbar is
+  // wider than the stock one, so a fixed `size.w - 20` overflowed it.
+  const [bodyW, setBodyW] = useState(size.w)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el) return
+    const measure = () => setBodyW(el.clientWidth)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const innerW = Math.max(120, bodyW - 20)
 
   return (
     <div style={{
@@ -293,7 +265,7 @@ export default function TableCastPanel() {
         <span style={{ marginLeft: 'auto', fontSize: 10, color: status.open ? 'var(--gold)' : 'var(--text-muted)' }}>
           {status.open ? (status.fullscreen ? 'fullscreen' : 'windowed') : 'closed'}
         </span>
-        <button onClick={() => setTableCastOpen(false)} title="Close panel" style={iconBtn}>
+        <button onClick={() => setTableCastOpen(false)} title="Close panel" className="btn btn-ghost btn-sm" style={ICON}>
           <X size={13} />
         </button>
       </header>
@@ -301,13 +273,13 @@ export default function TableCastPanel() {
       {/* Always visible: needed from either tab, sometimes in a hurry. */}
       <div style={{ display: 'flex', gap: 6, padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         {!status.open ? (
-          <button onClick={() => void window.api.vttOpen(pickedDisplay).then(setTableStatus)} style={primaryBtn}>
+          <button onClick={() => void window.api.vttOpen(pickedDisplay).then(setTableStatus)} className="btn btn-sm btn-primary" style={FILL}>
             <MonitorPlay size={12} /> Open table
           </button>
         ) : (
           <>
-            <button onClick={() => void window.api.vttClose().then(setTableStatus)} style={btn}>Close</button>
-            <button onClick={() => void window.api.vttSetFullscreen(!status.fullscreen).then(setTableStatus)} style={btn}>
+            <button onClick={() => void window.api.vttClose().then(setTableStatus)} className="btn btn-sm" style={FILL}>Close</button>
+            <button onClick={() => void window.api.vttSetFullscreen(!status.fullscreen).then(setTableStatus)} className="btn btn-sm" style={FILL}>
               {status.fullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
               {status.fullscreen ? 'Windowed' : 'Full'}
             </button>
@@ -315,7 +287,7 @@ export default function TableCastPanel() {
               onClick={blankTable}
               disabled={castMapId == null}
               title={castMapId == null ? 'The table is already blank' : "Clear the players' screen"}
-              style={castMapId == null ? disabledBtn : btn}
+              className="btn btn-sm" style={FILL}
             >
               <Ban size={12} /> Blank
             </button>
@@ -328,7 +300,7 @@ export default function TableCastPanel() {
         <TabButton active={tab === 'setup'} onClick={() => setTab('setup')} label="Setup" />
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div ref={bodyRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {tab === 'play' ? (
           <>
             <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
@@ -368,14 +340,14 @@ export default function TableCastPanel() {
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
                     onClick={() => centreOn({ x: castImage.natural.w / 2, y: castImage.natural.h / 2 })}
-                    style={btn}
+                    className="btn btn-sm" style={FILL}
                   >
                     <Crosshair size={12} /> Centre
                   </button>
                   <button
                     onClick={() => setPlacingParty(v => !v)}
                     title={placingParty ? 'Cancel placing' : 'Then click the map to choose where the party stands'}
-                    style={placingParty ? primaryBtn : btn}
+                    className={placingParty ? 'btn btn-sm btn-primary' : 'btn btn-sm'} style={FILL}
                   >
                     <Users size={12} /> {placingParty ? 'Click the map…' : 'Add party'}
                   </button>
@@ -409,7 +381,7 @@ export default function TableCastPanel() {
                     <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                       {castViewers.length} marker{castViewers.length === 1 ? '' : 's'}
                     </span>
-                    <button onClick={clearCastViewers} style={{ ...btn, flex: '0 0 auto' }}>Clear</button>
+                    <button onClick={clearCastViewers} className="btn btn-sm">Clear</button>
                   </Row>
                   {doors.length > 0 && (
                     <Note icon={<DoorOpen size={11} />}>
@@ -451,7 +423,7 @@ export default function TableCastPanel() {
                 value={pickedDisplay ?? ''}
                 onChange={e => setPickedDisplay(Number(e.target.value))}
                 disabled={status.open}
-                style={input}
+                className="input" style={{ ...FIELD, width: '100%' }}
               >
                 {displays.map(d => (
                   <option key={d.id} value={d.id}>
@@ -481,7 +453,7 @@ export default function TableCastPanel() {
                     const bounds = displays.find(x => x.id === activeDisplayId)?.bounds
                     applyScreenCalibration(d, bounds ? pxPerInchFromDiagonal(bounds, d) : pxPerInch)
                   }}
-                  style={{ ...input, width: 70 }}
+                  className="input" style={{ ...FIELD, width: 70 }}
                 />
                 <span style={unitText}>in</span>
               </Row>
@@ -490,7 +462,7 @@ export default function TableCastPanel() {
                   type="number" min={4} max={400} step={0.1}
                   value={Number(pxPerInch.toFixed(2))}
                   onChange={e => applyScreenCalibration(diagonal, Number(e.target.value))}
-                  style={{ ...input, width: 70 }}
+                  className="input" style={{ ...FIELD, width: 70 }}
                 />
                 <Nudge onStep={d => applyScreenCalibration(diagonal, Math.max(4, pxPerInch + d))} />
               </Row>
@@ -568,7 +540,7 @@ export default function TableCastPanel() {
                       offsetX: castGrid?.offsetX ?? 0,
                       offsetY: castGrid?.offsetY ?? 0,
                     })}
-                    style={{ ...input, width: 70 }}
+                    className="input" style={{ ...FIELD, width: 70 }}
                   />
                   <span style={unitText}>px</span>
                   <Nudge onStep={d => commitGrid({
@@ -583,7 +555,7 @@ export default function TableCastPanel() {
                       <input
                         type="number" step={1} value={Math.round(castGrid.offsetX)}
                         onChange={e => commitGrid({ ...castGrid, offsetX: Number(e.target.value) })}
-                        style={{ ...input, width: 70 }}
+                        className="input" style={{ ...FIELD, width: 70 }}
                       />
                       <Nudge onStep={d => commitGrid({ ...castGrid, offsetX: castGrid.offsetX + d })} />
                     </Row>
@@ -591,11 +563,11 @@ export default function TableCastPanel() {
                       <input
                         type="number" step={1} value={Math.round(castGrid.offsetY)}
                         onChange={e => commitGrid({ ...castGrid, offsetY: Number(e.target.value) })}
-                        style={{ ...input, width: 70 }}
+                        className="input" style={{ ...FIELD, width: 70 }}
                       />
                       <Nudge onStep={d => commitGrid({ ...castGrid, offsetY: castGrid.offsetY + d })} />
                     </Row>
-                    <button onClick={() => commitGrid(null)} style={{ ...btn, alignSelf: 'flex-start', flex: '0 0 auto' }}>
+                    <button onClick={() => commitGrid(null)} className="btn btn-sm" style={{ alignSelf: 'flex-start' }}>
                       <Grid3x3 size={12} /> Clear calibration
                     </button>
                   </>
@@ -654,8 +626,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function Nudge({ onStep }: { onStep: (delta: number) => void }) {
   return (
     <span style={{ display: 'flex', gap: 2 }}>
-      <button style={iconBtn} title="−1" onClick={() => onStep(-1)}>−</button>
-      <button style={iconBtn} title="+1" onClick={() => onStep(1)}>+</button>
+      <button className="btn btn-sm" style={ICON} title="−1" onClick={() => onStep(-1)}>−</button>
+      <button className="btn btn-sm" style={ICON} title="+1" onClick={() => onStep(1)}>+</button>
     </span>
   )
 }
@@ -672,20 +644,12 @@ function Note({ children, icon }: { children: React.ReactNode; icon?: React.Reac
   )
 }
 
-const btn: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-  flex: 1, padding: '5px 8px', fontSize: 11, cursor: 'pointer',
-  background: 'var(--bg-surface)', color: 'var(--text-secondary)',
-  border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-}
-
-const primaryBtn: React.CSSProperties = {
-  ...btn,
-  background: 'rgba(200,168,75,0.14)', color: 'var(--gold)',
-  border: '1px solid var(--border-gold)',
-}
-
-const disabledBtn: React.CSSProperties = { ...btn, opacity: 0.45, cursor: 'not-allowed' }
+// Buttons and fields use the app's own classes (.btn, .input) so the panel matches
+// the rest of the app in both designs; these only carry layout.
+/** A button that shares its row equally with its neighbours. */
+const FILL: React.CSSProperties = { flex: 1, justifyContent: 'center' }
+/** A small square icon button (close, nudge). */
+const ICON: React.CSSProperties = { width: 24, height: 22, padding: 0, justifyContent: 'center', flexShrink: 0 }
 
 const chipBtn: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 4,
@@ -694,18 +658,8 @@ const chipBtn: React.CSSProperties = {
   border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
 }
 
-const iconBtn: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 24, height: 22, padding: 0, fontSize: 12, cursor: 'pointer',
-  background: 'var(--bg-surface)', color: 'var(--text-secondary)',
-  border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-}
-
-const input: React.CSSProperties = {
-  background: 'var(--bg-surface)', color: 'var(--text-primary)',
-  border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-  padding: '4px 6px', fontSize: 11, minWidth: 0,
-}
+/** The panel is dense, so its fields are a size smaller than a form's. */
+const FIELD: React.CSSProperties = { padding: '4px 8px', fontSize: 11, minWidth: 0, flex: '0 0 auto' }
 
 const labelRow: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 7,

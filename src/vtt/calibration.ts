@@ -14,7 +14,7 @@
 // zoom would put the minis out of register with the art. The DM pans; the
 // scale is fixed by physics.
 import type { TableCalibration } from './protocol'
-import { DEFAULT_CALIBRATION, POI_LABEL_SIZE_MAX, POI_LABEL_SIZE_MIN } from './protocol'
+import { DEFAULT_CALIBRATION, FOG_OPACITY, POI_LABEL_SIZE_MAX, POI_LABEL_SIZE_MIN } from './protocol'
 
 export interface DisplayBounds { width: number; height: number }
 
@@ -84,6 +84,9 @@ export function loadGridPrefs(): GridPrefs {
     gridColor: DEFAULT_CALIBRATION.gridColor,
     gridOpacity: DEFAULT_CALIBRATION.gridOpacity,
     poiLabelSize: DEFAULT_CALIBRATION.poiLabelSize,
+    gridStyle: DEFAULT_CALIBRATION.gridStyle,
+    fogOpacity: DEFAULT_CALIBRATION.fogOpacity,
+    mapBackdrop: DEFAULT_CALIBRATION.mapBackdrop,
   }
   try {
     const raw = localStorage.getItem(PREFS_KEY)
@@ -96,6 +99,11 @@ export function loadGridPrefs(): GridPrefs {
       // Clamped on read as well as write: a stored value from a build with
       // different bounds should not put an unreadable label on the table.
       poiLabelSize: clampLabelSize(Number(p.poiLabelSize), fallback.poiLabelSize),
+      gridStyle: p.gridStyle === 'dots' ? 'dots' : 'lines',
+      fogOpacity: Number.isFinite(Number(p.fogOpacity))
+        ? Math.min(FOG_OPACITY.max, Math.max(FOG_OPACITY.min, Number(p.fogOpacity)))
+        : fallback.fogOpacity,
+      mapBackdrop: typeof p.mapBackdrop === 'string' && /^#[0-9a-f]{6}$/i.test(p.mapBackdrop) ? p.mapBackdrop : fallback.mapBackdrop,
     }
   } catch {
     return fallback

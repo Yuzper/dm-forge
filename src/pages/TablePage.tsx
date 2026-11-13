@@ -85,7 +85,7 @@ export default function TablePage() {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: '#000',
+      position: 'fixed', inset: 0, background: calibration.mapBackdrop,
       overflow: 'hidden', userSelect: 'none',
       // Nothing here is clickable, so the pointer stays hidden: a stray arrow
       // parked on the battlefield is just a distraction.
@@ -112,11 +112,22 @@ export default function TablePage() {
         <div style={{
           position: 'absolute', inset: 0, pointerEvents: 'none',
           opacity: calibration.gridOpacity,
-          backgroundImage: [
-            `repeating-linear-gradient(to right, ${calibration.gridColor} 0 1px, transparent 1px ${spacing}px)`,
-            `repeating-linear-gradient(to bottom, ${calibration.gridColor} 0 1px, transparent 1px ${spacing}px)`,
-          ].join(', '),
-          backgroundPosition: `${phase(gridX)}px 0, 0 ${phase(gridY)}px`,
+          ...(calibration.gridStyle === 'dots'
+            ? {
+                // A dot at every corner: four quarter-discs per tile meet to make one.
+                backgroundImage: ['0 0', '100% 0', '0 100%', '100% 100%']
+                  .map(at => `radial-gradient(circle at ${at}, ${calibration.gridColor} 0 1.8px, transparent 2.4px)`)
+                  .join(', '),
+                backgroundSize: `${spacing}px ${spacing}px`,
+                backgroundPosition: `${phase(gridX)}px ${phase(gridY)}px`,
+              }
+            : {
+                backgroundImage: [
+                  `repeating-linear-gradient(to right, ${calibration.gridColor} 0 1px, transparent 1px ${spacing}px)`,
+                  `repeating-linear-gradient(to bottom, ${calibration.gridColor} 0 1px, transparent 1px ${spacing}px)`,
+                ].join(', '),
+                backgroundPosition: `${phase(gridX)}px 0, 0 ${phase(gridY)}px`,
+              }),
         }} />
       )}
 
@@ -151,7 +162,7 @@ export default function TablePage() {
               broken, but at that strength the rooms behind a closed door were
               still readable -- more so with a bright animated map -- and the
               point of the fog is that the players cannot see them. */}
-          <rect x={0} y={0} width={imgW} height={imgH} fill="#000" mask="url(#fog-mask)" />
+          <rect x={0} y={0} width={imgW} height={imgH} fill="#000" fillOpacity={calibration.fogOpacity} mask="url(#fog-mask)" />
         </svg>
       )}
 

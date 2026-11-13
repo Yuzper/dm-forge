@@ -124,6 +124,8 @@ export interface CastViewport {
  * The physical calibration of the table screen: how many CSS pixels make one
  * real inch on the glass. One inch is one grid square is one 25 mm base.
  */
+export type GridStyle = 'lines' | 'dots'
+
 export interface TableCalibration {
   pxPerInch: number
   /** Drawn over the map so the DM can see where squares land. */
@@ -136,6 +138,12 @@ export interface TableCalibration {
    * TV is and how far away the furthest player is sitting.
    */
   poiLabelSize: number
+  /** Grid drawn as full lines, or as a dot at each corner (less clutter on a busy map). */
+  gridStyle: GridStyle
+  /** How dark the fog is, 0.5 (a ghost of the map) to 1 (solid black). */
+  fogOpacity: number
+  /** The colour around the map where it does not fill the screen. */
+  mapBackdrop: string
 }
 
 export type CastMessage =
@@ -161,7 +169,12 @@ export const DEFAULT_CALIBRATION: TableCalibration = {
   gridColor: '#ffffff',
   gridOpacity: 0.25,
   poiLabelSize: 13,
+  gridStyle: 'lines',
+  fogOpacity: 1,
+  mapBackdrop: '#000000',
 }
+
+export const FOG_OPACITY = { min: 0.5, max: 1, step: 0.05 } as const
 
 /** Bounds for the label-size control. The floor is deliberately tiny: on a
  *  dense map a name can be a near-invisible tick that only confirms a pin is
