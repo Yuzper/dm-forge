@@ -280,7 +280,10 @@ function ImportMapsMenu({ importing, onPlain, onWiki, onVTT }: {
   const pick = (fn: () => void) => () => { setOpen(false); fn() }
 
   return (
-    <div onMouseEnter={show} onMouseLeave={hide} style={{ display: 'flex', alignItems: 'stretch', borderRight: '1px solid var(--border)' }}>
+    // The divider sits on the button, not this wrapper: the Journal design restyles
+    // a div's border-right as a heavy panel edge but leaves a button's alone, and the
+    // other strip cells are buttons, so a wrapper border made this one divider differ.
+    <div onMouseEnter={show} onMouseLeave={hide} style={{ display: 'flex', alignItems: 'stretch' }}>
       <button
         ref={btnRef}
         onClick={() => (open ? setOpen(false) : show())}
@@ -289,6 +292,7 @@ function ImportMapsMenu({ importing, onPlain, onWiki, onVTT }: {
           display: 'flex', alignItems: 'center', gap: 6,
           padding: '0 14px',
           background: open ? 'var(--bg-active)' : 'transparent', border: 'none',
+          borderRight: '1px solid var(--border)',
           color: open ? 'var(--text-secondary)' : 'var(--text-muted)', fontSize: 12,
           cursor: importing ? 'wait' : 'pointer',
           transition: 'color var(--transition)',

@@ -154,10 +154,10 @@ export default function LootTableView({
 
         {tableBadge && (
           <span style={{
-            fontSize: 10, color: '#49c185',
-            background: 'rgba(73,193,133,0.1)',
+            fontSize: 10, color: 'var(--gold)',
+            background: 'var(--gold-glow)',
             padding: '1px 7px', borderRadius: 99,
-            border: '0.5px solid rgba(73,193,133,0.3)',
+            border: '0.5px solid var(--border-gold)',
             flexShrink: 0,
           }}>
             {tableBadge}

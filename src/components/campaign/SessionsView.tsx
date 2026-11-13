@@ -746,11 +746,11 @@ export default function SessionsView({ onBack }: { onBack: () => void }) {
               className="btn"
               onClick={() => togglePrep(!prepOpen)}
               title={prepOpen ? 'Hide future sessions' : 'Show future sessions'}
-              style={prepOpen ? { color: 'var(--gold)', borderColor: 'var(--border-gold)' } : undefined}
+              style={prepOpen ? { color: 'var(--text-primary)', borderColor: 'var(--border-gold)' } : undefined}
             >
               <PanelRight size={15} /> Future
               {drafts.length > 0 && (
-                <span style={{ fontSize: 11, color: 'var(--gold)', background: 'rgba(200,168,75,0.12)', padding: '0 6px', borderRadius: 99, marginLeft: 2 }}>{drafts.length}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-primary)', background: 'rgba(200,168,75,0.12)', padding: '0 6px', borderRadius: 99, marginLeft: 2 }}>{drafts.length}</span>
               )}
             </button>
             <button className="btn" onClick={() => setCreateArcOpen(true)}><Layers size={15} /> New Arc</button>
@@ -797,7 +797,7 @@ export default function SessionsView({ onBack }: { onBack: () => void }) {
                   padding: '2px 10px', borderRadius: 99, fontSize: 11, cursor: 'pointer', transition: 'all 100ms',
                   background: active ? 'rgba(200,168,75,0.09)' : 'transparent',
                   border: `1px solid ${active ? 'var(--border-gold)' : 'var(--border-light)'}`,
-                  color: active ? 'var(--gold)' : 'var(--text-muted)',
+                  color: active ? 'var(--text-primary)' : 'var(--text-muted)',
                 }}>{label}</button>
               )
             })}

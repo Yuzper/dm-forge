@@ -57,7 +57,9 @@ export default function CastMapButton({ map, pois = [], ghostIds, shapes, shapeL
         padding: '4px 8px',
         background: on ? 'rgba(200,115,58,0.2)' : 'rgba(21,18,14,0.85)',
         border: `1px solid ${on ? 'rgba(200,115,58,0.4)' : 'var(--border-light)'}`,
-        color: on ? '#c8733a' : 'var(--text-secondary)',
+        // Light, not the theme's text colour: this sits on a dark overlay in every
+        // base, and a light base's text colour is dark.
+        color: on ? '#c8733a' : 'rgba(255,255,255,0.75)',
         backdropFilter: 'blur(8px)',
       }
     : {

@@ -157,7 +157,7 @@ export default function TabStrip({ paneId }: { paneId: PaneId }) {
               cursor: 'pointer',
               fontSize: 12, fontFamily: 'var(--font-ui)',
               color: dead ? 'var(--text-muted)'
-                : isActive ? (live ? 'var(--gold)' : 'var(--text-secondary)')
+                : isActive ? (live ? 'var(--text-primary)' : 'var(--text-secondary)')
                 : 'var(--text-secondary)',
               background: isActive ? (live ? 'var(--bg-elevated)' : 'var(--bg-surface)') : 'transparent',
               border: '1px solid',
