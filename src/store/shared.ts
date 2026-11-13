@@ -15,6 +15,7 @@ import { DEFAULT_CALIBRATION } from '../vtt/protocol'
 import { sendCast } from '../vtt/castChannel'
 import { calibrationMessage, parseMapGrid, projectFog, projectPOI, projectShapes, sceneMessage, viewportMessage } from '../vtt/castProjection'
 import { loadGridPrefs, saveGridPrefs } from '../vtt/calibration'
+import { castDefaults } from '../utils/castDefaults'
 import { STARTER_MONSTERS as MONSTERS_2014 } from '../data/starter_monsters_2014'
 import { STARTER_MONSTERS as MONSTERS_2024 } from '../data/starter_monsters_2024'
 import {
@@ -22,7 +23,7 @@ import {
   hasCampaignAppearance, clearCampaignAppearance,
 } from '../constants/themes'
 import type { Appearance } from '../constants/themes'
-import { applySectionAccents, type SectionView } from '../constants/sections'
+import { applySectionAccents } from '../constants/sections'
 import { forEachPane, setActivePaneId, ALL_PANE_IDS, type PaneId } from './paneRegistry'
 import { sameLocation, type Location } from './location'
 import { saveWorkspace, loadWorkspace, clampRatio, savePins, loadPins } from './workspacePersist'
@@ -232,11 +233,9 @@ export interface SharedSlice {
   bgStyle: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood'
   setBgStyle: (s: 'none' | 'parchment' | 'vignette' | 'stone' | 'wood') => void
 
-  /** Base surface family, accent colour, text palette, tint and section overrides. */
+  /** Base surface family, accent colour, text palette, fonts and page look. */
   appearance: Appearance
   setAppearance: (patch: Partial<Appearance>) => void
-  setSectionColor: (view: SectionView, hex: string | null) => void
-  resetSectionColors: () => void
   /** Back to gold-on-parchment: appearance and backdrop texture, not hints. */
   resetAppearance: () => void
   /** Bumped on every appearance change so colour reads taken during render refresh. */
@@ -248,8 +247,8 @@ export interface SharedSlice {
   setAppearanceScope: (scope: 'global' | 'campaign') => void
 
   /** Which tab the Settings dialog is showing, or null when it's closed. */
-  settingsTab: 'appearance' | 'data' | 'help' | null
-  setSettingsTab: (tab: 'appearance' | 'data' | 'help' | null) => void
+  settingsTab: 'appearance' | 'maps' | 'keyboard' | 'data' | 'help' | null
+  setSettingsTab: (tab: 'appearance' | 'maps' | 'keyboard' | 'data' | 'help' | null) => void
   showHints: boolean
   setShowHints: (v: boolean) => void
   dismissedHints: string[]
@@ -658,9 +657,10 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
     // Fog starts on whenever the map has walls to fog with, so the table is
     // black until the party is placed. A wall-less map has nothing to hide
     // behind, and a black table with no way to light it would just be broken.
+    const cd = castDefaults.get()
     set({
       castShowPois: false,
-      castShowFog: castWalls.length > 0,
+      castShowFog: castWalls.length > 0 && cd.fogOnCast,
       castMapId: map.id,
       castMapName: map.name,
       castImage: { url, animationUrl, natural },
@@ -673,6 +673,7 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
     })
     // Calibration first: a table window opening for the first time should not
     // paint one scene at the default scale and then jump.
+    if (cd.gridOnCast !== 'remember') get().setTableCalibration({ showGrid: cd.gridOnCast === 'on' })
     sendCast(calibrationMessage(get().tableCalibration))
     sendCast(viewportMessage({ panX: 0, panY: 0 }))
     sendCast(sceneMessage({
@@ -685,7 +686,14 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
     // silently ignored. Placement and the single-screen fallback are the main
     // process's call — see electron/main/vtt.ts.
     if (!get().tableStatus.open) {
-      const status = await window.api.vttOpen()
+      // Left to the main process (a second display if there is one) unless the DM
+      // asked in Settings for the main screen.
+      let displayId: number | null = null
+      if (cd.tableDisplay === 'primary') {
+        const ds = await window.api.vttListDisplays()
+        displayId = ds.find(d => d.primary)?.id ?? null
+      }
+      const status = await window.api.vttOpen(displayId)
       set({ tableStatus: status })
     }
   },
@@ -718,6 +726,9 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
       gridColor: tableCalibration.gridColor,
       gridOpacity: tableCalibration.gridOpacity,
       poiLabelSize: tableCalibration.poiLabelSize,
+      gridStyle: tableCalibration.gridStyle,
+      fogOpacity: tableCalibration.fogOpacity,
+      mapBackdrop: tableCalibration.mapBackdrop,
     })
     sendCast(calibrationMessage(tableCalibration))
   },
@@ -866,15 +877,6 @@ export const sharedStore = createStore<SharedSlice>()((set, get) => ({
     }
     set(s => ({ appearance: next, recentAccents, themeVersion: s.themeVersion + 1 }))
   },
-
-  setSectionColor: (view, hex) => {
-    const sections = { ...get().appearance.sections }
-    if (hex) sections[view] = hex
-    else delete sections[view]
-    get().setAppearance({ sections })
-  },
-
-  resetSectionColors: () => get().setAppearance({ sections: {} }),
 
   appearanceScope: 'global',
 

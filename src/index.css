@@ -96,7 +96,7 @@ p, li, blockquote { font-family: var(--font-body); font-size: 16px; line-height:
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 16px;
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--secondary-border, var(--border-light));
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   color: var(--text-primary);
@@ -109,7 +109,7 @@ p, li, blockquote { font-family: var(--font-body); font-size: 16px; line-height:
   white-space: nowrap;
   user-select: none;
 }
-.btn:hover { background: var(--bg-hover); border-color: var(--gold-dim); color: var(--gold); }
+.btn:hover { background: var(--bg-hover); border-color: var(--secondary, var(--gold-dim)); color: var(--gold); }
 .btn:active { transform: translateY(1px); }
 .btn-primary {
   background: var(--gold);
@@ -123,9 +123,27 @@ p, li, blockquote { font-family: var(--font-body); font-size: 16px; line-height:
 .btn-ghost { background: transparent; border-color: transparent; }
 .btn-ghost:hover { background: var(--bg-hover); border-color: var(--border-light); color: var(--text-primary); }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
+[data-skin="classic"] .btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
 .btn-icon { padding: 6px; width: 32px; height: 32px; justify-content: center; }
 
 /* ─── Inputs ──────────────────────────────────────────────────────────────── */
+/* Native controls follow the accent everywhere, so no checkbox, radio or
+   slider is left in the browser's own blue. */
+input[type="checkbox"], input[type="radio"], input[type="range"], progress { accent-color: var(--gold); }
+input[type="checkbox"], input[type="radio"], input[type="range"] { cursor: pointer; }
+
+/* A dropdown that does not use .input or .ghost-input still looks like one of
+   ours: theme colours, our border and radius. Inline styles still win. */
+select:not(.input):not(.ghost-input) {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  cursor: pointer;
+}
+select:not(.input):not(.ghost-input):focus { outline: none; border-color: var(--gold-dim); box-shadow: 0 0 0 2px var(--gold-glow); }
+
 .input {
   width: 100%;
   padding: 8px 12px;
@@ -326,8 +344,8 @@ svg g[data-menu-target] > circle {
   outline: none;
   min-height: 200px;
   font-family: var(--font-body);
-  font-size: 16px;
-  line-height: 1.75;
+  font-size: var(--prose-size, 16px);
+  line-height: var(--prose-leading, 1.75);
   color: var(--text-primary);
 }
 .ProseMirror p { margin-bottom: 0.75em; }
@@ -411,15 +429,18 @@ svg g[data-menu-target] > circle {
   height: 0;
 }
 
+/* In-text links. Each colour is var(--link-<kind>, <automatic>): Settings →
+   Appearance → Link colours sets the var, and unset falls back to these. */
+
 /* Wiki links inside editor */
 .wiki-link {
-  color:  #efc750;
-  border-bottom: 1px dashed var(--gold-dim);
+  color: var(--link-wiki, #efc750);
+  border-bottom: 1px dashed var(--link-wiki-line, var(--gold-dim));
   cursor: pointer;
   transition: color var(--transition);
   font-style: italic;
 }
-.wiki-link:hover { color: #927b35; border-bottom-style: solid; }
+.wiki-link:hover { color: var(--link-wiki-hover, #927b35); border-bottom-style: solid; }
 
 .wiki-link-broken {
   color: #e05555 !important;
@@ -441,13 +462,13 @@ svg g[data-menu-target] > circle {
 
 /* Session links inside editor */
 .session-link {
-  color: #4697ed;
-  border-bottom: 1px dashed #5b9fe844;
+  color: var(--link-session, #4697ed);
+  border-bottom: 1px dashed var(--link-session-line, #5b9fe844);
   cursor: help;
   transition: color var(--transition);
   font-style: italic;
 }
-.session-link:hover { color: #4c71b0; border-bottom-style: solid; }
+.session-link:hover { color: var(--link-session-hover, #4c71b0); border-bottom-style: solid; }
 
 .session-link-broken {
   color: #e05555 !important;
@@ -458,13 +479,13 @@ svg g[data-menu-target] > circle {
 
 /* Spell links inside editor */
 .spell-link {
-  color: #8b63f1;
-  border-bottom: 1px dashed #9b7de844;
+  color: var(--link-spell, #8b63f1);
+  border-bottom: 1px dashed var(--link-spell-line, #9b7de844);
   cursor: help;
   transition: color var(--transition);
   font-style: italic;
 }
-.spell-link:hover { color: #6043a8; border-bottom-style: solid; }
+.spell-link:hover { color: var(--link-spell-hover, #6043a8); border-bottom-style: solid; }
 
 .spell-link-broken {
   color: #e05555 !important;
@@ -473,9 +494,9 @@ svg g[data-menu-target] > circle {
 }
 
 /* Sound links inside editor — a soundboard shortcut, coloured by the same
-   category colours the soundboard uses. */
+   category colours the soundboard uses, unless a sound-link colour is chosen. */
 .sound-link {
-  --sound-color: #f59e0b;
+  --sound-color: var(--link-sound, #f59e0b);
   color: var(--sound-color);
   border: 1px solid color-mix(in srgb, var(--sound-color) 45%, transparent);
   background: color-mix(in srgb, var(--sound-color) 10%, transparent);
@@ -484,8 +505,8 @@ svg g[data-menu-target] > circle {
   cursor: pointer;
   transition: opacity var(--transition), background var(--transition);
 }
-.sound-link[data-sound-category="ambience"] { --sound-color: #3b82f6; }
-.sound-link[data-sound-category="music"]    { --sound-color: #10b981; }
+.sound-link[data-sound-category="ambience"] { --sound-color: var(--link-sound, #3b82f6); }
+.sound-link[data-sound-category="music"]    { --sound-color: var(--link-sound, #10b981); }
 .sound-link::before { content: '♪ '; font-size: 0.85em; opacity: 0.8; }
 .sound-link:hover { background: color-mix(in srgb, var(--sound-color) 22%, transparent); }
 

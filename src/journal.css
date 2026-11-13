@@ -25,8 +25,10 @@
   --j-engrave:  0 1px 0 var(--j-ink);
   /* Slab buttons: the WoW red, mixed into the base so it sits with any palette.
      Lettering stays light gold on it in both modes. */
-  --j-slab:      color-mix(in srgb, var(--crimson) 62%, var(--bg-elevated));
-  --j-slab-text: color-mix(in srgb, var(--gold) 55%, #fff3c8);
+  /* The secondary colour when one is chosen (Settings > Appearance), else the WoW red. */
+  --j-slab:      color-mix(in srgb, var(--secondary, var(--crimson)) 62%, var(--bg-elevated));
+  /* Lettering on a slab follows the chosen text colour, not the accent. */
+  --j-slab-text: var(--text-primary);
   /* Grain, as a data-URI — light flecks on dark bases. */
   --j-grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.05 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   --j-mottle: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='420' height='420'><filter id='b'><feTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='3' seed='4'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.22 0'/></filter><rect width='100%' height='100%' filter='url(%23b)'/></svg>");
@@ -100,7 +102,7 @@
   box-shadow: inset 0 0 0 1px var(--j-sheen) !important;
   margin-bottom: 0 !important; padding-bottom: 7px !important;
 }
-[data-skin="journal"] .tab:hover { background: linear-gradient(180deg, var(--bg-active), var(--bg-hover)) !important; color: var(--j-gold-hi) !important; }
+[data-skin="journal"] .tab:hover { background: linear-gradient(180deg, var(--bg-active), var(--bg-hover)) !important; color: var(--text-primary) !important; }
 [data-skin="journal"] .tab.tab-active {
   background: linear-gradient(180deg, color-mix(in srgb, var(--gold) 22%, var(--bg-active)), var(--bg-elevated)) !important;
   box-shadow: inset 0 0 0 1px var(--gold-dim), inset 0 2px 0 var(--gold) !important;
@@ -110,8 +112,9 @@
 /* ═══ Type ═══════════════════════════════════════════════════════════════════ */
 [data-skin="journal"] h1,
 [data-skin="journal"] .modal-title {
-  color: var(--j-gold-hi);
-  text-shadow: var(--j-engrave), 0 0 12px color-mix(in srgb, var(--gold) 25%, transparent);
+  /* Page titles take the text colour; the accent stays on icons, borders and fills. */
+  color: var(--text-primary);
+  text-shadow: var(--j-engrave), 0 0 12px color-mix(in srgb, var(--text-primary) 14%, transparent);
   letter-spacing: 0.06em;
 }
 [data-skin="journal"] h2,
@@ -208,6 +211,12 @@
 [data-skin="journal"][data-mode="light"] .btn:active {
   background: linear-gradient(180deg, var(--bg-hover), var(--bg-surface));
   box-shadow: inset 0 0 0 1px var(--gold-dim), inset 0 2px 4px var(--j-shade);
+}
+/* A chosen secondary colour edges the plain buttons on vellum. :where() keeps this from
+   outranking the hover rule above, and primary buttons keep the accent. */
+[data-skin="journal"][data-mode="light"] .btn:where(:not(.btn-primary):not(.btn-ghost)) {
+  border-color: var(--secondary-dim, var(--j-ink));
+  box-shadow: inset 0 0 0 1px var(--secondary-border, var(--j-trim)), inset 0 1px 0 1px rgba(255,255,255,0.6), 0 1px 2px var(--j-shade);
 }
 [data-skin="journal"] .btn-danger { color: color-mix(in srgb, var(--danger) 55%, #fff); }
 [data-skin="journal"][data-mode="light"] .btn-danger { color: var(--danger); }
@@ -412,20 +421,20 @@
 [data-skin="journal"][data-pages="parchment"] .ProseMirror mark { background: rgba(230,180,60,0.45); color: inherit; }
 [data-skin="journal"][data-pages="parchment"] .ProseMirror .selectedCell::after { background: rgba(160,110,30,0.15); }
 
-[data-skin="journal"][data-pages="parchment"] .ProseMirror .wiki-link            { color: var(--j-page-accent); border-bottom-color: color-mix(in srgb, var(--j-page-accent) 50%, transparent); }
-[data-skin="journal"][data-pages="parchment"] .ProseMirror .wiki-link:hover      { color: color-mix(in srgb, var(--j-page-accent) 70%, #c07010); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .wiki-link            { color: var(--link-wiki, var(--j-page-accent)); border-bottom-color: var(--link-wiki-line, color-mix(in srgb, var(--j-page-accent) 50%, transparent)); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .wiki-link:hover      { color: var(--link-wiki-hover, color-mix(in srgb, var(--j-page-accent) 70%, #c07010)); }
 [data-skin="journal"][data-pages="parchment"] .ProseMirror .wiki-mention-suggest { border-bottom-color: color-mix(in srgb, var(--j-page-accent) 50%, transparent); }
 [data-skin="journal"][data-pages="parchment"] .ProseMirror .wiki-mention-suggest:hover { background: rgba(160,110,30,0.12); }
-[data-skin="journal"][data-pages="parchment"] .ProseMirror .session-link         { color: #1f4f8f; border-bottom-color: rgba(31,79,143,0.45); }
-[data-skin="journal"][data-pages="parchment"] .ProseMirror .session-link:hover   { color: #2c6bbd; }
-[data-skin="journal"][data-pages="parchment"] .ProseMirror .spell-link           { color: #5b2f9e; border-bottom-color: rgba(91,47,158,0.45); }
-[data-skin="journal"][data-pages="parchment"] .ProseMirror .spell-link:hover     { color: #7440be; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .session-link         { color: var(--link-session, #1f4f8f); border-bottom-color: var(--link-session-line, rgba(31,79,143,0.45)); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .session-link:hover   { color: var(--link-session-hover, #2c6bbd); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .spell-link           { color: var(--link-spell, #5b2f9e); border-bottom-color: var(--link-spell-line, rgba(91,47,158,0.45)); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .spell-link:hover     { color: var(--link-spell-hover, #7440be); }
 [data-skin="journal"][data-pages="parchment"] .ProseMirror .web-link             { color: #0f6470; border-bottom-color: rgba(15,100,112,0.45); }
 [data-skin="journal"][data-pages="parchment"] .ProseMirror .web-link:hover       { color: #17849c; }
 [data-skin="journal"][data-pages="parchment"] .ProseMirror :is(.wiki-link-broken, .session-link-broken, .spell-link-broken) { color: #a0261c !important; border-bottom-color: #a0261c !important; }
-[data-skin="journal"][data-pages="parchment"] .ProseMirror .sound-link           { --sound-color: #9a5a06; }
-[data-skin="journal"][data-pages="parchment"] .ProseMirror .sound-link[data-sound-category="ambience"] { --sound-color: #1f4f8f; }
-[data-skin="journal"][data-pages="parchment"] .ProseMirror .sound-link[data-sound-category="music"]    { --sound-color: #19704a; }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .sound-link           { --sound-color: var(--link-sound, #9a5a06); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .sound-link[data-sound-category="ambience"] { --sound-color: var(--link-sound, #1f4f8f); }
+[data-skin="journal"][data-pages="parchment"] .ProseMirror .sound-link[data-sound-category="music"]    { --sound-color: var(--link-sound, #19704a); }
 [data-skin="journal"][data-pages="parchment"] .ProseMirror .dm-only { background: rgba(180,40,30,0.12); border-bottom-color: rgba(160,38,28,0.6); }
 
 /* ═══ Matte finish ═══════════════════════════════════════════════════════════

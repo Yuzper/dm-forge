@@ -125,8 +125,6 @@ export interface BaseTheme {
   preview: string
   /** Surfaces, borders, shadows and texture — never accent or semantics. */
   vars: Record<string, string>
-  /** Section identity colours tuned for this base. User overrides win. */
-  sections: Record<SectionView, string>
   /** Text palette used when the current one doesn't suit this base's mode. */
   text: TextThemeKey
 }
@@ -151,15 +149,6 @@ export const BASES: Record<BaseKey, BaseTheme> = {
       '--shadow-lg':    '0 8px 40px rgba(0,0,0,0.8)',
       ...DARK_TEXTURE,
     },
-    // Warmed to sit with the aged-paper surfaces.
-    sections: {
-      'wiki':        '#5b9fe8',
-      'dm-notes':    '#fe6565',
-      'loot-tables': '#49c185',
-      'relations':   '#b07de8',
-      'timeline':    '#e88c3a',
-      'soundboard':  '#4cc9d6',
-    },
   },
 
   charcoal: {
@@ -180,15 +169,6 @@ export const BASES: Record<BaseKey, BaseTheme> = {
       '--shadow-lg':    '0 8px 40px rgba(0,0,0,0.8)',
       ...DARK_TEXTURE,
     },
-    // Neutral ground, so the identity colours run at full strength.
-    sections: {
-      'wiki':        '#64a8ff',
-      'dm-notes':    '#ff6b6b',
-      'loot-tables': '#3ecf87',
-      'relations':   '#b07dff',
-      'timeline':    '#ff9a3c',
-      'soundboard':  '#3ed0e0',
-    },
   },
 
   midnight: {
@@ -208,15 +188,6 @@ export const BASES: Record<BaseKey, BaseTheme> = {
       '--shadow-md':    '0 4px 20px rgba(2,6,16,0.7)',
       '--shadow-lg':    '0 8px 40px rgba(2,6,16,0.85)',
       ...DARK_TEXTURE,
-    },
-    // Cooled so nothing clashes with the blue ground.
-    sections: {
-      'wiki':        '#6cb2ff',
-      'dm-notes':    '#ff7a86',
-      'loot-tables': '#46d1a0',
-      'relations':   '#a98cff',
-      'timeline':    '#f2a154',
-      'soundboard':  '#4ad6e8',
     },
   },
 
@@ -241,14 +212,6 @@ export const BASES: Record<BaseKey, BaseTheme> = {
       '--shadow-lg':    '0 10px 44px rgba(0,0,0,0.88)',
       ...DARK_TEXTURE,
     },
-    sections: {
-      'wiki':        '#6fb1f0',
-      'dm-notes':    '#f26f5e',
-      'loot-tables': '#6fcf8a',
-      'relations':   '#b88cf0',
-      'timeline':    '#f0a040',
-      'soundboard':  '#56cfd8',
-    },
   },
 
   paper: {
@@ -269,15 +232,6 @@ export const BASES: Record<BaseKey, BaseTheme> = {
       '--shadow-md':    '0 4px 16px rgba(74,58,32,0.16)',
       '--shadow-lg':    '0 8px 32px rgba(74,58,32,0.22)',
       ...LIGHT_TEXTURE,
-    },
-    // Darkened and saturated so they carry against a light ground.
-    sections: {
-      'wiki':        '#2c6bbd',
-      'dm-notes':    '#c8433f',
-      'loot-tables': '#1f8b5b',
-      'relations':   '#7440be',
-      'timeline':    '#b4631b',
-      'soundboard':  '#17849c',
     },
   },
 }
@@ -348,6 +302,22 @@ export function accentVars(accent: string, mode: Mode): Record<string, string> {
     // put near-white on the stock gold at a contrast of 2.1:1, where the
     // original (and the far better) choice is near-black at 8.2:1.
     '--text-inverse': contrastRatio(hex, '#141109') >= contrastRatio(hex, '#fbf7ee') ? '#141109' : '#fbf7ee',
+  }
+}
+
+/** The vars a chosen secondary colour sets. Absent (removed) when the colour is automatic, so the
+ *  stylesheet's `var(--secondary, <old value>)` fallbacks keep the look exactly as it was. */
+const SECONDARY_KEYS = ['--secondary', '--secondary-dim', '--secondary-border', '--secondary-glow'] as const
+export function secondaryVars(secondary: string | null, mode: Mode): Record<string, string> {
+  const hex = secondary ? normalizeHex(secondary) : null
+  if (!hex) return {}
+  const light = mode === 'light'
+  const [h, s, l] = toHsl(hex)
+  return {
+    '--secondary': hex,
+    '--secondary-dim': light ? fromHsl(h, s * 0.9, l - 0.12) : fromHsl(h, s * 0.86, l - 0.165),
+    '--secondary-border': rgba(hex, light ? 0.55 : 0.5),
+    '--secondary-glow': rgba(hex, light ? 0.18 : 0.16),
   }
 }
 
@@ -431,6 +401,47 @@ export const TEXT_THEMES: Record<TextThemeKey, TextTheme> = {
 
 export function textThemesFor(mode: Mode): TextThemeKey[] {
   return (Object.keys(TEXT_THEMES) as TextThemeKey[]).filter(k => TEXT_THEMES[k].mode === mode)
+}
+
+/** A text palette from one chosen colour: the secondary and muted shades are it
+ *  faded toward the base's ground, the way the hand-made palettes are built. */
+export function customTextVars(hex: string, base: BaseTheme): Record<string, string> {
+  const ground = base.vars['--bg-base']
+  return {
+    '--text-primary': hex,
+    '--text-secondary': mix(hex, ground, 0.36),
+    '--text-muted': mix(hex, ground, 0.62),
+  }
+}
+
+// ── Link colours ──────────────────────────────────────────────────────────────
+// The four kinds of in-text link each have their own colour in the stylesheets.
+// A chosen colour is written as `--link-<kind>` (plus hover and underline
+// shades); unset means automatic, and the stylesheets fall back to their own
+// colours — including the inks tuned for Journal's parchment pages.
+
+export type LinkKind = 'wiki' | 'session' | 'spell' | 'sound'
+
+export const LINK_KINDS: { key: LinkKind; label: string; hint: string }[] = [
+  { key: 'wiki',    label: 'Wiki',    hint: 'Links to wiki articles' },
+  { key: 'session', label: 'Session', hint: 'Links to sessions' },
+  { key: 'spell',   label: 'Spell',   hint: 'Links to spells' },
+  { key: 'sound',   label: 'Sound',   hint: 'Soundboard links (all categories)' },
+]
+
+const LINK_VAR_KEYS = LINK_KINDS.flatMap(({ key }) => [`--link-${key}`, `--link-${key}-hover`, `--link-${key}-line`])
+
+export function linkVars(links: Partial<Record<LinkKind, string>>, mode: Mode): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const { key } of LINK_KINDS) {
+    const hex = normalizeHex(links[key])
+    if (!hex) continue
+    const [h, s, l] = toHsl(hex)
+    out[`--link-${key}`] = hex
+    out[`--link-${key}-hover`] = mode === 'light' ? fromHsl(h, s, l - 0.1) : fromHsl(h, s, l + 0.1)
+    out[`--link-${key}-line`] = rgba(hex, 0.45)
+  }
+  return out
 }
 
 // ── Type faces ────────────────────────────────────────────────────────────────
@@ -536,6 +547,16 @@ export function clampDropCapLines(n: unknown): number {
   return Math.min(DROP_CAP_LINES.max, Math.max(DROP_CAP_LINES.min, Math.round(v * 2) / 2))
 }
 
+/** Body text in the page editors: size as a percentage of the 16px base, and line spacing. */
+export const TEXT_SIZE = { min: 85, max: 140, step: 5, default: 100 } as const
+export const LINE_HEIGHT = { min: 1.4, max: 2.2, step: 0.05, default: 1.75 } as const
+const clampTo = (v: unknown, r: { min: number; max: number; default: number }) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? Math.min(r.max, Math.max(r.min, n)) : r.default
+}
+export const clampTextSize = (v: unknown) => Math.round(clampTo(v, TEXT_SIZE))
+export const clampLineHeight = (v: unknown) => Math.round(clampTo(v, LINE_HEIGHT) * 20) / 20
+
 export interface Appearance {
   design: Design
   /** Journal only: editors become a sheet of parchment with brown ink. */
@@ -550,22 +571,28 @@ export interface Appearance {
   dropCapNotes: boolean
   base: BaseKey
   accent: string
+  /** A second colour for secondary buttons. null = automatic: the Journal's crimson slab, plain buttons in Classic. */
+  secondary: string | null
   tint: boolean
   text: TextThemeKey
+  /** A text colour of the DM's own, used instead of the `text` palette. null = use the palette. */
+  textCustom: string | null
+  /** Colours for in-text links by kind; a missing kind is automatic. */
+  links: Partial<Record<LinkKind, string>>
   fonts: FontChoice
-  /** Per-section overrides on top of the base's tuned defaults. */
-  sections: Partial<Record<SectionView, string>>
+  /** Page text size, percent of 16px (TEXT_SIZE range). */
+  textSize: number
+  /** Page text line spacing, a unitless multiplier (LINE_HEIGHT range). */
+  lineHeight: number
 }
 
-/** The section colours actually in force: the base's set, user overrides on top. */
+/** Every section takes the accent: one colour for the whole app, so a section is
+ *  told apart by its name and icon. Kept as a per-section record because pages
+ *  read their colour from it (and mix alpha into the hex). */
 export function resolveSections(a: Appearance): Record<SectionView, string> {
-  const base = BASES[a.base] ?? BASES.parchment
-  const out = { ...base.sections }
-  for (const [view, hex] of Object.entries(a.sections)) {
-    const valid = normalizeHex(hex)
-    if (valid) out[view as SectionView] = valid
-  }
-  return out
+  const hex = normalizeHex(a.accent) ?? DEFAULT_ACCENT
+  // Listed here rather than imported: sections.ts calls into this file at load.
+  return { 'wiki': hex, 'dm-notes': hex, 'loot-tables': hex, 'relations': hex, 'timeline': hex, 'soundboard': hex }
 }
 
 /** A text palette that suits the base, falling back when the mode doesn't match. */
@@ -590,12 +617,18 @@ export function applyAppearance(a: Appearance): void {
     ...(a.tint ? tintedSurfaces(base, a.accent) : {}),
     ...SEMANTICS[base.mode],
     ...accentVars(a.accent, base.mode),
-    ...TEXT_THEMES[resolveTextTheme(a)].vars,
+    ...secondaryVars(a.secondary, base.mode),
+    ...(normalizeHex(a.textCustom) ? customTextVars(normalizeHex(a.textCustom)!, base) : TEXT_THEMES[resolveTextTheme(a)].vars),
+    ...linkVars(a.links, base.mode),
     '--font-display': display.stack,
     '--font-body': body.stack,
     '--font-ui': ui.stack,
   }
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v)
+  // Back to automatic: take the secondary vars off, so nothing lingers from the last look.
+  if (!vars['--secondary']) for (const k of SECONDARY_KEYS) root.style.removeProperty(k)
+  // Same for link colours put back to automatic.
+  for (const k of LINK_VAR_KEYS) if (!vars[k]) root.style.removeProperty(k)
 
   // Section colours ride along as vars too, for stylesheets and for anything
   // that would rather not import the record.
@@ -610,6 +643,9 @@ export function applyAppearance(a: Appearance): void {
   root.dataset.pages = a.design !== 'classic' && a.parchment ? 'parchment' : 'theme'
   root.dataset.gloss = a.gloss ? 'on' : 'off'
   root.style.setProperty('--dropcap-lines', String(clampDropCapLines(a.dropCapLines)))
+  // Read by .ProseMirror in index.css, so every page editor follows it.
+  root.style.setProperty('--prose-size', `${(16 * clampTextSize(a.textSize)) / 100}px`)
+  root.style.setProperty('--prose-leading', String(clampLineHeight(a.lineHeight)))
 }
 
 // ── Storage ───────────────────────────────────────────────────────────────────
@@ -628,8 +664,10 @@ export const DEFAULT_DESIGN: Design = 'journal'
 export const DEFAULT_APPEARANCE: Appearance = {
   design: DEFAULT_DESIGN, parchment: true, gloss: true,
   dropCap: true, dropCapLines: DROP_CAP_LINES.default, dropCapNotes: false,
-  base: 'parchment', accent: DEFAULT_ACCENT, tint: false, text: 'parchment',
-  fonts: { ...DEFAULT_FONTS }, sections: {},
+  base: 'parchment', accent: DEFAULT_ACCENT, secondary: null, tint: false, text: 'parchment',
+  textCustom: null, links: {},
+  fonts: { ...DEFAULT_FONTS },
+  textSize: TEXT_SIZE.default, lineHeight: LINE_HEIGHT.default,
 }
 
 // What each v1 preset becomes: its base family, its accent, and the tint that
@@ -642,11 +680,9 @@ const LEGACY: Record<string, Pick<Appearance, 'base' | 'accent' | 'tint'>> = {
   void:      { base: 'charcoal',  accent: '#b04dff', tint: true },
 }
 
-function parse(raw: string | null): Appearance | null {
-  if (!raw) return null
-  try {
-    const p = JSON.parse(raw)
-    return {
+/** Any stored or imported appearance made safe: every field validated, missing ones defaulted. */
+export function normalizeAppearance(p: any): Appearance {
+  return {
       design: p?.design === 'classic' || p?.design === 'journal' ? p.design : DEFAULT_DESIGN,
       parchment: p?.parchment !== false,
       gloss: p?.gloss !== false,
@@ -655,11 +691,23 @@ function parse(raw: string | null): Appearance | null {
       dropCapNotes: !!p?.dropCapNotes,
       base: BASES[p?.base as BaseKey] ? p.base : DEFAULT_APPEARANCE.base,
       accent: normalizeHex(p?.accent) ?? DEFAULT_ACCENT,
+      secondary: normalizeHex(p?.secondary) ?? null,
       tint: !!p?.tint,
       text: TEXT_THEMES[p?.text as TextThemeKey] ? p.text : DEFAULT_APPEARANCE.text,
+      textCustom: normalizeHex(p?.textCustom) ?? null,
+      links: Object.fromEntries(LINK_KINDS
+        .map(({ key }) => [key, normalizeHex(p?.links?.[key])] as const)
+        .filter(([, hex]) => hex)) as Partial<Record<LinkKind, string>>,
       fonts: { ...DEFAULT_FONTS, ...(p?.fonts && typeof p.fonts === 'object' ? p.fonts : {}) },
-      sections: p?.sections && typeof p.sections === 'object' ? p.sections : {},
+      textSize: clampTextSize(p?.textSize),
+      lineHeight: clampLineHeight(p?.lineHeight),
     }
+}
+
+function parse(raw: string | null): Appearance | null {
+  if (!raw) return null
+  try {
+    return normalizeAppearance(JSON.parse(raw))
   } catch {
     return null
   }
@@ -683,9 +731,11 @@ export function loadAppearance(campaignId?: number | null): Appearance {
         design: DEFAULT_DESIGN, parchment: true, gloss: true,
         dropCap: true, dropCapLines: DROP_CAP_LINES.default, dropCapNotes: false,
         ...legacy,
+        secondary: null,
+        textCustom: null, links: {},
         text: legacyText && TEXT_THEMES[legacyText] ? legacyText : BASES[legacy.base].text,
         fonts: { ...DEFAULT_FONTS },
-        sections: {},
+        textSize: TEXT_SIZE.default, lineHeight: LINE_HEIGHT.default,
       }
     }
   } catch { /* fall through to defaults */ }

@@ -1,5 +1,5 @@
 // path: src/components/SettingsModal.tsx
-// Settings, in a dialog with a left rail: Appearance, Data, Help.
+// Settings, in a dialog with a left rail: Appearance, Maps & Table, Keyboard, Data, Help.
 //
 // This lived in two footer popovers until the appearance model grew a base, a
 // free accent, fonts, six section colours and a per-campaign scope — at which
@@ -9,22 +9,31 @@ import { Fragment, useEffect, useState } from 'react'
 import type React from 'react'
 import {
   Palette, Database, Lightbulb, Download, Upload, AlertCircle, Layers,
-  Droplet, RotateCcw, Check, ScrollText, Sparkles, CaseUpper, NotebookPen,
+  RotateCcw, Check, ScrollText, Sparkles, CaseUpper, NotebookPen, Map as MapIcon, Keyboard, Plus, X, Link2,
 } from 'lucide-react'
 import { useStore } from '../store/store'
 import Modal from './Modal'
 import SwatchPicker from './SwatchPicker'
 import {
-  BASES, TEXT_THEMES, LOOKS, FONTS, textThemesFor, resolveTextTheme, resolveSections,
-  contrastRatio, DEFAULT_APPEARANCE, DEFAULT_ACCENT, DEFAULT_FONTS, DROP_CAP_LINES,
+  BASES, TEXT_THEMES, LOOKS, FONTS, textThemesFor, resolveTextTheme, LINK_KINDS,
+  contrastRatio, DEFAULT_APPEARANCE, DEFAULT_ACCENT, DEFAULT_FONTS, DROP_CAP_LINES, TEXT_SIZE, LINE_HEIGHT,
 } from '../constants/themes'
-import type { BaseKey, Look } from '../constants/themes'
-import { SECTION_VIEWS, SECTION_LABELS, SECTION_ICONS, type SectionView } from '../constants/sections'
+import type { BaseKey, Look, LinkKind } from '../constants/themes'
+import { Group, LinkButton, Tile, TileLabel, ToggleRow, ActionRow, ROW, SettingsButton, SliderRow, Hint } from './settings/settingsShared'
+import MapsTableTab from './settings/MapsTableTab'
+import KeyboardTab from './settings/KeyboardTab'
+import { useThrottledCommit } from '../hooks/useThrottledCommit'
+import { customTemplates, saveTemplate, deleteTemplate, matchesTemplate, MAX_NAME } from '../utils/customTemplates'
+import type { CustomTemplate } from '../utils/customTemplates'
+import { useConfirmDelete } from '../hooks/useConfirmDelete'
+import { keybindings, formatChord, BINDING_ORDER, BINDING_META } from '../utils/keybindings'
 
-type Tab = 'appearance' | 'data' | 'help'
+type Tab = 'appearance' | 'maps' | 'keyboard' | 'data' | 'help'
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'appearance', label: 'Appearance', icon: <Palette size={14} /> },
+  { key: 'maps',       label: 'Maps & Table', icon: <MapIcon size={14} /> },
+  { key: 'keyboard',   label: 'Keyboard',   icon: <Keyboard size={14} /> },
   { key: 'data',       label: 'Data',       icon: <Database size={14} /> },
   { key: 'help',       label: 'Help',       icon: <Lightbulb size={14} /> },
 ]
@@ -68,6 +77,8 @@ export default function SettingsModal() {
 
         <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '16px 20px 22px' }}>
           {settingsTab === 'appearance' && <AppearanceTab />}
+          {settingsTab === 'maps' && <MapsTableTab />}
+          {settingsTab === 'keyboard' && <KeyboardTab />}
           {settingsTab === 'data' && <DataTab />}
           {settingsTab === 'help' && <HelpTab />}
         </div>
@@ -76,131 +87,145 @@ export default function SettingsModal() {
   )
 }
 
-// ── Shared bits ───────────────────────────────────────────────────────────────
+// ── Appearance ────────────────────────────────────────────────────────────────
 
-function Group({ title, action, children }: {
-  title: string
-  action?: React.ReactNode
-  children: React.ReactNode
-}) {
+// ── Live preview ──────────────────────────────────────────────────────────────
+
+/**
+ * A short page of text that always shows the look currently chosen.
+ *
+ * It is built from the same markup the editors use -- a `.ProseMirror` inside a
+ * `data-dropcap` wrapper -- so it picks up the real stylesheet instead of a
+ * look-alike: parchment pages, drop caps and their height, fonts, text colour,
+ * accent, gloss and the Classic/Journal design all come through unchanged. The
+ * settings already apply to the whole app as you click, so there is nothing to
+ * pass in; this just needs to sit where it stays visible while you scroll.
+ */
+/** 'rgb(1, 2, 3)' / 'rgba(…)' → '#010203'. */
+function rgbToHex(css: string): string | null {
+  const m = /rgba?\(\s*(\d+)[ ,]+(\d+)[ ,]+(\d+)/.exec(css)
+  return m ? '#' + m.slice(1, 4).map(n => Number(n).toString(16).padStart(2, '0')).join('') : null
+}
+
+/** The link colours in force right now, read off the preview (so Journal's parchment inks
+ *  come through): turning "Default link colours" off starts from exactly what you saw. */
+function readLinkColours(): Partial<Record<LinkKind, string>> {
+  const out: Partial<Record<LinkKind, string>> = {}
+  for (const { key } of LINK_KINDS) {
+    const el = document.querySelector(`[data-appearance-preview] .${key}-link`)
+    const hex = el ? rgbToHex(getComputedStyle(el).color) : null
+    if (hex) out[key] = hex
+  }
+  return out
+}
+
+function AppearancePreview() {
+  const dropCap = useStore(s => s.appearance.dropCap)
   return (
-    <section style={{ marginBottom: 20 }}>
+    <div style={{
+      // Pinned to the top of the scrolling settings pane (cancelling its padding)
+      // so the options below can be changed while watching the result.
+      position: 'sticky', top: -16, zIndex: 4,
+      margin: '-16px -20px 14px', padding: '10px 20px 8px',
+      background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)',
+    }}>
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9,
-        fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
-        color: 'var(--text-muted)',
+        fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase',
+        color: 'var(--text-muted)', marginBottom: 6, fontFamily: 'var(--font-ui)',
       }}>
-        <span style={{ flex: 1 }}>{title}</span>
-        {action}
+        Preview
       </div>
-      {children}
-    </section>
-  )
-}
-
-function LinkButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className="hover-gold"
-      style={{
-        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-        color: 'var(--text-muted)', fontSize: 10, fontWeight: 700,
-        letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'var(--font-ui)',
-        transition: 'color var(--transition)',
-      }}
-    >
-      {children}
-    </button>
-  )
-}
-
-function Tile({ active, onClick, title, children, width = 78 }: {
-  active: boolean
-  onClick: () => void
-  title?: string
-  children: React.ReactNode
-  width?: number
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      style={{
-        width, padding: 5, cursor: 'pointer',
-        background: active ? 'var(--gold-glow)' : 'transparent',
-        border: `1px solid ${active ? 'var(--border-gold)' : 'var(--border)'}`,
-        borderRadius: 'var(--radius-sm)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-        fontFamily: 'var(--font-ui)', transition: 'all var(--transition)',
-      }}
-      className={active ? '' : 'hover-gold-border'}
-    >
-      {children}
-    </button>
-  )
-}
-
-function TileLabel({ active, children }: { active: boolean; children: React.ReactNode }) {
-  return (
-    <span style={{ fontSize: 10, color: active ? 'var(--gold)' : 'var(--text-muted)', letterSpacing: '0.03em' }}>
-      {children}
-    </span>
-  )
-}
-
-const ROW: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6 }
-
-function ToggleRow({ icon, label, value, on, off, onClick, hint }: {
-  icon: React.ReactNode
-  label: string
-  value: boolean
-  on: string
-  off: string
-  onClick: () => void
-  hint?: string
-}) {
-  return (
-    <div>
-      <button
-        onClick={onClick}
-        className="menu-item menu-item-sm"
-        style={{
-          borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
-          color: value ? 'var(--gold)' : 'var(--text-secondary)',
-        }}
-      >
-        {icon}
-        <span style={{ flex: 1, textAlign: 'left' }}>{label}</span>
-        <span style={{ fontSize: 11, opacity: 0.75 }}>{value ? on : off}</span>
-      </button>
-      {hint && (
-        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 5 }}>
-          {hint}
+      <div data-appearance-preview style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', padding: '8px 10px', maxHeight: 168, overflow: 'hidden' }}>
+        <div data-dropcap={dropCap ? 'on' : 'off'}>
+          {/* Padding and height are overridden: the parchment sheet is built for a
+              full page, and this is a postage stamp of one. */}
+          <div className="ProseMirror" style={{ minHeight: 0, padding: '10px 18px', fontSize: 'calc(var(--prose-size, 16px) * 0.85)', lineHeight: 'calc(var(--prose-leading, 1.75) * 0.9)' }}>
+            {/* One of each link kind up front, so link colours show without scrolling. */}
+            <p>
+              The road narrows where the old oak stands, tended by <span className="wiki-link">Mira Thornwood</span>.
+              Since <span className="session-link">Session 3</span> travellers cast <span className="spell-link">Speak with Plants</span> there
+              and listen for <span className="sound-link" data-sound-category="ambience">Rustling Leaves</span>.
+            </p>
+            <h2 style={{ marginTop: 4 }}>The Hollow Oak</h2>
+            <p style={{ marginBottom: 0 }}>
+              She keeps the <strong>shrine</strong> and will trade <em>rumours</em> for a fair price.
+            </p>
+          </div>
         </div>
-      )}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <span className="btn btn-primary btn-sm" style={{ pointerEvents: 'none' }}>Primary</span>
+        <span className="btn btn-sm" style={{ pointerEvents: 'none' }}>Button</span>
+        <span className="badge" style={{ alignSelf: 'center' }}>Tag</span>
+      </div>
     </div>
   )
 }
 
-// ── Appearance ────────────────────────────────────────────────────────────────
+/**
+ * One of the DM's own templates. A small x in the corner removes it; the first
+ * press arms it (the x turns into "?") and a second press deletes, the same
+ * click-twice pattern the app's delete menus use. It is a sibling of the tile,
+ * not inside it, because a button cannot contain a button.
+ */
+function CustomTemplateTile({ template: t, active, onApply }: {
+  template: CustomTemplate
+  active: boolean
+  onApply: () => void
+}) {
+  const { confirming, trigger } = useConfirmDelete()
+  const tb = BASES[t.appearance.base] ?? BASES.parchment
+  return (
+    <div style={{ position: 'relative' }}>
+      <Tile active={active} width={92} title={`Your template — ${tb.label} base, ${t.appearance.accent}`} onClick={onApply}>
+        <div style={{
+          width: '100%', height: 30, borderRadius: 3, background: tb.preview, border: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+        }}>
+          <span style={{ width: 12, height: 12, borderRadius: '50%', background: t.appearance.accent }} />
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, color: TEXT_THEMES[t.appearance.text]?.preview, lineHeight: 1 }}>Aa</span>
+        </div>
+        <TileLabel active={active}>{t.name}</TileLabel>
+      </Tile>
+      <button
+        onClick={e => { e.stopPropagation(); trigger(() => deleteTemplate(t.id)) }}
+        title={confirming ? 'Click again to delete this template' : `Delete “${t.name}”`}
+        style={{
+          position: 'absolute', top: 2, right: 2, width: 18, height: 18, padding: 0, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 3,
+          background: confirming ? 'var(--danger)' : 'rgba(0,0,0,0.55)',
+          border: 'none', color: confirming ? '#fff' : 'rgba(255,255,255,0.75)',
+          fontSize: 11, fontWeight: 700, lineHeight: 1,
+        }}
+      >
+        {confirming ? '?' : <X size={11} />}
+      </button>
+    </div>
+  )
+}
 
 function AppearanceTab() {
   const {
-    appearance, setAppearance, setSectionColor, resetSectionColors, resetAppearance,
+    appearance, setAppearance, resetAppearance,
     recentAccents, bgStyle, setBgStyle,
     appearanceScope, setAppearanceScope, currentCampaign,
   } = useStore()
-  const [openSection, setOpenSection] = useState<SectionView | null>(null)
+  const custom = customTemplates.use().items
+  const [openLink, setOpenLink] = useState<LinkKind | null>(null)
+  const linksDefault = Object.keys(appearance.links).length === 0
+  const [saving, setSaving] = useState(false)
+  const [tplName, setTplName] = useState('')
+  const [sizeDraft, setSizeDraft, flushSize] = useThrottledCommit(appearance.textSize, v => setAppearance({ textSize: v }))
+  const [leadDraft, setLeadDraft, flushLead] = useThrottledCommit(appearance.lineHeight, v => setAppearance({ lineHeight: v }))
 
   const base = BASES[appearance.base]
   const textKey = resolveTextTheme(appearance)
-  const sections = resolveSections(appearance)
   const fonts = { ...DEFAULT_FONTS, ...appearance.fonts }
-  const overridden = Object.keys(appearance.sections).length > 0
   // 3:1 is the WCAG floor for UI elements and large text, which is what the
   // accent is used as — button labels, active rows, icons.
   const lowContrast = contrastRatio(appearance.accent, base.vars['--bg-surface']) < 3
+  // Body text wants 4.5:1 (WCAG AA).
+  const lowTextContrast = !!appearance.textCustom && contrastRatio(appearance.textCustom, base.vars['--bg-surface']) < 4.5
 
   const atDefaults =
     appearance.base === DEFAULT_APPEARANCE.base &&
@@ -210,16 +235,131 @@ function AppearanceTab() {
     fonts.display === DEFAULT_FONTS.display &&
     fonts.body === DEFAULT_FONTS.body &&
     fonts.ui === DEFAULT_FONTS.ui &&
-    !overridden && bgStyle === 'none'
+    !appearance.textCustom && Object.keys(appearance.links).length === 0 &&
+    bgStyle === 'none'
 
   const isLook = (l: Look) =>
     appearance.base === l.base && appearance.accent === l.accent &&
-    appearance.text === l.text && appearance.tint === l.tint
+    appearance.text === l.text && appearance.tint === l.tint && !appearance.textCustom
 
   const journal = appearance.design !== 'classic'
 
   return (
     <div>
+      <AppearancePreview />
+
+      <Group title="Templates">
+        <div style={ROW}>
+          {LOOKS.map(l => {
+            const active = isLook(l)
+            return (
+              <Tile
+                key={l.key} active={active} width={92}
+                title={`${BASES[l.base].label} base, ${l.accent}${l.tint ? ', tinted' : ''}`}
+                onClick={() => setAppearance({ base: l.base, accent: l.accent, secondary: null, text: l.text, textCustom: null, tint: l.tint, ...(l.fonts ? { fonts: l.fonts } : {}) })}
+              >
+                <div style={{
+                  width: '100%', height: 30, borderRadius: 3, position: 'relative',
+                  background: BASES[l.base].preview, border: '1px solid var(--border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                }}>
+                  <span style={{ width: 12, height: 12, borderRadius: '50%', background: l.accent }} />
+                  <span style={{
+                    fontFamily: 'var(--font-display)', fontSize: 12,
+                    color: TEXT_THEMES[l.text].preview, lineHeight: 1,
+                  }}>Aa</span>
+                </div>
+                <TileLabel active={active}>{l.label}</TileLabel>
+              </Tile>
+            )
+          })}
+          {custom.map(t => (
+            <CustomTemplateTile
+              key={t.id} template={t} active={matchesTemplate(t, appearance, bgStyle)}
+              onApply={() => {
+                setAppearance(t.appearance)
+                setBgStyle((BG_OPTIONS.some(o => o.value === t.bgStyle) ? t.bgStyle : 'none') as typeof bgStyle)
+              }}
+            />
+          ))}
+          {/* Where you look for templates is where saving one belongs: a tile in the row. */}
+          <button
+            onClick={() => { setSaving(v => !v); setTplName('') }}
+            title="Save the current look as a template of your own"
+            className={saving ? '' : 'hover-gold-border'}
+            style={{
+              width: 92, padding: 5, cursor: 'pointer', fontFamily: 'var(--font-ui)',
+              // A call to action rather than another swatch: a gold edge and a light fill.
+              background: saving ? 'var(--gold-glow)' : 'color-mix(in srgb, var(--gold) 7%, transparent)',
+              border: '1px dashed var(--border-gold)',
+              borderRadius: 'var(--radius-sm)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+              color: 'var(--text-primary)', transition: 'all var(--transition)',
+            }}
+          >
+            <div style={{ width: '100%', height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Plus size={20} color="var(--gold)" />
+            </div>
+            <span style={{ fontSize: 10, color: 'var(--text-primary)', letterSpacing: '0.03em', fontWeight: 600 }}>
+              {saving ? 'Cancel' : 'Save current'}
+            </span>
+          </button>
+        </div>
+        {saving && (
+          <form
+            onSubmit={e => {
+              e.preventDefault()
+              if (saveTemplate(tplName, appearance, bgStyle)) { setSaving(false); setTplName('') }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}
+          >
+            <input
+              autoFocus value={tplName} maxLength={MAX_NAME} placeholder="Name this look"
+              onChange={e => setTplName(e.target.value)}
+              className="input" style={{ flex: 1, height: 30 }}
+            />
+            <SettingsButton type="submit" primary disabled={!tplName.trim()}>Save</SettingsButton>
+          </form>
+        )}
+        {saving && (
+          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}>
+            Saves the design, colours, fonts, text size and backdrop. Saving under an existing name replaces it.
+          </div>
+        )}
+        {/* Same row and same row style: both are "what does this look apply to" controls. */}
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <ActionRow
+              icon={<RotateCcw size={13} />}
+              label="Reset to defaults"
+              onClick={resetAppearance}
+              disabled={atDefaults}
+              title={atDefaults ? 'Already at the original look' : 'Base, accent, text, faces and backdrop'}
+              trailing={atDefaults
+                ? <span style={{ fontSize: 11, opacity: 0.75 }}>Default</span>
+                : <span style={{
+                    width: 12, height: 12, borderRadius: 3,
+                    background: DEFAULT_ACCENT, border: '1px solid var(--border-light)',
+                  }} />}
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <ToggleRow
+              icon={<Layers size={13} />}
+              label="Per-campaign look"
+              value={appearanceScope === 'campaign'}
+              on="On" off="Off"
+              onClick={() => currentCampaign && setAppearanceScope(appearanceScope === 'campaign' ? 'global' : 'campaign')}
+              hint={currentCampaign
+                ? appearanceScope === 'campaign'
+                  ? `Changes here apply to ${currentCampaign.name} only. Turning this off deletes its look and returns to the app-wide one.`
+                  : `Turn on to fork the current look onto ${currentCampaign.name}. Other campaigns keep the app-wide one.`
+                : 'Open a campaign to give it a look of its own.'}
+            />
+          </div>
+        </div>
+      </Group>
+
+
       <Group title="Design">
         <div style={ROW}>
           {([
@@ -274,17 +414,15 @@ function AppearanceTab() {
             />
             {appearance.dropCap && (
               <>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 10px', fontSize: 12, color: 'var(--text-secondary)' }}>
-                  <span style={{ width: 34 }}>Size</span>
-                  <input type="range" min={DROP_CAP_LINES.min} max={DROP_CAP_LINES.max} step={DROP_CAP_LINES.step}
+                <div style={{ padding: '2px 10px' }}>
+                  <SliderRow
+                    label="Size" title="Drop-cap height in lines of text"
                     value={appearance.dropCapLines}
-                    onChange={e => setAppearance({ dropCapLines: Number(e.target.value) })}
-                    title="Drop-cap height in lines of text"
-                    style={{ width: 140, accentColor: 'var(--gold)' }} />
-                  <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)', fontSize: 11 }}>
-                    {appearance.dropCapLines} lines
-                  </span>
-                </label>
+                    min={DROP_CAP_LINES.min} max={DROP_CAP_LINES.max} step={DROP_CAP_LINES.step}
+                    display={`${appearance.dropCapLines} lines`}
+                    onChange={v => setAppearance({ dropCapLines: v })}
+                  />
+                </div>
                 <ToggleRow
                   icon={<NotebookPen size={13} />} label="Drop caps in notes too" value={appearance.dropCapNotes}
                   on="On" off="Articles only"
@@ -301,41 +439,13 @@ function AppearanceTab() {
         </div>
       </Group>
 
-      <Group title="Starting points">
-        <div style={ROW}>
-          {LOOKS.map(l => {
-            const active = isLook(l)
-            return (
-              <Tile
-                key={l.key} active={active} width={92}
-                title={`${BASES[l.base].label} base, ${l.accent}${l.tint ? ', tinted' : ''}`}
-                onClick={() => setAppearance({ base: l.base, accent: l.accent, text: l.text, tint: l.tint, ...(l.fonts ? { fonts: l.fonts } : {}) })}
-              >
-                <div style={{
-                  width: '100%', height: 30, borderRadius: 3, position: 'relative',
-                  background: BASES[l.base].preview, border: '1px solid var(--border)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                }}>
-                  <span style={{ width: 12, height: 12, borderRadius: '50%', background: l.accent }} />
-                  <span style={{
-                    fontFamily: 'var(--font-display)', fontSize: 12,
-                    color: TEXT_THEMES[l.text].preview, lineHeight: 1,
-                  }}>Aa</span>
-                </div>
-                <TileLabel active={active}>{l.label}</TileLabel>
-              </Tile>
-            )
-          })}
-        </div>
-      </Group>
-
       <Group title="Base">
         <div style={ROW}>
           {(Object.keys(BASES) as BaseKey[]).map(key => {
             const b = BASES[key]
             const active = appearance.base === key
             return (
-              <Tile key={key} active={active} onClick={() => setAppearance({ base: key })}>
+              <Tile key={key} active={active} onClick={() => setAppearance({ base: key, tint: false })}>
                 <div style={{
                   width: '100%', height: 26, borderRadius: 3, background: b.preview,
                   border: '1px solid var(--border)',
@@ -387,36 +497,100 @@ function AppearanceTab() {
           </div>
         )}
 
-        <div style={{ marginTop: 9 }}>
-          <ToggleRow
-            icon={<Droplet size={13} />} label="Tint surfaces" value={appearance.tint}
-            on="On" off="Off"
-            onClick={() => setAppearance({ tint: !appearance.tint })}
-            hint="Mixes a trace of the accent into the panels and borders. Subtle by design."
-          />
+      </Group>
+
+      <Group
+        title="Secondary colour"
+        action={appearance.secondary ? <LinkButton onClick={() => setAppearance({ secondary: null })}>Automatic</LinkButton> : undefined}
+      >
+        <SwatchPicker value={appearance.secondary} onChange={hex => setAppearance({ secondary: hex })} size={22} gap={6} />
+        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+          {appearance.secondary
+            ? 'Colours the secondary buttons. Primary actions keep the accent.'
+            : journal
+              ? 'Automatic: the red slab buttons. Pick a colour to make them match your accent instead.'
+              : 'Automatic: plain buttons. Pick a colour to give them a coloured edge and hover.'}
         </div>
       </Group>
 
-      <Group title="Text colour">
-        <div style={ROW}>
-          {textThemesFor(base.mode).map(key => {
-            const t = TEXT_THEMES[key]
-            const active = textKey === key
+      <Group title="Interface colour">
+        <SwatchPicker
+          value={appearance.textCustom ?? TEXT_THEMES[textKey].preview}
+          swatches={textThemesFor(base.mode).map(k => ({ color: TEXT_THEMES[k].preview, title: TEXT_THEMES[k].label }))}
+          onChange={hex => {
+            // A preset circle picks that palette; anything else is your own colour.
+            const preset = textThemesFor(base.mode).find(k => TEXT_THEMES[k].preview === hex)
+            setAppearance(preset ? { text: preset, textCustom: null } : { textCustom: hex })
+          }}
+          size={22} gap={6}
+        />
+        <Hint>
+          {appearance.textCustom
+            ? 'Your own colour. Lighter and darker shades for secondary text and hints are made from it.'
+            : `${TEXT_THEMES[textKey].label}. The colour of words across the app; the wheel picks your own.`}
+        </Hint>
+        {lowTextContrast && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 7, fontSize: 11, lineHeight: 1.45, color: 'var(--warning)' }}>
+            <AlertCircle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>Low contrast on {base.label}: text will be hard to read.</span>
+          </div>
+        )}
+      </Group>
+
+      <Group title="Link colours">
+        <ToggleRow
+          icon={<Link2 size={13} />}
+          label="Default link colours"
+          value={linksDefault}
+          on="On" off="Off"
+          onClick={() => {
+            if (linksDefault) setAppearance({ links: readLinkColours() })
+            else { setAppearance({ links: {} }); setOpenLink(null) }
+          }}
+          hint={linksDefault
+            ? "Each design's own colours, including the inks on Journal's parchment pages. Turn off, or pick a link below, to choose your own."
+            : "Turn on to go back to each design's own colours."}
+        />
+        <div style={{ ...ROW, marginTop: 10 }}>
+          {LINK_KINDS.map(k => {
+            const isOpen = openLink === k.key
+            const chosen = !!appearance.links[k.key]
             return (
-              <Tile key={key} active={active} onClick={() => setAppearance({ text: key })}>
+              <Tile key={k.key} active={isOpen} width={104} title={k.hint} onClick={() => setOpenLink(isOpen ? null : k.key)}>
                 <div style={{
-                  width: '100%', height: 26, borderRadius: 3, background: base.vars['--bg-base'],
-                  border: '1px solid var(--border)',
+                  width: '100%', height: 26, borderRadius: 3, background: 'var(--bg-base)', border: '1px solid var(--border)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontFamily: 'var(--font-display)', fontSize: 14, color: t.preview, lineHeight: 1,
+                  fontFamily: 'var(--font-body)', fontSize: 12.5, lineHeight: 1, pointerEvents: 'none',
                 }}>
-                  Aa
+                  <span className={`${k.key}-link`} data-sound-category={k.key === 'sound' ? 'ambience' : undefined}>
+                    {k.label}
+                  </span>
                 </div>
-                <TileLabel active={active}>{t.label}</TileLabel>
+                <TileLabel active={isOpen}>{chosen ? 'Custom' : 'Default'}</TileLabel>
               </Tile>
             )
           })}
         </div>
+        {openLink && (
+          <div style={{ marginTop: 10 }}>
+            <SwatchPicker
+              value={appearance.links[openLink] ?? null}
+              onChange={hex => setAppearance({ links: { ...appearance.links, [openLink]: hex } })}
+              size={22} gap={6}
+            />
+            {appearance.links[openLink] && (
+              <div style={{ marginTop: 8 }}>
+                <LinkButton onClick={() => {
+                  const { [openLink]: _gone, ...rest } = appearance.links
+                  setAppearance({ links: rest })
+                }}>Back to default</LinkButton>
+              </div>
+            )}
+            {openLink === 'sound' && (
+              <Hint>A sound colour replaces the per-category colours (effects, ambience, music).</Hint>
+            )}
+          </div>
+        )}
       </Group>
 
       <Group title="Type faces">
@@ -459,6 +633,25 @@ function AppearanceTab() {
         </div>
       </Group>
 
+      <Group
+        title="Page text"
+        action={(appearance.textSize !== TEXT_SIZE.default || appearance.lineHeight !== LINE_HEIGHT.default)
+          ? <LinkButton onClick={() => setAppearance({ textSize: TEXT_SIZE.default, lineHeight: LINE_HEIGHT.default })}>Reset</LinkButton>
+          : undefined}
+      >
+        <SliderRow
+          label="Size" value={sizeDraft} min={TEXT_SIZE.min} max={TEXT_SIZE.max} step={TEXT_SIZE.step}
+          display={`${sizeDraft}%`} onChange={setSizeDraft} onCommit={flushSize}
+        />
+        <SliderRow
+          label="Line spacing" value={leadDraft} min={LINE_HEIGHT.min} max={LINE_HEIGHT.max} step={LINE_HEIGHT.step}
+          display={leadDraft.toFixed(2)} onChange={setLeadDraft} onCommit={flushLead}
+        />
+        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}>
+          The reading text in articles, notes and scenes. The preview above follows it.
+        </div>
+      </Group>
+
       <Group title="Backdrop">
         <div style={ROW}>
           {BG_OPTIONS.map(opt => {
@@ -476,87 +669,6 @@ function AppearanceTab() {
         </div>
       </Group>
 
-      <Group
-        title="Section colours"
-        action={overridden ? <LinkButton onClick={resetSectionColors}>Reset all</LinkButton> : undefined}
-      >
-        {SECTION_VIEWS.map(view => {
-          const Icon = SECTION_ICONS[view]
-          const colour = sections[view]
-          const isOpen = openSection === view
-          return (
-            <div key={view}>
-              <button
-                onClick={() => setOpenSection(isOpen ? null : view)}
-                className="menu-item menu-item-sm"
-                style={{ borderRadius: 'var(--radius-sm)', color: isOpen ? 'var(--gold)' : 'var(--text-secondary)' }}
-              >
-                <Icon size={13} color={colour} />
-                <span style={{ flex: 1, textAlign: 'left' }}>{SECTION_LABELS[view]}</span>
-                {appearance.sections[view] && (
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>custom</span>
-                )}
-                <span style={{
-                  width: 24, height: 12, borderRadius: 3, background: colour,
-                  border: '1px solid var(--border-light)',
-                }} />
-              </button>
-              {isOpen && (
-                <div style={{ padding: '8px 4px 10px' }}>
-                  <SwatchPicker value={colour} onChange={hex => setSectionColor(view, hex)} size={20} gap={5} />
-                  {appearance.sections[view] && (
-                    <div style={{ marginTop: 8 }}>
-                      <LinkButton onClick={() => setSectionColor(view, null)}>
-                        Back to {base.label} default
-                      </LinkButton>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </Group>
-
-      <Group title="Scope">
-        <ToggleRow
-          icon={<Layers size={13} />}
-          label={currentCampaign ? `A look of its own for ${currentCampaign.name}` : 'Per-campaign look'}
-          value={appearanceScope === 'campaign'}
-          on="On" off="Off"
-          onClick={() => currentCampaign && setAppearanceScope(appearanceScope === 'campaign' ? 'global' : 'campaign')}
-          hint={currentCampaign
-            ? appearanceScope === 'campaign'
-              ? 'Changes here apply to this campaign only. Turning this off deletes its look and returns to the app-wide one.'
-              : 'Turn on to fork the current look onto this campaign. Other campaigns keep the app-wide one.'
-            : 'Open a campaign to give it a look of its own.'}
-        />
-      </Group>
-
-      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-        <button
-          onClick={resetAppearance}
-          disabled={atDefaults}
-          className={atDefaults ? '' : 'btn btn-sm'}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 7,
-            padding: '6px 12px', borderRadius: 'var(--radius-sm)',
-            background: 'transparent', border: '1px solid var(--border)',
-            color: atDefaults ? 'var(--text-muted)' : 'var(--text-secondary)',
-            fontFamily: 'var(--font-ui)', fontSize: 12,
-            cursor: atDefaults ? 'default' : 'pointer',
-            opacity: atDefaults ? 0.55 : 1,
-          }}
-          title={atDefaults ? 'Already at the original look' : 'Base, accent, text, faces, tint, section colours and backdrop'}
-        >
-          <RotateCcw size={13} />
-          Reset to defaults
-          <span style={{
-            width: 12, height: 12, borderRadius: 3, marginLeft: 2,
-            background: DEFAULT_ACCENT, border: '1px solid var(--border-light)',
-          }} />
-        </button>
-      </div>
     </div>
   )
 }
@@ -680,6 +792,7 @@ function DataTab() {
 
 function HelpTab() {
   const { showHints, setShowHints } = useStore()
+  const { chords } = keybindings.use()
   const [version, setVersion] = useState('')
   useEffect(() => { window.api.getAppVersion().then(setVersion) }, [])
 
@@ -696,12 +809,7 @@ function HelpTab() {
 
       <Group title="Shortcuts">
         <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 14px', fontSize: 12 }}>
-          {[
-            ['Ctrl+K', 'Search this campaign'],
-            ['Ctrl+T', 'New tab'],
-            ['Ctrl+W', 'Close tab'],
-            ['Ctrl+Tab', 'Next tab'],
-          ].map(([keys, what]) => (
+          {BINDING_ORDER.filter(id => id !== 'prevTab').map(id => [formatChord(chords[id]), BINDING_META[id].label]).map(([keys, what]) => (
             <Fragment key={keys}>
               <kbd style={{
                 fontFamily: 'var(--font-mono, monospace)', fontSize: 10.5,

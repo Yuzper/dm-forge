@@ -3,9 +3,15 @@
 // swatch for custom colours (native picker), and a hex field whose code can
 // be copied or pasted. Used everywhere the user picks a colour (story arcs,
 // map pins, note groups, relation ranks, era bands, text colour…).
+//
+// Dragging in the native picker fires a change on every pixel. The picker
+// follows the pointer through local state and only hands a value to `onChange`
+// about every 90 ms (and once more at the end), so a caller that writes to the
+// store, the database or the table window never has to throttle it themselves.
 import { useEffect, useRef, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { useMenuClose } from '../hooks/useMenuClose'
+import { useThrottledCommit } from '../hooks/useThrottledCommit'
 import { STANDARD_PALETTE } from '../constants/palettes'
 
 // '#abc' / 'abc123' / '#AABBCC' → '#aabbcc'; null when not a valid hex colour.
@@ -18,7 +24,15 @@ function normalizeHex(raw: string): string | null {
   return v
 }
 
-export default function SwatchPicker({ value, onChange, size = 22, gap = 6, keepFocus = false }: {
+export interface Swatch {
+  color: string
+  /** Tooltip; defaults to the hex code. */
+  title?: string
+}
+
+const STANDARD_SWATCHES: Swatch[] = STANDARD_PALETTE.map(color => ({ color }))
+
+export default function SwatchPicker({ value, onChange, size = 22, gap = 6, keepFocus = false, swatches = STANDARD_SWATCHES }: {
   value: string | null | undefined
   onChange: (color: string) => void
   size?: number
@@ -26,18 +40,26 @@ export default function SwatchPicker({ value, onChange, size = 22, gap = 6, keep
   // Prevent swatch clicks from stealing focus (keeps a text selection alive
   // in the rich editor). The hex field is exempt — it needs focus to type.
   keepFocus?: boolean
+  /** The ready-made circles before the colour wheel. Defaults to the standard eight. */
+  swatches?: Swatch[]
 }) {
-  const current = normalizeHex(value ?? '')
-  const isStandard = current !== null && STANDARD_PALETTE.includes(current)
+  const committed = normalizeHex(value ?? '')
+  const [draft, update, flush] = useThrottledCommit<string | null>(committed, v => { if (v) onChange(v) })
+  // What the picker shows: the colour under the pointer, not the last one committed.
+  const current = draft
+  const isStandard = current !== null && swatches.some(s => s.color === current)
   const wheelRef = useRef<HTMLInputElement>(null)
   const [hexDraft, setHexDraft] = useState(current ?? '')
   const [copied, setCopied] = useState(false)
 
   useEffect(() => { setHexDraft(current ?? '') }, [current])
 
+  /** A deliberate pick (swatch, typed code): applied at once. */
+  const pick = (c: string) => { update(c); flush() }
+
   const commitHex = () => {
     const v = normalizeHex(hexDraft)
-    if (v) onChange(v)
+    if (v) pick(v)
     else setHexDraft(current ?? '')
   }
 
@@ -56,16 +78,19 @@ export default function SwatchPicker({ value, onChange, size = 22, gap = 6, keep
       onMouseDown={keepFocus ? e => { if ((e.target as HTMLElement).tagName !== 'INPUT') e.preventDefault() } : undefined}
     >
       <div style={{ display: 'flex', gap, flexWrap: 'wrap', alignItems: 'center' }}>
-        {STANDARD_PALETTE.map(c => (
+        {swatches.map(({ color: c, title }) => (
           <button
             key={c}
             type="button"
-            title={c}
-            onClick={() => onChange(c)}
+            title={title ?? c}
+            onClick={() => pick(c)}
             style={{
               width: size, height: size, borderRadius: '50%', background: c, padding: 0,
-              border: `2px solid ${current === c ? 'var(--text-primary)' : 'transparent'}`,
-              cursor: 'pointer', flexShrink: 0, transition: 'border-color 120ms ease',
+              // A ring just outside the circle marks the choice, so it shows on any
+              // colour, including near-white text colours on a dark ground.
+              border: '1px solid rgba(0,0,0,0.25)',
+              outline: current === c ? '2px solid var(--text-primary)' : '2px solid transparent', outlineOffset: 2,
+              cursor: 'pointer', flexShrink: 0, transition: 'outline-color 120ms ease',
             }}
           />
         ))}
@@ -81,15 +106,17 @@ export default function SwatchPicker({ value, onChange, size = 22, gap = 6, keep
               background: current && !isStandard
                 ? current
                 : 'conic-gradient(#e05555, #e8d44d, #49c185, #4da6ff, #b04dff, #e05555)',
-              border: `2px solid ${current && !isStandard ? 'var(--text-primary)' : 'transparent'}`,
-              cursor: 'pointer', flexShrink: 0, transition: 'border-color 120ms ease',
+              border: '1px solid rgba(0,0,0,0.25)',
+              outline: current && !isStandard ? '2px solid var(--text-primary)' : '2px solid transparent', outlineOffset: 2,
+              cursor: 'pointer', flexShrink: 0, transition: 'outline-color 120ms ease',
             }}
           />
           <input
             ref={wheelRef}
             type="color"
             value={current ?? '#c8a84b'}
-            onChange={e => onChange(e.target.value)}
+            onChange={e => update(e.target.value)}
+            onBlur={flush}
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, pointerEvents: 'none' }}
             tabIndex={-1}
             aria-hidden
