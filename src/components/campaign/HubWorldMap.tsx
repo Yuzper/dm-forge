@@ -25,6 +25,7 @@ import POIEditModal, {
 } from '../map/POIEditModal'
 import MapAnimation, { useMapAnimationUrl } from '../map/MapAnimation'
 import { chooseMapAnimation, removeMapAnimation } from '../../utils/mapAnimation'
+import { mapDefaults } from '../../utils/mapDefaults'
 import { useMapShapes } from '../../hooks/useMapShapes'
 import { useMapWalls } from '../../hooks/useMapWalls'
 import { useMapViewport } from '../../hooks/useMapViewport'
@@ -104,6 +105,7 @@ export default function HubWorldMap({
   })
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const animationUrl = useMapAnimationUrl(currentMap)
+  const regionDefaults = mapDefaults.use()
 
   // One tool owns canvas clicks. This replaced three mutually exclusive mode
   // booleans (edit / measure / shape) that each had to remember to switch the
@@ -196,8 +198,9 @@ export default function HubWorldMap({
     scale,
     tool,
     enabled: editable,
-    defaultFill: '#c8a84b',
-    defaultStroke: '#c8a84b',
+    defaultFill: regionDefaults.regionFill,
+    defaultStroke: regionDefaults.regionStroke,
+    defaultOpacity: regionDefaults.regionOpacity,
     // A fresh shape is nameless and unlinked, so go straight to its editor.
     onCreated: shape => setEditingShape(shape),
     onToolFinished: backToSelect,
@@ -440,7 +443,7 @@ export default function HubWorldMap({
 
     if (tool === 'pin') {
       if ((e.target as HTMLElement).closest('[data-poi]')) return
-      window.api.createPOI({ map_id: currentMap.id, label: 'New Location', x, y }).then((poi: POI) => {
+      window.api.createPOI({ map_id: currentMap.id, label: 'New Location', x, y, color: mapDefaults.get().pinColor }).then((poi: POI) => {
         setPois((prev: POI[]) => [...prev, poi])
         setSelectedPOI(poi)
         setEditingPOI(poi)

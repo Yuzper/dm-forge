@@ -9,6 +9,7 @@ import MapPOIMarker, { poiColor } from './map/MapPOIMarker'
 import MapShapeLayer from './map/MapShapeLayer'
 import MeasureOverlay from './map/MeasureOverlay'
 import MapAnimation, { useMapAnimationUrl } from './map/MapAnimation'
+import { mapDefaults } from '../utils/mapDefaults'
 import MapContentsPanel, { type VisitsSection, type WallsSection } from './map/MapContentsPanel'
 import CastMapButton from './map/CastMapButton'
 import MapWallLayer, { type SnapHint } from './map/MapWallLayer'
@@ -177,6 +178,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imageLoaded, setImageLoaded] = useState(false)
   const animationUrl = useMapAnimationUrl(currentMap)
+  const regionDefaults = mapDefaults.use()
 
   // Pan, zoom, image fitting and viewport persistence all live in the shared
   // hook — this surface has no tab strip, so no top inset.
@@ -254,8 +256,9 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
     scale,
     tool,
     enabled: editMode,
-    defaultFill: '#c8a84b',
-    defaultStroke: '#c8a84b',
+    defaultFill: regionDefaults.regionFill,
+    defaultStroke: regionDefaults.regionStroke,
+    defaultOpacity: regionDefaults.regionOpacity,
     onCreated: shape => setEditingShape(shape),
     onToolFinished: backToSelect,
   })
@@ -641,7 +644,7 @@ export default function MapCanvas({ readMode }: { readMode?: boolean }) {
             display: 'flex', alignItems: 'center', gap: 4,
             background: showContents ? 'rgba(200,115,58,0.2)' : 'rgba(21,18,14,0.85)',
             border: `1px solid ${showContents ? 'rgba(200,115,58,0.4)' : 'var(--border-light)'}`,
-            color: showContents ? '#c8733a' : 'var(--text-secondary)',
+            color: showContents ? '#c8733a' : 'rgba(255,255,255,0.75)',
             borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer',
             backdropFilter: 'blur(8px)', transition: 'all var(--transition)',
           }}

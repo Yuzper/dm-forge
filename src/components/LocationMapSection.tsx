@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Map, Upload, MoreHorizontal, Pencil, Trash2, Image as ImageIcon, BrickWall, Film } from 'lucide-react'
 import { chooseMapAnimation, removeMapAnimation } from '../utils/mapAnimation'
+import { mapDefaults } from '../utils/mapDefaults'
 import { InfoHint } from './InfoHint'
 import { VTT_IMPORT_HINT } from '../constants/hints'
 import { MapContext } from '../context/MapContext'
@@ -191,7 +192,7 @@ export default function LocationMapSection({ articleId, readMode }: { articleId:
 
   const createPOI = useCallback(async (x: number, y: number) => {
     if (!currentMap) return
-    const poi = await window.api.createPOI({ map_id: currentMap.id, label: 'New POI', x, y })
+    const poi = await window.api.createPOI({ map_id: currentMap.id, label: 'New POI', x, y, color: mapDefaults.get().pinColor })
     setPois(prev => [...prev, poi])
     selectPOI(poi)
   }, [currentMap, selectPOI])

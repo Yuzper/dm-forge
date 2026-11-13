@@ -43,6 +43,8 @@ export interface UseShapeDrawingArgs {
   enabled: boolean
   defaultFill: string
   defaultStroke: string
+  /** Fill opacity of a new shape; omitted, the database default applies. */
+  defaultOpacity?: number
   /** Called after a shape is drawn, so the host can open its edit modal. */
   onCreated?: (shape: MapShape) => void
   /**
@@ -54,7 +56,7 @@ export interface UseShapeDrawingArgs {
 
 export function useShapeDrawing({
   mapId, activeLayerId, setShapes, box, scale, tool: mapTool, enabled,
-  defaultFill, defaultStroke, onCreated, onToolFinished,
+  defaultFill, defaultStroke, defaultOpacity, onCreated, onToolFinished,
 }: UseShapeDrawingArgs) {
   // The shape primitive being drawn, or null when the host's tool isn't one.
   const tool: ShapeTool | null = enabled && isShapeTool(mapTool) ? mapTool : null
@@ -119,6 +121,7 @@ export function useShapeDrawing({
       points: serializePoints(points),
       fill_color: defaultFill,
       stroke_color: defaultStroke,
+      ...(defaultOpacity != null ? { fill_opacity: defaultOpacity } : {}),
     }
     const created = await window.api.createMapShape(input)
     setShapes(prev => [...prev, created])
@@ -128,7 +131,7 @@ export function useShapeDrawing({
     // naming it.
     onToolFinished?.()
     onCreated?.(created)
-  }, [mapId, activeLayerId, defaultFill, defaultStroke, setShapes, onCreated, onToolFinished])
+  }, [mapId, activeLayerId, defaultFill, defaultStroke, defaultOpacity, setShapes, onCreated, onToolFinished])
 
   const closePolygon = useCallback(() => {
     const d = draftRef.current

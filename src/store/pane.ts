@@ -19,6 +19,7 @@ import { newTabId, locationView, samePlace, type Location } from './location'
 import { loadWorkspace } from './workspacePersist'
 import { paneIdOf, getPane, type PaneId } from './paneRegistry'
 import { finishAnimatedPick, importVTTWithFrame } from '../utils/mapAnimation'
+import { mapDefaults } from '../utils/mapDefaults'
 
 export type View = 'campaigns' | 'campaign' | 'session' | 'wiki' | 'dm-notes' | 'loot-tables' | 'relations' | 'timeline' | 'soundboard'
 
@@ -757,7 +758,7 @@ export function createPaneStore() {
       // On an attached article map, new POIs belong to this session's visit
       // layer; on session-owned maps layer_id stays null.
       const layer_id = currentMap.attached ? currentMap.layer_id ?? null : null
-      const poi = await window.api.createPOI({ map_id: currentMap.id, label: 'New Point of Interest', x, y, layer_id })
+      const poi = await window.api.createPOI({ map_id: currentMap.id, label: 'New Point of Interest', x, y, layer_id, color: mapDefaults.get().pinColor })
       set(s => ({ pois: [...s.pois, poi], selectedPOI: poi, poiPanelOpen: true }))
     },
 
