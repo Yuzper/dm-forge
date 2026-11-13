@@ -63,7 +63,7 @@ function CreateTableModal({ campaignId, onClose, onCreate, initialCategory }: {
   }
 
   return (
-    <Modal title="New Loot Table" onClose={onClose}>
+    <Modal title="New Random Table" onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="input-group">
             <label className="input-label">Name</label>
@@ -444,7 +444,7 @@ export default function LootTablesPage() {
       <div style={{ padding: '20px 32px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <SectionHeader
           icon={ShoppingBag}
-          title="Loot Tables"
+          title="Random Tables"
           accent={ACCENT}
           onBack={() => { setView('campaign'); setCampaignSubView('hub') }}
           actions={<>

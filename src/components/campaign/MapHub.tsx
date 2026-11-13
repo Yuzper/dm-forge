@@ -116,7 +116,7 @@ export interface MapHubStats {
 // Shorter than the labels NAV_ITEMS carries — the dock is a pill, not a page.
 const DOCK_LABELS: Partial<Record<SectionView, string>> = {
   'dm-notes':    'Notes',
-  'loot-tables': 'Loot',
+  'loot-tables': 'Tables',
   'soundboard':  'Sound',
 }
 

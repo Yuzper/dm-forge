@@ -23,7 +23,7 @@ export const SECTION_VIEWS: SectionView[] = [
 export const SECTION_LABELS: Record<SectionView, string> = {
   'wiki':        'Wiki',
   'dm-notes':    'DM Notes',
-  'loot-tables': 'Loot Tables',
+  'loot-tables': 'Random Tables',
   'relations':   'Webs',
   'timeline':    'Timeline',
   'soundboard':  'Soundboard',

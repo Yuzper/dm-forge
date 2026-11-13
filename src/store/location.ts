@@ -83,7 +83,7 @@ export function locationLabel(loc: Location, ctx: LocationCtx): string | null {
       return (loc.webId != null && ctx.locationNames?.relations[loc.webId]) || 'Webs'
     case 'dm-notes':
       return (loc.pageId != null && ctx.locationNames?.['dm-notes'][loc.pageId]) || 'DM Notes'
-    case 'loot-tables': return 'Loot Tables'
+    case 'loot-tables': return 'Random Tables'
     case 'timeline':    return 'Timeline'
     case 'soundboard':  return 'Soundboard'
     case 'session': {

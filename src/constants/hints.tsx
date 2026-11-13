@@ -139,7 +139,7 @@ export const HINTS: Record<string, Hint> = {
   },
 
   'loot-tables': {
-    title: 'How loot tables work',
+    title: 'How random tables work',
     items: [
       <>Tables are grouped by category in the sidebar — hit + on a category to add one there.</>,
       <>Give each item a drop chance %; tables save as you edit.</>,
