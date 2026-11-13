@@ -1,4 +1,5 @@
 // path: src/components/GlobalSearch.tsx
+import { matchesBinding } from '../utils/keybindings'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useStore } from '../store/store'
 import { Search, BookOpen, Scroll, Sparkles, MapPin } from 'lucide-react'
@@ -34,7 +35,7 @@ export default function GlobalSearch() {
   // Ctrl+K / Cmd+K toggles (the usual chord for a search palette); Esc closes.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if (matchesBinding(e, 'search')) {
         e.preventDefault()
         const s = useStore.getState()
         if (s.currentCampaign) s.setSearchOpen(!s.searchOpen)

@@ -4,6 +4,7 @@
 // the window before ever reaching the renderer.
 import { useEffect } from 'react'
 import { useStore } from '../store/store'
+import { chordFor, matchesBinding } from '../utils/keybindings'
 
 /** Typing in a field or the rich editor must win over every chord here. */
 function inTextEntry(t: EventTarget | null): boolean {
@@ -21,20 +22,22 @@ export function useTabShortcuts() {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return
 
-      // Ctrl+Tab cycles even from inside the editor — it can't be a text chord.
-      if (e.key === 'Tab') {
+      // The cycle chords still work from inside the editor when they are Tab
+      // chords -- Tab can't be a text chord. A rebinding to a letter has to
+      // respect typing like the rest.
+      const cycling = matchesBinding(e, 'nextTab') ? 1 : matchesBinding(e, 'prevTab') ? -1 : 0
+      if (cycling && (chordFor(cycling === 1 ? 'nextTab' : 'prevTab').key === 'Tab' || !inTextEntry(e.target))) {
         e.preventDefault()
-        void cycleTab(e.shiftKey ? -1 : 1)
+        void cycleTab(cycling)
         return
       }
 
       if (inTextEntry(e.target)) return
 
-      const key = e.key.toLowerCase()
-      if (key === 't') {
+      if (matchesBinding(e, 'newTab')) {
         e.preventDefault()
         void openTab({ type: 'campaign', subView: 'hub' })
-      } else if (key === 'w') {
+      } else if (matchesBinding(e, 'closeTab')) {
         e.preventDefault()
         if (activeTabId) void closeTab(activeTabId)
       } else if (/^[1-9]$/.test(e.key)) {

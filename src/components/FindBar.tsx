@@ -1,4 +1,5 @@
 // path: src/components/FindBar.tsx
+import { matchesBinding } from '../utils/keybindings'
 import { useState, useEffect, useRef } from 'react'
 import { Search, ChevronUp, ChevronDown, X } from 'lucide-react'
 
@@ -19,7 +20,7 @@ export default function FindBar() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      if (matchesBinding(e, 'find')) {
         e.preventDefault()
         setOpen(true)
         setTimeout(() => { inputRef.current?.focus(); inputRef.current?.select() }, 0)
